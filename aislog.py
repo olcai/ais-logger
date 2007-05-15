@@ -69,10 +69,10 @@ if len(sys.argv) > 1:
 columnsetup = {'mmsi': ['MMSI', 80], 'mid': ['Land', 40], 'imo': ['IMO', 80], 'name': ['Namn', 150], 'type': ['Nrtyp', 45], 'typename': ['Typ', 50], 'callsign': ['CS', 60], 'latitude': ['Latitud', 85], 'longitude': ['Longitud', 90], 'georef': ['GEOREF', 85], 'creationtime': ['Skapad', 70], 'time': ['Senast', 70], 'sog': ['Fart', 45], 'cog': ['Kurs', 45], 'heading': ['Heading', 62], 'destination': ['Destination', 150], 'eta': ['ETA', 80], 'length': ['Längd', 45], 'width': ['Bredd', 45], 'draught': ['Djupg.', 90], 'rateofturn': ['Girhast', 60], 'bit': ['BIT', 35], 'tamper': ['Tamper', 60], 'navstatus': ['NavStatus', 150], 'posacc': ['PosAcc', 55], 'bearing': ['Bäring', 50], 'distance': ['Avstånd', 60]}
 # Set default keys and values
 defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 'deleteitemtime': 3600, 'alertsound_on': False, 'alertsoundfile': '', 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance'},
-                 'logging': {'logtime': '0', 'logfile': ''},
-                 'position': {'latitude': '', 'longitude': ''},
-                 'serial_a': {'serial_on': False, 'port': 0, 'baudrate': 9600, 'rtscts': 0, 'xonxoff': 0, 'repr_mode': 0},
-                 'serial_b': {'serial_on': False, 'port': 1, 'baudrate': 9600, 'rtscts': 0, 'xonxoff': 0, 'repr_mode': 0}}
+                 'logging': {'logging_on': False, 'logtime': '10', 'logfile': ''},
+                 'position': {'override_on': False, 'latitude': '00;00.00;N', 'longitude': '000;00.00;E'},
+                 'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': '0', 'xonxoff': '0', 'repr_mode': '0'},
+                 'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': '0', 'xonxoff': '0', 'repr_mode': '0'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -94,8 +94,10 @@ config['common'].comments['alertsound_on'] = ['Enable audio alert']
 config['common'].comments['alertsoundfile'] = ['Filename of wave sound file for audio alert']
 config['common'].comments['listcolumns'] = ['Define visible columns in list view using db column names']
 config['common'].comments['alertlistcolumns'] = ['Define visible columns in alert list view using db column names']
-config['logging'].comments['logtime'] = ['Number of s between writes to log file (0 turns off file logging)']
+config['logging'].comments['logging_on'] = ['Enable file logging']
+config['logging'].comments['logtime'] = ['Number of s between writes to log file']
 config['logging'].comments['logfile'] = ['Filename of log file']
+config['position'].comments['override_on'] = ['Enable manual position override']
 config['position'].comments['latitude'] = ['Latitude in deg and min']
 config['position'].comments['longitude'] = ['Longitude in deg and min']
 #config.write()
@@ -960,7 +962,24 @@ class SettingsWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnAlertFileDialog, self.alert_alertfileselect)
         # Manual position config
         manualpos_panel = wx.Panel(common_panel, -1)
-        wx.StaticBox(manualpos_panel, -1, ' Manuell positionsinställning ', pos=(10,-1), size=(450,100))
+        wx.StaticBox(manualpos_panel, -1, ' Manuell positionsinställning ', pos=(10,-1), size=(450,140))
+        self.manualpos_overridetoggle = wx.CheckBox(manualpos_panel, -1, 'Använd manuell position och ignorera positionsmeddelanden', pos=(20,23))
+        wx.StaticText(manualpos_panel, -1, 'Latitud:', pos=(20,60))
+        self.manualpos_latdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,54), size=(55,-1), min=0, max=90)
+        wx.StaticText(manualpos_panel, -1, 'deg', pos=(145,60))
+        self.manualpos_latmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,54), size=(55,-1), min=0, max=60)
+        wx.StaticText(manualpos_panel, -1, 'min', pos=(235,60))
+        self.manualpos_latdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,54), size=(55,-1), min=0, max=100)
+        wx.StaticText(manualpos_panel, -1, 'dec min', pos=(325,60))
+        self.manualpos_latquad = wx.ComboBox(manualpos_panel, -1, pos=(390,54), size=(55,-1), choices=('N', 'S'), style=wx.CB_READONLY)
+        wx.StaticText(manualpos_panel, -1, 'Longitud:', pos=(20,100))
+        self.manualpos_longdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,94), size=(55,-1), min=0, max=180)
+        wx.StaticText(manualpos_panel, -1, 'deg', pos=(145,100))
+        self.manualpos_longmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,94), size=(55,-1), min=0.0, max=60)
+        wx.StaticText(manualpos_panel, -1, 'min', pos=(235,100))
+        self.manualpos_longdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,94), size=(55,-1), min=0, max=100)
+        wx.StaticText(manualpos_panel, -1, 'dec min', pos=(325,100))
+        self.manualpos_longquad = wx.ComboBox(manualpos_panel, -1, pos=(390,94), size=(55,-1), choices=('E', 'W'), style=wx.CB_READONLY)
         # Add panels to main sizer
         common_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         common_panel_sizer.Add(commonlist_panel, 0)
@@ -1004,17 +1023,53 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for log config
         # Log config
         filelog_panel = wx.Panel(logging_panel, -1)
-        wx.StaticBox(filelog_panel, -1, ' Loggning till fil ', pos=(10,5), size=(450,150))
-        self.filelog_logtoggle = wx.CheckBox(filelog_panel, -1, 'Aktivera loggning till fil', pos=(20,28))
-        wx.StaticText(filelog_panel, -1, 'Loggfil:', pos=(20,65))
-        self.filelog_logfile = wx.TextCtrl(filelog_panel, -1, pos=(105,59), size=(250,-1))
-        self.filelog_logfileselect = wx.Button(filelog_panel, -1, '&Bläddra...', pos=(365,55))
+        wx.StaticBox(filelog_panel, -1, ' Loggning till fil ', pos=(10,5), size=(450,140))
+        self.filelog_logtoggle = wx.CheckBox(filelog_panel, -1, 'Aktivera loggning till databasfil', pos=(20,28))
+        wx.StaticText(filelog_panel, -1, 'Tid mellan loggningarna (min):', pos=(20,65))
+        self.filelog_logtime = wx.SpinCtrl(filelog_panel, -1, pos=(230,60), min=1, max=10080)
+        wx.StaticText(filelog_panel, -1, 'Loggfil:', pos=(20,105))
+        self.filelog_logfile = wx.TextCtrl(filelog_panel, -1, pos=(75,99), size=(275,-1))
+        self.filelog_logfileselect = wx.Button(filelog_panel, -1, '&Bläddra...', pos=(365,95))
         self.Bind(wx.EVT_BUTTON, self.OnLogFileDialog, self.filelog_logfileselect)
         # Add panels to main sizer
         logging_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         logging_panel_sizer.Add(filelog_panel, 0)
         logging_panel.SetSizer(logging_panel_sizer)
-        
+
+        # Populate panel for list view column setup
+        # List view column config
+        listcolumn_panel = wx.Panel(listview_panel, -1)
+        wx.StaticBox(listcolumn_panel, -1, ' Välj aktiva kolumner i listvyn ', pos=(10,5), size=(450,280))
+        wx.StaticText(listcolumn_panel, -1, 'Ej aktiva kolumner:', pos=(35,40))
+        self.listcolumn_notactive = wx.ListBox(listcolumn_panel, -1, pos=(30,60), size=(130,200), style=wx.LB_SINGLE|wx.LB_SORT)
+        wx.Button(listcolumn_panel, 50, '-->', pos=(180,120), size=(50,-1))
+        wx.Button(listcolumn_panel, 51, '<--', pos=(180,170), size=(50,-1))
+        wx.StaticText(listcolumn_panel, -1, 'Aktiva kolumner:', pos=(255,40))
+        self.listcolumn_active = wx.ListBox(listcolumn_panel, -1, pos=(250,60), size=(130,200), style=wx.LB_SINGLE)
+        wx.Button(listcolumn_panel, 52, 'Upp', pos=(395,120), size=(50,-1))
+        wx.Button(listcolumn_panel, 53, 'Ned', pos=(395,170), size=(50,-1))
+        # Add panels to main sizer
+        listview_panel_sizer = wx.BoxSizer(wx.VERTICAL)
+        listview_panel_sizer.Add(listcolumn_panel, 0)
+        listview_panel.SetSizer(listview_panel_sizer)
+
+        # Populate panel for alert list view column setup
+        # Alert list view column config
+        alertlistcolumn_panel = wx.Panel(alertlistview_panel, -1)
+        wx.StaticBox(alertlistcolumn_panel, -1, ' Välj aktiva kolumner i larmvyn ', pos=(10,5), size=(450,280))
+        wx.StaticText(alertlistcolumn_panel, -1, 'Ej aktiva kolumner:', pos=(35,40))
+        self.alertlistcolumn_notactive = wx.ListBox(alertlistcolumn_panel, -1, pos=(30,60), size=(130,200), style=wx.LB_SINGLE|wx.LB_SORT)
+        wx.Button(alertlistcolumn_panel, 60, '-->', pos=(180,120), size=(50,-1))
+        wx.Button(alertlistcolumn_panel, 61, '<--', pos=(180,170), size=(50,-1))
+        wx.StaticText(alertlistcolumn_panel, -1, 'Aktiva kolumner:', pos=(255,40))
+        self.alertlistcolumn_active = wx.ListBox(alertlistcolumn_panel, -1, pos=(250,60), size=(130,200), style=wx.LB_SINGLE)
+        wx.Button(alertlistcolumn_panel, 62, 'Upp', pos=(395,120), size=(50,-1))
+        wx.Button(alertlistcolumn_panel, 63, 'Ned', pos=(395,170), size=(50,-1))
+        # Add panels to main sizer
+        alertlistview_panel_sizer = wx.BoxSizer(wx.VERTICAL)
+        alertlistview_panel_sizer.Add(alertlistcolumn_panel, 0)
+        alertlistview_panel.SetSizer(alertlistview_panel_sizer)
+
         # Nätverkskonfiguration
         #self.activate_networkreading = wx.CheckBox(self, -1, 'Aktivera läsning via nätverk', (12, 180))
         #wx.StaticText(self,-1,'Serverns IP-adress: ',pos=(12,210),size=(150,16))
@@ -1055,6 +1110,14 @@ class SettingsWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnSave, id=1)
         self.Bind(wx.EVT_BUTTON, self.OnApply, id=2)
         self.Bind(wx.EVT_BUTTON, self.OnAbort, id=3)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=50)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=51)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=52)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=53)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=60)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=61)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=62)
+        self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=63)
         self.Bind(wx.EVT_CLOSE, self.OnAbort)
 
     def GetConfig(self):
@@ -1072,6 +1135,45 @@ class SettingsWindow(wx.Dialog):
         # Alert settings
         self.alert_alerttoggle.SetValue(config['common'].as_bool('alertsound_on'))
         self.alert_alertfile.SetValue(config['common']['alertsoundfile'])
+        # Manual position settings
+        self.manualpos_overridetoggle.SetValue(config['position'].as_bool('override_on'))
+        # Take bits out of a string like '67;23.19;N' and set values
+        self.manualpos_latdeg.SetValue(int(config['position']['latitude'].split(';')[0]))
+        self.manualpos_latmin.SetValue(int(config['position']['latitude'].split(';')[1].split('.')[0]))
+        self.manualpos_latdecmin.SetValue(int(config['position']['latitude'].split(';')[1].split('.')[1]))
+        self.manualpos_latquad.SetValue(config['position']['latitude'].split(';')[2])
+        self.manualpos_longdeg.SetValue(int(config['position']['longitude'].split(';')[0]))
+        self.manualpos_longmin.SetValue(int(config['position']['longitude'].split(';')[1].split('.')[0]))
+        self.manualpos_longdecmin.SetValue(int(config['position']['longitude'].split(';')[1].split('.')[1]))
+        self.manualpos_longquad.SetValue(config['position']['longitude'].split(';')[2])
+        # Log settings
+        self.filelog_logtoggle.SetValue(config['logging'].as_bool('logging_on'))
+        self.filelog_logtime.SetValue(config['logging'].as_int('logtime'))
+        self.filelog_logfile.SetValue(config['logging']['logfile'])
+        # Alert view column settings
+        # Extract as list from comma separated list from dict
+        self.listcolumns_as_list = config['common']['listcolumns'].replace(' ','').split(',')
+        self.alertlistcolumns_as_list = config['common']['alertlistcolumns'].replace(' ', '').split(',')
+        self.UpdateListColumns()
+        self.UpdateAlertListColumns()
+
+    def UpdateListColumns(self):
+        # Take all possible columns from columnsetup
+        allcolumns = set(columnsetup.keys())
+        # Create a list of differences between all possible columns and the active columns
+        possible = list(allcolumns.difference(self.listcolumns_as_list))
+        # Update list boxes
+        self.listcolumn_active.Set(self.listcolumns_as_list)
+        self.listcolumn_notactive.Set(possible)      
+
+    def UpdateAlertListColumns(self):
+        # Take all possible columns from columnsetup
+        allcolumns = set(columnsetup.keys())
+        # Create a list of differences between all possible columns and the active columns
+        possible = list(allcolumns.difference(self.alertlistcolumns_as_list))
+        # Update list boxes
+        self.alertlistcolumn_active.Set(self.alertlistcolumns_as_list)
+        self.alertlistcolumn_notactive.Set(possible)      
 
     def OnAlertFileDialog(self, event):
         # Create a file dialog
@@ -1079,6 +1181,50 @@ class SettingsWindow(wx.Dialog):
         # If user pressed open, update text control
         if open_dlg.ShowModal() == wx.ID_OK:
             self.alert_alertfile.SetValue(open_dlg.GetPath())
+
+    def OnColumnChange(self, event):
+        # Map objects depending on pressed button
+        if wx.Event.GetId(event) >= 50 and wx.Event.GetId(event) < 60:
+            listcolumn_list = self.listcolumns_as_list
+            notactive = self.listcolumn_notactive
+            selection_notactive = notactive.GetStringSelection()
+            active = self.listcolumn_active
+            selection_active = active.GetStringSelection()
+        if wx.Event.GetId(event) >= 60 and wx.Event.GetId(event) < 70:
+            listcolumn_list = self.alertlistcolumns_as_list
+            notactive = self.alertlistcolumn_notactive
+            selection_notactive = notactive.GetStringSelection()
+            active = self.alertlistcolumn_active
+            selection_active = active.GetStringSelection()
+        # Move a column from non-active to active listbox
+        if (wx.Event.GetId(event) == 50 or wx.Event.GetId(event) == 60) and len(selection_notactive) > 0:
+            listcolumn_list.append(selection_notactive)
+        # Move a column from active to non-active listbox
+        elif (wx.Event.GetId(event) == 51 or wx.Event.GetId(event) == 61) and len(selection_active) > 0:
+            listcolumn_list.remove(selection_active)
+        # Move a column upwards in the active listbox
+        elif (wx.Event.GetId(event) == 52 or wx.Event.GetId(event) == 62) and len(selection_active) > 0:
+            # Get index number in listbox
+            original_number = listcolumn_list.index(selection_active)
+            # Check that column not is first in listbox
+            if original_number > 0:
+                # Remove the column
+                listcolumn_list.remove(selection_active)
+                # Insert the column at the previous position - 1
+                listcolumn_list.insert((original_number-1), selection_active)
+        # Move a column downwards in the active listbox
+        elif (wx.Event.GetId(event) == 53 or wx.Event.GetId(event) == 63) and len(selection_active) > 0:
+            # Get index number in listbox
+            original_number = listcolumn_list.index(selection_active)
+            # Remove the column
+            listcolumn_list.remove(selection_active)
+            # Insert the column at the previous position + 1
+            listcolumn_list.insert((original_number+1), selection_active)
+        # Update all columns to reflect eventual changes
+        self.UpdateListColumns()
+        self.UpdateAlertListColumns()
+        # Make sure a moved item in the acive listbox stays selected
+        active.SetStringSelection(selection_active)
 
     def OnLogFileDialog(self, event):
         # Create a file dialog
@@ -1654,9 +1800,11 @@ class MainThread:
                     parser['typename'] = typecode[parser['type']]
                 # Beräkna avstånd och bäring till objekt
                 if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and 'latitude' in parser and 'longitude' in parser:
-                    dist = ListFunctions().distance(parser['latitude'],parser['longitude'])
-                    parser['distance'] = str(round(dist['km'], 1)).zfill(5)
-                    parser['bearing'] = str(round(dist['bearing'], 1)).zfill(5)
+                    try:
+                        dist = ListFunctions().distance(parser['latitude'],parser['longitude'])
+                        parser['distance'] = str(round(dist['km'], 1)).zfill(5)
+                        parser['bearing'] = str(round(dist['bearing'], 1)).zfill(5)
+                    except: pass
                 dbexp = []
                 dbvalues = []
                 if 'mid' in parser: dbexp.append('mid'); dbvalues.append(parser['mid'])
@@ -1691,8 +1839,16 @@ class MainThread:
                     ("INSERT OR IGNORE INTO data (mmsi, creationtime) VALUES (%s,'%s')" % (int(parser['mmsi']), parser['time']),()),
                     ("UPDATE data SET %s WHERE mmsi=%s" % (dbexpression, int(parser['mmsi'])),())]))
             elif parser.has_key('ownlatitude') and parser.has_key('ownlongitude') and len(parser['ownlatitude']) == 9 and len(parser['ownlongitude']) == 10:
-                owngeoref = georef(parser['ownlatitude'],parser['ownlongitude'])
-                v = {'ownlatitude': parser['ownlatitude'], 'ownlongitude': parser['ownlongitude'], 'owngeoref': owngeoref}
+                if config['position'].as_bool('override_on'):
+                    config_lat = config['position']['latitude'].split(';')
+                    config_long = config['position']['longitude'].split(';')                   
+                    ownlatitude = config_lat[2] + (config_lat[0] + config_lat[1].split('.')[0] + config_lat[1].split('.')[1]).ljust(8, '0')
+                    ownlongitude = config_long[2] + (config_long[0] + config_long[1].split('.')[0] + config_long[1].split('.')[1]).ljust(9, '0')
+                else:
+                    ownlatitude = parser['ownlatitude']
+                    ownlongitude = parser['ownlongitude']
+                owngeoref = georef(ownlatitude,ownlongitude)
+                v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
                 owndata.update(v)
 
             # Ta bort om senaste uppdateringstiden överstiger tröskeln
@@ -1701,10 +1857,11 @@ class MainThread:
                 lastcleartime = time.time()
                         
             # Starta loggning om tiden överstiger tröskeln
-            if config['logging'].as_int('logtime') == 0: continue
-            elif lastlogtime + config['logging'].as_int('logtime') < time.time():
-                self.dblog()
-                lastlogtime = time.time()
+            if config['logging'].as_bool('logging_on'):
+                if config['logging'].as_int('logtime') == 0: continue
+                elif lastlogtime + config['logging'].as_int('logtime') < time.time():
+                    self.dblog()
+                    lastlogtime = time.time()
         
         execSQL(DbCmd(StopCmd))
 
