@@ -27,6 +27,7 @@
 import sys, os, getopt, logging
 import time, datetime
 import threading, Queue, collections
+import socket, SocketServer
 import pickle
 import md5
 
@@ -72,7 +73,8 @@ defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 
                  'logging': {'logging_on': False, 'logtime': '10', 'logfile': ''},
                  'position': {'override_on': False, 'latitude': '00;00.00;N', 'longitude': '000;00.00;E'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': '0', 'xonxoff': '0', 'repr_mode': '0'},
-                 'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': '0', 'xonxoff': '0', 'repr_mode': '0'}}
+                 'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': '0', 'xonxoff': '0', 'repr_mode': '0'},
+                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_address': 'localhost', 'client_port': '23000'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -87,6 +89,7 @@ config.comments['logging'] = ['', 'Settings for logging to file']
 config.comments['position'] = ['', 'Set manual position (overrides decoded own position)']
 config.comments['serial_a'] = ['', 'Settings for input from serial device A']
 config.comments['serial_b'] = ['', 'Settings for input from serial device B']
+config.comments['network'] = ['', 'Settings for sending/receiving data through a network connection']
 config['common'].comments['refreshlisttimer'] = ['Number of ms between refreshing the lists']
 config['common'].comments['listmakegreytime'] = ['Number of s between last update and greying out an item']
 config['common'].comments['deleteitemtime'] = ['Number of s between last update and removing an item from memory']
@@ -100,8 +103,12 @@ config['logging'].comments['logfile'] = ['Filename of log file']
 config['position'].comments['override_on'] = ['Enable manual position override']
 config['position'].comments['latitude'] = ['Latitude in deg and min']
 config['position'].comments['longitude'] = ['Longitude in deg and min']
-#config.write()
-
+config['network'].comments['server_on'] = ['Enable network server']
+config['network'].comments['server_address'] = ['Server hostname or IP (server side)']
+config['network'].comments['server_port'] = ['Server port (server side)']
+config['network'].comments['client_on'] = ['Enable network client']
+config['network'].comments['client_address'] = ['Server hostname or IP']
+config['network'].comments['client_port'] = ['Server port']
 
 # Log exceptions to file
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
@@ -929,7 +936,6 @@ class DetailWindow(wx.Dialog):
         
 
 class SettingsWindow(wx.Dialog):
-#class SettingsWindow(wx.MDIParentFrame):
     def __init__(self, parent, id):
         wx.Dialog.__init__(self, parent, id, title='Inställningar')
         # Define a notebook
@@ -1001,6 +1007,13 @@ class SettingsWindow(wx.Dialog):
         # Port B config
         portb_panel = wx.Panel(serial_panel, -1)
         wx.StaticBox(portb_panel, -1, ' Läsning från sekundär serieport ', pos=(10,-1), size=(450,190))
+        self.portb_serialon = wx.CheckBox(portb_panel, -1, 'Aktivera läsning från sekundär serieport', pos=(20,28))
+        wx.StaticText(portb_panel, -1, 'Port: ', pos=(20,60))
+        self.portb_port = wx.ComboBox(portb_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2'))
+        wx.StaticText(portb_panel, -1, 'Hastighet: ', pos=(20,95))
+        self.portb_speed = wx.ComboBox(portb_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
+        self.portb_xonxoff = wx.CheckBox(portb_panel, -1, 'Mjukvarukontroll:', pos=(20,130), style=wx.ALIGN_RIGHT)
+        self.portb_rtscts = wx.CheckBox(portb_panel, -1, 'RTS/CTS-kontroll:', pos=(20,160), style=wx.ALIGN_RIGHT)
         # Add panels to main sizer
         serial_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         serial_panel_sizer.Add(porta_panel, 0)
@@ -1010,10 +1023,20 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for network config
         # Network receive config
         netrec_panel = wx.Panel(network_panel, -1)
-        wx.StaticBox(netrec_panel, -1, ' Läsning från nätverksserver ', pos=(10,5), size=(450,150))
-        # Network stream config
+        wx.StaticBox(netrec_panel, -1, ' Läsning från nätverksserver ', pos=(10,5), size=(450,135))
+        self.netrec_clienton = wx.CheckBox(netrec_panel, -1, 'Aktivera läsning från en nätverksserver', pos=(20,28))
+        wx.StaticText(netrec_panel, -1, 'Sändande serverns adress (IP):', pos=(20,65))
+        self.netrec_clientaddress = wx.TextCtrl(netrec_panel, -1, pos=(230,58), size=(175,-1))
+        wx.StaticText(netrec_panel, -1, 'Sändande serverns port:', pos=(20,100))
+        self.netrec_clientport = wx.SpinCtrl(netrec_panel, -1, pos=(230,93), min=0, max=65535)
+        # Network send config
         netsend_panel = wx.Panel(network_panel, -1)
-        wx.StaticBox(netsend_panel, -1, ' Agera som nätverksserver ', pos=(10,-1), size=(450,150))
+        wx.StaticBox(netsend_panel, -1, ' Agera som nätverksserver ', pos=(10,-1), size=(450,140))
+        self.netsend_serveron = wx.CheckBox(netsend_panel, -1, 'Aktivera nätverksserver som vidarebefodrar serieportsdata', pos=(20,28))
+        wx.StaticText(netsend_panel, -1, 'Den här serverns adress (IP):', pos=(20,65))
+        self.netsend_serveraddress = wx.TextCtrl(netsend_panel, -1, pos=(220,58), size=(175,-1))
+        wx.StaticText(netsend_panel, -1, 'Den här serverns port:', pos=(20,100))
+        self.netsend_serverport = wx.SpinCtrl(netsend_panel, -1, pos=(220,93), min=0, max=65535)
         # Add panels to main sizer
         network_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         network_panel_sizer.Add(netrec_panel, 0)
@@ -1070,24 +1093,12 @@ class SettingsWindow(wx.Dialog):
         alertlistview_panel_sizer.Add(alertlistcolumn_panel, 0)
         alertlistview_panel.SetSizer(alertlistview_panel_sizer)
 
-        # Nätverkskonfiguration
-        #self.activate_networkreading = wx.CheckBox(self, -1, 'Aktivera läsning via nätverk', (12, 180))
-        #wx.StaticText(self,-1,'Serverns IP-adress: ',pos=(12,210),size=(150,16))
-        #wx.StaticText(self,-1,'Serverns port: ',pos=(12,235),size=(150,16))
-        #self.activate_networkstreaming = wx.CheckBox(self, -1, 'Aktivera strömning till nätverksklienter', (12, 285))
-        #wx.StaticText(self,-1,'Port: ',pos=(12,315),size=(150,16))
-        # Loggningsinställningar
-        #self.activate_logging = wx.CheckBox(self, -1, 'Aktivera loggning till databas', (322, 25))
-        #wx.StaticText(self,-1,'Filnamn: ',pos=(322,55),size=(100,16))
-        #wx.StaticText(self,-1,'Logga var: ',pos=(322,80),size=(100,16))
-        # Listinställningar
-        #wx.StaticText(self,-1,'Utåldringstid: ',pos=(322,225),size=(100,16))
-        #wx.StaticText(self,-1,'Tröskeltid för borttagning: ',pos=(322,250),size=(120,32))
-        # Knappar
+        # Dialog buttons
         but1 = wx.Button(self,1,'&Spara')
         but2 = wx.Button(self,2,'&Verkställ')
         but3 = wx.Button(self,3,'&Avbryt')
 
+        # Sizer and notebook setup
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer2 = wx.BoxSizer(wx.HORIZONTAL)
         notebook.AddPage(common_panel, "Allmänt")
@@ -1106,7 +1117,7 @@ class SettingsWindow(wx.Dialog):
         sizer2.Add(but3, 0)
         self.SetSizerAndFit(sizer)
 
-        # Händelser
+        # Events
         self.Bind(wx.EVT_BUTTON, self.OnSave, id=1)
         self.Bind(wx.EVT_BUTTON, self.OnApply, id=2)
         self.Bind(wx.EVT_BUTTON, self.OnAbort, id=3)
@@ -1120,6 +1131,9 @@ class SettingsWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=63)
         self.Bind(wx.EVT_CLOSE, self.OnAbort)
 
+        # Get values and update controls
+        self.GetConfig()
+
     def GetConfig(self):
         # Get values from ConfigObj and set corresponding values in the controls
         # Settings for serial port A
@@ -1128,6 +1142,12 @@ class SettingsWindow(wx.Dialog):
         self.porta_speed.SetValue(config['serial_a']['baudrate'])
         self.porta_xonxoff.SetValue(config['serial_a'].as_bool('xonxoff'))
         self.porta_rtscts.SetValue(config['serial_a'].as_bool('rtscts'))
+        # Settings for serial port B
+        self.portb_serialon.SetValue(config['serial_b'].as_bool('serial_on'))
+        self.portb_port.SetValue(config['serial_b']['port'])
+        self.portb_speed.SetValue(config['serial_b']['baudrate'])
+        self.portb_xonxoff.SetValue(config['serial_b'].as_bool('xonxoff'))
+        self.portb_rtscts.SetValue(config['serial_b'].as_bool('rtscts'))
         # Common list settings
         self.commonlist_greytime.SetValue(config['common'].as_int('listmakegreytime'))
         self.commonlist_deletetime.SetValue(config['common'].as_int('deleteitemtime'))
@@ -1156,6 +1176,13 @@ class SettingsWindow(wx.Dialog):
         self.alertlistcolumns_as_list = config['common']['alertlistcolumns'].replace(' ', '').split(',')
         self.UpdateListColumns()
         self.UpdateAlertListColumns()
+        # Network settings
+        self.netrec_clienton.SetValue(config['network'].as_bool('client_on'))
+        self.netrec_clientaddress.SetValue(config['network']['client_address'])
+        self.netrec_clientport.SetValue(config['network'].as_int('client_port'))
+        self.netsend_serveron.SetValue(config['network'].as_bool('server_on'))
+        self.netsend_serveraddress.SetValue(config['network']['server_address'])
+        self.netsend_serverport.SetValue(config['network'].as_int('server_port'))
 
     def UpdateListColumns(self):
         # Take all possible columns from columnsetup
@@ -1234,11 +1261,12 @@ class SettingsWindow(wx.Dialog):
             self.filelog_logfile.SetValue(open_dlg.GetPath())
 
     def OnSave(self, event):
-        self.GetConfig()
-        #self.Destroy()
+        dlg = wx.MessageDialog(self, 'Den här funktionen är inte implementerad ännu', 'FIXME', wx.OK | wx.ICON_INFORMATION)
+        dlg.ShowModal()
+        dlg.Destroy()
 
     def OnApply(self, event):
-        self.Destroy()
+        self.OnSave(0)
 
     def OnAbort(self, event):
         self.Destroy()
@@ -1703,16 +1731,13 @@ class GUI(wx.App):
 class SerialThread:
     queue = Queue.Queue()
 
-    def reader(self):
+    def reader(self, port, baudrate, rtscts, xonxoff, repr_mode):
         """loop forever and copy serial->console"""
         # Definiera serieportsuppkoppling
-        port = config['serial_a']['port']
-        baudrate = config['serial_a'].as_int('baudrate')
-        rtscts = config['serial_a'].as_int('rtscts')
-        xonxoff = config['serial_a'].as_int('xonxoff')
         s = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff)
         maint = MainThread()
         serialt = SerialThread()
+        networkservert = NetworkServerThread()
         queueitem = ''
         temp = ''
         while True:
@@ -1748,6 +1773,9 @@ class SerialThread:
             try:
                 parser = dict(decode.telegramparser(indata))
                 if len(parser) > 0:
+                    # Put in NetworkServer's queue
+                    if parser.has_key('mmsi'): networkservert.put(parser)
+                    # Set source in parser as serial
                     parser['source'] = 'serial'
                     maint.put(parser)
             except: continue
@@ -1755,9 +1783,109 @@ class SerialThread:
     def put(self, item):
         self.queue.put(item)
 
+    def start(self, openport):
+        if openport == 'serial_a':
+            port = config['serial_a']['port']
+            baudrate = config['serial_a'].as_int('baudrate')
+            rtscts = config['serial_a'].as_int('rtscts')
+            xonxoff = config['serial_a'].as_int('xonxoff')
+            repr_mode = config['serial_a'].as_int('repr_mode')
+        elif openport == 'serial_b':
+            port = config['serial_b']['port']
+            baudrate = config['serial_b'].as_int('baudrate')
+            rtscts = config['serial_b'].as_int('rtscts')
+            xonxoff = config['serial_b'].as_int('xonxoff')
+            repr_mode = config['serial_b'].as_int('repr_mode')
+        try:
+            r = threading.Thread(target=self.reader, args=(port, baudrate, rtscts, xonxoff, repr_mode))
+            r.setDaemon(1)
+            r.start()
+            return True
+        except:
+            return False
+
+    def stop(self):
+        for i in range(0,10):
+            self.put('stop')
+
+
+class NetworkServerThread:
+    queue = Queue.Queue()
+
+    class NetworkClientHandler(SocketServer.BaseRequestHandler):
+        def handle(self):
+            message = ''
+            while True:
+                try:
+                    message = NetworkServerThread.queue.get()
+                except: pass
+                if message == 'stop': break
+                # message has a length greater than 1, pickle message and send it to socket
+                if len(message) > 1:
+                    pickled_message = pickle.dumps(message.copy())
+                    self.request.send(pickled_message)
+            self.request.close()
+
+
+    def server(self):
+        # Spawn network servers as clients request connection
+        server_address = config['network']['server_address']
+        server_port = config['network'].as_int('server_port')
+        server = SocketServer.ThreadingTCPServer((server_address, server_port), self.NetworkClientHandler)
+        server.serve_forever()
+
+    def put(self, item):
+        self.queue.put(item)
+
     def start(self):
         try:
-            r = threading.Thread(target=self.reader)
+            r = threading.Thread(target=self.server, name='NetworkServer')
+            r.setDaemon(1)
+            r.start()
+            return True
+        except:
+            return False
+
+    def stop(self):
+        for i in range(0,100):
+            self.put('stop')
+
+
+class NetworkClientThread:
+    queue = Queue.Queue()
+
+    def client(self):
+        queueitem = ''
+        data = ''
+        message = {}
+        maint = MainThread()
+        client_address = config['network']['client_address']
+        client_port = config['network'].as_int('client_port')
+        socketobj = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        socketobj.connect((client_address, client_port))
+        while True:
+            try:
+                queueitem = self.queue.get_nowait()
+            except: pass
+            if queueitem == 'stop':
+                socketobj.close()
+                break
+            try:
+                # Try to read data from socket and unpickle it
+                data = socketobj.recv(1024)
+                message = pickle.loads(data)
+            except: continue
+            # Set source in parser as network
+            message['source'] = 'network'
+            # Put message in MainThread's queue
+            maint.put(message)
+
+    def put(self, item):
+        self.queue.put(item)
+
+    def start(self):
+        try:
+            r = threading.Thread(target=self.client)
             r.setDaemon(1)
             r.start()
             return True
@@ -1923,25 +2051,36 @@ class MainThread:
         self.put('stop')
 
 
-#try:
-#    point = sys.argv.index('-L')
-#    filename = sys.argv[point+1]
-#    LoadFileFromThread
-#except:
-#    pass
-
-# Starta trådar
+# Start threads
 if config['serial_a'].as_bool('serial_on'):
-    SerialThread().start()
+    SerialThread().start('serial_a')
+if config['serial_b'].as_bool('serial_on'):
+    SerialThread().start('serial_b')
+if config['network'].as_bool('server_on'):
+    NetworkServerThread().start()
+if config['network'].as_bool('client_on'):
+    NetworkClientThread().start()
 MainThread().start()
 
-# Starta gui
+# Start the GUI
 app = GUI(0)
 app.MainLoop()
 
-# Avsluta trådarna
+# Stop threads
 SerialThread().stop()
+NetworkServerThread().stop()
+NetworkClientThread().stop()
 MainThread().stop()
-# När bara en tråd återstår avslutas programmet
-while threading.activeCount() > 1:
-    pass
+
+# Exit program when only one thread remains
+while True:
+    threads = threading.enumerate()
+    nrofthreads = len(threads)
+    try:
+        networkserver_exist = threads.index('Thread(NetworkServer, started daemon)>')
+    except ValueError:
+        nrofthreads -=1
+    if nrofthreads > 1:
+        pass
+    else:
+        break
