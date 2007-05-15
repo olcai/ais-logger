@@ -1,0 +1,275 @@
+201,AL,Albania (Republic of)
+202,AD,Andorra (Principality of)
+203,AT,Austria
+204,,Azores
+205,BE,Belgium
+206,BY,Belarus (Republic of)
+207,BG,Bulgaria (Republic of)
+208,VA,Vatican City State
+209,CY,Cyprus (Republic of)
+210,CY,Cyprus (Republic of)
+211,DE,Germany (Federal Republic of)
+212,CY,Cyprus (Republic of)
+213,GE,Georgia
+214,MD,Moldova (Republic of)
+215,MT,Malta
+216,AM,Armenia (Republic of)
+218,DE,Germany (Federal Republic of)
+219,DK,Denmark
+220,DK,Denmark
+224,ES,Spain
+225,ES,Spain
+226,FR,France
+227,FR,France
+228,FR,France
+230,FI,Finland
+231,FO,Faroe Islands
+232,GB,United Kingdom
+233,GB,United Kingdom
+234,GB,United Kingdom
+235,GB,United Kingdom
+236,GI,Gibraltar
+237,GR,Greece
+238,HR,Croatia (Republic of)
+239,GR,Greece
+240,GR,Greece
+242,MA,Morocco (Kingdom of)
+243,HU,Hungary (Republic of)
+244,NL,Netherlands (Kingdom of the)
+245,NL,Netherlands (Kingdom of the)
+246,NL,Netherlands (Kingdom of the)
+247,IT,Italy
+248,MT,Malta
+249,MT,Malta
+250,IE,Ireland
+251,IS,Iceland
+252,LI,Liechtenstein (Principality of)
+253,LU,Luxembourg
+254,MO,Monaco (Principality of)
+255,,Madeira
+256,MT,Malta
+257,NO,Norway
+258,NO,Norway
+259,NO,Norway
+261,PL,Poland (Republic of)
+263,PT,Portugal
+264,RO,Romania
+265,SE,Sweden
+266,SE,Sweden
+267,SK,Slovak Republic
+268,SM,San Marino (Republic of)
+269,CH,Switzerland (Confederation of)
+270,CZ,Czech Republic
+271,TR,Turkey
+272,UA,Ukraine
+273,RU,Russian Federation
+274,MK,Macedonia
+275,LV,Latvia (Republic of)
+276,EE,Estonia (Republic of)
+277,LT,Lithuania (Republic of)
+278,SI,Slovenia (Republic of)
+279,CS,Ex. Serbia and Montenegro
+301,AI,Anguilla
+303,,Alaska (State of)
+304,AG,Antigua and Barbuda
+306,AN,Netherlands Antilles
+307,AW,Aruba
+308,BS,Bahamas (Commonwealth of the)
+309,BS,Bahamas (Commonwealth of the)
+310,BM,Bermuda
+311,BS,Bahamas (Commonwealth of the)
+312,BZ,Belize
+314,BB,Barbados
+316,CA,Canada
+319,KY,Cayman Islands
+321,CR,Costa Rica
+323,CU,Cuba
+325,DM,Dominica (Commonwealth of)
+327,DO,Dominican Republic
+329,GP,Guadeloupe (French Department of)
+330,GD,Grenada
+331,GL,Greenland
+332,GT,Guatemala (Republic of)
+334,HN,Honduras (Republic of)
+336,HT,Haiti (Republic of)
+338,US,United States of America
+339,JM,Jamaica
+341,KN,Saint Kitts and Nevis (Federation of)
+343,LC,Saint Lucia
+345,MX,Mexico
+347,MQ,Martinique (French Department of)
+348,MS,Montserrat
+350,NI,Nicaragua
+351,PA,Panama (Republic of)
+352,PA,Panama (Republic of)
+353,PA,Panama (Republic of)
+354,PA,Panama (Republic of)
+355,PA,Panama (Republic of)
+356,PA,Panama (Republic of)
+357,PA,Panama (Republic of)
+358,PR,Puerto Rico
+359,SV,El Salvador (Republic of)
+361,PM,Saint Pierre and Miquelon (Territorial Collectivity of)
+362,TT,Trinidad and Tobago
+364,TC,Turks and Caicos Islands
+366,US,United States of America
+367,US,United States of America
+368,US,United States of America
+369,US,United States of America
+371,PA,Panama (Republic of)
+372,PA,Panama (Republic of)
+375,VC,Saint Vincent and the Grenadines
+376,VC,Saint Vincent and the Grenadines
+377,VC,Saint Vincent and the Grenadines
+378,VG,British Virgin Islands
+379,VI,United States Virgin Islands
+401,AF,Afghanistan
+403,SA,Saudi Arabia (Kingdom of)
+405,BD,Bangladesh (People's Republic of)
+408,BH,Bahrain (Kingdom of)
+410,BT,Bhutan (Kingdom of)
+412,CN,China (People's Republic of)
+413,CN,China (People's Republic of)
+416,TW,Taiwan (Province of China)
+417,LK,Sri Lanka (Democratic Socialist Republic of)
+419,IN,India (Republic of)
+422,IR,Iran (Islamic Republic of)
+423,AZ,Azerbaijani Republic
+425,IQ,Iraq (Republic of)
+428,IL,Israel (State of)
+431,JP,Japan
+432,JP,Japan
+434,TM,Turkmenistan
+436,KZ,Kazakhstan (Republic of)
+437,UZ,Uzbekistan (Republic of)
+438,JO,Jordan (Hashemite Kingdom of)
+440,KR,Korea (Republic of)
+441,KR,Korea (Republic of)
+443,PS,Palestinian Authority
+445,KP,Democratic People's Republic of Korea
+447,KW,Kuwait (State of)
+450,LB,Lebanon
+451,KG,Kyrgyz Republic
+453,MO,Macao (Special Administrative Region of China)
+455,MV,Maldives (Republic of)
+457,MN,Mongolia
+459,NP,Nepal
+461,OM,Oman (Sultanate of)
+463,PK,Pakistan (Islamic Republic of)
+466,QA,Qatar (State of)
+468,SY,Syrian Arab Republic
+470,AE,United Arab Emirates
+473,YE,Yemen (Republic of)
+475,YE,Yemen (Republic of)
+477,HK,Hong Kong (Special Administrative Region of China)
+501,,Adelie Land (French Southern Territories)
+503,AU,Australia
+506,MM,Myanmar (Union of)
+508,BN,Brunei Darussalam
+510,FM,Micronesia (Federated States of)
+511,PW,Palau (Republic of)
+512,NZ,New Zealand
+514,KH,Cambodia (Kingdom of)
+515,KH,Cambodia (Kingdom of)
+516,CX,Christmas Island (Indian Ocean)
+518,CK,Cook Islands
+520,FJ,Fiji (Republic of)
+523,CC,Cocos (Keeling) Islands
+525,ID,Indonesia (Republic of)
+529,KI,Kiribati (Republic of)
+531,LA,Lao People's Democratic Republic
+533,MY,Malaysia
+536,MP,Northern Mariana Islands (Commonwealth of the)
+538,MH,Marshall Islands (Republic of the)
+540,NC,New Caledonia
+542,NU,Niue
+544,NR,Nauru (Republic of)
+546,PF,French Polynesia
+548,PH,Philippines (Republic of the)
+553,PG,Papua New Guinea
+555,PN,Pitcairn Island
+557,SB,Solomon Islands
+559,AS,American Samoa
+561,WS,Samoa (Independent State of)
+563,SG,Singapore (Republic of)
+564,SG,Singapore (Republic of)
+567,TH,Thailand
+570,TO,Tonga (Kingdom of)
+572,TV,Tuvalu
+574,VN,Vietnam (Socialist Republic of)
+576,VU,Vanuatu (Republic of)
+578,WF,Wallis and Futuna Islands
+601,ZA,South Africa (Republic of)
+603,AO,Angola (Republic of)
+605,DZ,Algeria (People's Democratic Republic of)
+607,Saint Paul and Amsterdam Islands
+608,,Ascension Island
+609,BI,Burundi (Republic of)
+610,BJ,Benin (Republic of)
+611,BW,Botswana (Republic of)
+612,CF,Central African Republic
+613,CM,Cameroon (Republic of)
+615,CG,Congo (Republic of the)
+616,KM,Comoros (Union of the)
+617,CV,Cape Verde (Republic of)
+618,,Crozet Archipelago
+619,CI,Côte d'Ivoire (Republic of)
+621,DJ,Djibouti (Republic of)
+622,EG,Egypt (Arab Republic of)
+624,ET,Ethiopia (Federal Democratic Republic of)
+625,ER,Eritrea
+626,GA,Gabonese Republic
+627,GH,Ghana
+629,GM,Gambia (Republic of the)
+630,GW,Guinea-Bissau (Republic of)
+631,GQ,Equatorial Guinea (Republic of)
+632,GN,Guinea (Republic of)
+633,BF,Burkina Faso
+634,KE,Kenya (Republic of)
+635,,Kerguelen Islands
+636,LR,Liberia (Republic of)
+637,LR,Liberia (Republic of)
+642,LY,Socialist People's Libyan Arab Jamahiriya
+644,LS,Lesotho (Kingdom of)
+645,MU,Mauritius (Republic of)
+647,MG,Madagascar (Republic of)
+649,ML,Mali (Republic of)
+650,MZ,Mozambique (Republic of)
+654,MR,Mauritania (Islamic Republic of)
+655,MW,Malawi
+656,NE,Niger (Republic of the)
+657,NG,Nigeria (Federal Republic of)
+659,NA,Namibia (Republic of)
+660,RE,Réunion (French Department of)
+661,RW,Rwandese Republic
+662,SD,Sudan (Republic of the)
+663,SN,Senegal (Republic of)
+664,SC,Seychelles (Republic of)
+665,SH,Saint Helena
+666,SO,Somali Democratic Republic
+667,SL,Sierra Leone
+668,ST,São Tomé and Príncipe (Democratic Republic of)
+669,SZ,Swaziland (Kingdom of)
+670,TD,Chad (Republic of)
+671,TG,Togolese Republic
+672,TN,Tunisia
+674,TZ,Tanzania (United Republic of)
+677,TZ,Tanzania (United Republic of)
+675,UG,Uganda (Republic of)
+676,CD,Democratic Republic of the Congo
+678,ZM,Zambia (Republic of)
+679,ZW,Zimbabwe (Republic of)
+701,AR,Argentine Republic
+710,BR,Brazil (Federative Republic of)
+720,BO,Bolivia (Republic of)
+725,CL,Chile
+730,CO,Colombia (Republic of)
+735,EC,Ecuador
+740,FK,Falkland Islands (Malvinas)
+745,GF,Guiana (French Department of)
+750,GY,Guyana
+755,PY,Paraguay (Republic of)
+760,PE,Peru
+765,SR,Suriname (Republic of)
+770,UY,Uruguay (Eastern Republic of)
+775,VE,Venezuela (Bolivarian Republic of)
