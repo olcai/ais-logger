@@ -130,6 +130,7 @@ alertstring = ''
 alertstringsound = ''
 rawdata = collections.deque()
 networkdata = collections.deque()
+remarkdict = {}
 
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
