@@ -33,6 +33,7 @@ import md5
 
 from pysqlite2 import dbapi2 as sqlite
 import wx
+import wx.lib.mixins.listctrl as listmix
 from configobj import ConfigObj
 
 import decode
@@ -67,7 +68,7 @@ if len(sys.argv) > 1:
 
 ### Load or create configuration
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
-columnsetup = {'mmsi': ['MMSI', 80], 'mid': ['Land', 40], 'imo': ['IMO', 80], 'name': ['Namn', 150], 'type': ['Nrtyp', 45], 'typename': ['Typ', 50], 'callsign': ['CS', 60], 'latitude': ['Latitud', 85], 'longitude': ['Longitud', 90], 'georef': ['GEOREF', 85], 'creationtime': ['Skapad', 70], 'time': ['Senast', 70], 'sog': ['Fart', 45], 'cog': ['Kurs', 45], 'heading': ['Heading', 62], 'destination': ['Destination', 150], 'eta': ['ETA', 80], 'length': ['Längd', 45], 'width': ['Bredd', 45], 'draught': ['Djupg.', 90], 'rateofturn': ['Girhast', 60], 'bit': ['BIT', 35], 'tamper': ['Tamper', 60], 'navstatus': ['NavStatus', 150], 'posacc': ['PosAcc', 55], 'bearing': ['Bäring', 50], 'distance': ['Avstånd', 60]}
+columnsetup = {'mmsi': ['MMSI', 80], 'mid': ['Land', 40], 'imo': ['IMO', 80], 'name': ['Namn', 150], 'type': ['Nrtyp', 45], 'typename': ['Typ', 50], 'callsign': ['CS', 60], 'latitude': ['Latitud', 85], 'longitude': ['Longitud', 90], 'georef': ['GEOREF', 85], 'creationtime': ['Skapad', 70], 'time': ['Senast', 70], 'sog': ['Fart', 45], 'cog': ['Kurs', 45], 'heading': ['Heading', 62], 'destination': ['Destination', 150], 'eta': ['ETA', 80], 'length': ['Längd', 45], 'width': ['Bredd', 45], 'draught': ['Djupg.', 90], 'rateofturn': ['Girhast', 60], 'bit': ['BIT', 35], 'tamper': ['Tamper', 60], 'navstatus': ['NavStatus', 150], 'posacc': ['PosAcc', 55], 'bearing': ['Bäring', 50], 'distance': ['Avstånd', 60], 'remark': ['Anmärkning', 150]}
 # Set default keys and values
 defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 'deleteitemtime': 3600, 'alertsound_on': False, 'alertsoundfile': '', 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': ''},
@@ -128,6 +129,7 @@ alertlist = []
 alertstring = ''
 alertstringsound = ''
 rawdata = collections.deque()
+networkdata = collections.deque()
 
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
@@ -460,8 +462,8 @@ class MainWindow(wx.Frame):
         self.splitwindows(self.spalert)
 
     def OnRefresh(self, event):
-        self.splist.OnClearList(event)
-        self.spalert.OnClearList(event)
+        self.splist.OnRefresh(event)
+        self.spalert.OnRefresh(event)
 
     def OnAbout(self, event):
         aboutstring = 'AIS Logger\n(C) Erik I.J. Olsson 2006-2007\n\naislog.py\ndecode.py\nutil.py'
@@ -482,123 +484,74 @@ class ListWindow(wx.Panel):
     def __init__(self, parent, id):
         wx.Panel.__init__(self, parent, id)
 
-        # Sätt standardvärde
-        self.colsort = ['mmsi', 'ASC']
+        # Read config and extract columns 
+        # Create a list from the comma-separated string in config (removing all whitespace)
+        alertlistcolumns_as_list = config['common']['listcolumns'].replace(' ', '').split(',')
+        # A really complicated list comprehension... ;-)
+        # For each item in the alertlistcolumns_as_list, extract the corresponding items from columnsetup and create a list
+        used_columns = [ [x, columnsetup[x][0], columnsetup[x][1]] for x in alertlistcolumns_as_list ]
 
-        # Skapa lista
-        self.columnnumber = {}
-        self.makelist()
+        # Create the listctrl
+        self.list = VirtualList(self, columns=used_columns)
 
-        # Skapa liten panel på toppen
+        # Create a small panel on top
         panel2 = wx.Panel(self, -1, size=(1,1))
         
-        # Sätt layout
+        # Set the layout
         box = wx.BoxSizer(wx.VERTICAL)
         box.Add(panel2, 0, wx.EXPAND)
-        box.Add(self.lc, 1, wx.EXPAND)
-        box.InsertSpacer(2, (0,5)) # Lägger lite luft mellan listfönstret och handtaget
+        box.Add(self.list, 1, wx.EXPAND)
+        box.InsertSpacer(2, (0,5)) # Add some space between the list and the handle
         self.SetSizer(box)
         self.Layout()
 
-        # Sorteringsklick
-        self.Bind(wx.EVT_LIST_COL_CLICK, self.OnColClick, self.lc)
-     
-        # Timer-funktion, uppdaterar listan var 10:e sekund
-        self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnActivate, self.lc)
+        # Define and start the timer that update the list at a defined interval
         self.timer = wx.Timer(self, -1)
         self.timer.Start(config['common'].as_int('refreshlisttimer'))
-        wx.EVT_TIMER(self, -1, self.OnTimer)
+        wx.EVT_TIMER(self, -1, self.OnRefresh)
     
-    def makelist(self):
-        # Create a list from the comma-separated string in config (removing all whitespace)
-        listcolumns_as_list = config['common']['listcolumns'].replace(' ', '').split(',')
-        # A really complicated list comprehension... ;-)
-        # For each item in the listcolumns_as_list, extract the corresponding items from columnsetup and create a list
-        used_columns = [ [x, columnsetup[x][0], columnsetup[x][1]] for x in listcolumns_as_list ]
-        # Create the ListCtrl
-        self.lc = wx.ListCtrl(self, -1, style=wx.LC_REPORT)
-        # Iterate over used_columns and create the specified columns
-        for i, k in enumerate(used_columns):
-            self.lc.InsertColumn(i, k[1])
-            self.lc.SetColumnWidth(i, k[2])
-            self.columnnumber[k[0]] = i  # Map k[0] to the given columnnumber and store in a dict
-            self.columnnumber[i] = k[0]  # Map columnnumber i to the key k[0]
-
-    def OnTimer(self, event):
-        self.OnRefresh(event)
-
     def OnRefresh(self, event):
-        ListFunctions().updatelist(self, self.colsort)
-
-    def OnClearList(self, event):
-        self.lc.DeleteAllItems()
-        self.OnRefresh(event)
-    
-    def OnActivate(self, event):
-        itemmmsi = self.lc.GetItemText(event.m_itemIndex)
-        dlg = DetailWindow(None, -1, itemmmsi)
-        dlg.Show()
-
-    def OnColClick(self, event):
-        if self.colsort[0] == self.columnnumber[event.GetColumn()]:
-            if self.colsort[1] == 'ASC': self.colsort[1] = 'DESC'
-            elif self.colsort[1] == 'DESC': self.colsort[1] = 'ASC'
-        else: self.colsort[0] = self.columnnumber[event.GetColumn()]
-        self.lc.DeleteAllItems()
-        ListFunctions().updatelist(self, self.colsort)
+        # Update the listctrl 
+        self.list.OnUpdate()
 
 
 class AlertWindow(wx.Panel):
     def __init__(self, parent, id):
         wx.Panel.__init__(self, parent, id)
 
-        self.colsort = ['mmsi', 'ASC']
-        
-        # Skapa lista
-        self.columnnumber = {}
-        self.makelist()
-
-        # Skapa liten panel på toppen
-        panel2 = wx.Panel(self, -1, size=(4,4))
-        
-        # Sätt layout
-        box = wx.BoxSizer(wx.VERTICAL)
-        box.Add(panel2, 0, wx.EXPAND)
-        box.Add(self.lc, 1, wx.EXPAND)
-        self.SetSizer(box)
-        self.Layout()
-
-        # Sorteringsklick
-        self.Bind(wx.EVT_LIST_COL_CLICK, self.OnColClick, self.lc)
-     
-        # Timer-funktion, uppdaterar listan var 10:e sekund
-        self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnActivate, self.lc)
-        self.timer = wx.Timer(self, -1)
-        self.timer.Start(config['common'].as_int('refreshlisttimer'))
-        wx.EVT_TIMER(self, -1, self.OnTimer)
-    
-    def makelist(self):
+        # Read config and extract columns 
         # Create a list from the comma-separated string in config (removing all whitespace)
         alertlistcolumns_as_list = config['common']['alertlistcolumns'].replace(' ', '').split(',')
         # A really complicated list comprehension... ;-)
         # For each item in the alertlistcolumns_as_list, extract the corresponding items from columnsetup and create a list
         used_columns = [ [x, columnsetup[x][0], columnsetup[x][1]] for x in alertlistcolumns_as_list ]
-        # Create the ListCtrl
-        self.lc = wx.ListCtrl(self, -1, style=wx.LC_REPORT)
-        # Iterate over used_columns and create the specified columns
-        for i, k in enumerate(used_columns):
-            self.lc.InsertColumn(i, k[1])
-            self.lc.SetColumnWidth(i, k[2])
-            self.columnnumber[k[0]] = i  # Map k[0] to the given columnnumber and store in a dict
-            self.columnnumber[i] = k[0]  # Map columnnumber i to the key k[0]
 
-    def OnTimer(self, event):
-        self.OnRefresh(event)
+        # Create the listctrl
+        self.list = VirtualList(self, columns=used_columns)
 
+        # Create a small panel on top
+        panel2 = wx.Panel(self, -1, size=(4,4))
+        
+        # Set the layout
+        box = wx.BoxSizer(wx.VERTICAL)
+        box.Add(panel2, 0, wx.EXPAND)
+        box.Add(self.list, 1, wx.EXPAND)
+        self.SetSizer(box)
+        self.Layout()
+
+        # Define and start the timer that update the list at a defined interval
+        self.timer = wx.Timer(self, -1)
+        self.timer.Start(config['common'].as_int('refreshlisttimer'))
+        wx.EVT_TIMER(self, -1, self.OnRefresh)
+    
     def OnRefresh(self, event):
+        # Define a default query (gives empty result)
         query = "mmsi='0'"
+        # Check if alertstring has content, if so set query to it
         if len(alertstring) > 3: query = alertstring
-        ListFunctions().updatelist(self, self.colsort, query)
+        # Update the listctrl with the query
+        self.list.OnUpdate(query)
+        # Sound an alert for selected objects
         self.soundalert()
     
     def soundalert(self):
@@ -615,157 +568,8 @@ class AlertWindow(wx.Panel):
             # Update the object and set soundalerted = 1
             execSQL(DbCmd(SqlCmd, [("UPDATE data SET soundalerted='1' WHERE %s AND (soundalerted IS Null)" % alertstringsound, ())]))
 
-    def OnClearList(self, event):
-        self.lc.DeleteAllItems()
-        self.OnRefresh(event)
-    
-    def OnActivate(self, event):
-        itemmmsi = self.lc.GetItemText(event.m_itemIndex)
-        dlg = DetailWindow(None, -1, itemmmsi)
-        dlg.Show()
 
-    def OnColClick(self, event):
-        if self.colsort[0] == self.columnnumber[event.GetColumn()]:
-            if self.colsort[1] == 'ASC': self.colsort[1] = 'DESC'
-            elif self.colsort[1] == 'DESC': self.colsort[1] = 'ASC'
-        else: self.colsort[0] = self.columnnumber[event.GetColumn()]
-        self.lc.DeleteAllItems()
-        self.OnRefresh('')
-
-
-class ListFunctions:
-    def updatelist(self, parent, colsort=['mmsi', 'ASC'], query="mmsi LIKE '%'"):
-        # Sökfråga
-        query_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM data WHERE %s ORDER BY %s" % (query, colsort[0]+' '+colsort[1]), ())]))
-        iddb_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE (SELECT mmsi FROM data)",())]))
-        # Create an IDDB dictionary and map the result from iddb_result to it
-        iddb_dict = {}
-        for v in iddb_result:
-            # For each list v in iddb_result, map the mmsi as key for iddb_dict and add imo, name and callsign
-            iddb_dict[v[0]] = (v[1], v[2], v[3])
-        # Räkna antalet rader i sökningen
-        nritems = len(query_result)
-        # Fråga för att larmmarkera raden
-        alertitems = []
-        if len(alertstring) > 3:
-            alertitems = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE %s" % alertstring, ())]))
-        # Kontrollera om listan måste ritas om helt
-        if parent.lc.GetItemCount() > nritems:
-            parent.lc.DeleteAllItems()
-        iterat = 0
-        for sql_row in query_result:
-            # Byt ut NoneType mot en tom sträng
-            row = []
-            for i in sql_row:
-                temp = i
-                if i == None: temp = '' 
-                row.append(temp)
-            # Create a variable containing the mmsi number
-            mmsi_nr = int(row[0])
-            itemno = parent.lc.FindItemData(-1, mmsi_nr) # Leta efter radnummer
-            if itemno == -1: # Om radnummer inte finns, skapa ny rad
-                itemno = iterat
-                if parent.lc.GetItemCount() != nritems:
-                    parent.lc.InsertStringItem(itemno, str(mmsi_nr))
-                    parent.lc.SetItemData(itemno, mmsi_nr)
-            itemno = iterat
-            parent.lc.SetStringItem(itemno, parent.columnnumber['mmsi'],str(mmsi_nr))
-            if parent.columnnumber.has_key('mid'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['mid'], row[1])
-            if parent.columnnumber.has_key('imo'):
-                imo = row[2]
-                if imo == '' and mmsi_nr in iddb_dict:
-                    imo = str(iddb_dict[mmsi_nr][0]) + '*'
-                parent.lc.SetStringItem(itemno, parent.columnnumber['imo'], imo) 
-            if parent.columnnumber.has_key('name'):
-                name = row[3]
-                if name == '' and mmsi_nr in iddb_dict:
-                    name = str(iddb_dict[mmsi_nr][1]) + '*'
-                parent.lc.SetStringItem(itemno, parent.columnnumber['name'], name)
-            if parent.columnnumber.has_key('type'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['type'], row[4])
-            if parent.columnnumber.has_key('typename'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['typename'], row[5])
-            if parent.columnnumber.has_key('callsign'):
-                callsign = row[6]
-                if callsign == '' and mmsi_nr in iddb_dict:
-                    callsign = str(iddb_dict[mmsi_nr][2]) + '*'
-                parent.lc.SetStringItem(itemno, parent.columnnumber['callsign'], callsign)
-            if parent.columnnumber.has_key('latitude'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['latitude'], row[7])
-            if parent.columnnumber.has_key('longitude'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['longitude'], row[8])
-            if parent.columnnumber.has_key('georef'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['georef'], row[9])
-            if parent.columnnumber.has_key('creationtime'):
-                try: creationtime = row[10][11:]
-                except: creationtime = ''
-                parent.lc.SetStringItem(itemno, parent.columnnumber['creationtime'], creationtime)
-            if parent.columnnumber.has_key('time'):
-                try: lasttime = row[11][11:]
-                except: lasttime = ''
-                parent.lc.SetStringItem(itemno, parent.columnnumber['time'], lasttime)
-            if parent.columnnumber.has_key('sog'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['sog'], row[12])
-            if parent.columnnumber.has_key('cog'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['cog'], row[13])
-            if parent.columnnumber.has_key('heading'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['heading'], row[14])
-            if parent.columnnumber.has_key('destination'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['destination'], row[15])
-            if parent.columnnumber.has_key('eta'):
-                if row[16] == '00002460': eta = ''
-                else: eta = row[16]
-                parent.lc.SetStringItem(itemno, parent.columnnumber['eta'], eta)
-            if parent.columnnumber.has_key('length'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['length'], row[17])
-            if parent.columnnumber.has_key('width'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['width'], row[18])
-            if parent.columnnumber.has_key('draught'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['draught'], row[19])
-            if parent.columnnumber.has_key('rateofturn'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['rateofturn'], row[20])
-            if parent.columnnumber.has_key('bit'):
-                if row[21] == '0': bit = 'OK'
-                elif row[21] == '': bit = ''
-                else: bit = 'Fel'
-                parent.lc.SetStringItem(itemno, parent.columnnumber['bit'], bit)
-            if parent.columnnumber.has_key('tamper'):
-                if row[22] == '0': tamper = 'No'
-                elif row[22] == '': tamper = ''
-                else: tamper = 'YES'
-                parent.lc.SetStringItem(itemno, parent.columnnumber['tamper'], tamper)
-            if parent.columnnumber.has_key('navstatus'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['navstatus'], row[23])
-            if parent.columnnumber.has_key('posacc'):
-                if row[24] == '0': posacc = 'Bad'
-                elif row[24] == '': posacc = ''
-                else: posacc = 'DGPS'
-                parent.lc.SetStringItem(itemno, parent.columnnumber['posacc'], posacc)
-            if parent.columnnumber.has_key('distance'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['distance'], row[25])
-            if parent.columnnumber.has_key('bearing'):
-                parent.lc.SetStringItem(itemno, parent.columnnumber['bearing'], row[26])
-            # För att gå runt en bugg i wxwidgets, sätt färger med hjälp av objektet item
-            item = parent.lc.GetItem(itemno)
-            if alertitems.count((row[0],)) > 0: item.SetBackgroundColour('TAN')
-            else: item.SetBackgroundColour('WHITE')
-            try: item.SetTextColour(self.setitemcolour(row[11]))
-            except: pass
-            parent.lc.SetItem(item)
-            iterat += 1
-
-    def setitemcolour(self, lasttime):
-        # Sätt grå bakgrundsfärg om målet har nått utåldringströskeln
-        try:
-            # Skapa ett datetime-objekt av tidssträngen
-            lasttime = datetime.datetime(*time.strptime(lasttime, "%Y-%m-%dT%H:%M:%S")[0:6])
-            if lasttime + datetime.timedelta(0,config['common'].as_int('listmakegreytime')) < datetime.datetime.now():
-                return 'LIGHT GREY'
-            else:
-                return 'BLACK'
-        except: pass
-
+class Distance:
     def distance(self, latitude, longitude):
         # Lat/long i DM-format till lat/long i grader
         def floatlatitude(latitude):
@@ -795,6 +599,198 @@ class ListFunctions:
         except: return
 
 
+class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSorterMixin):
+    def __init__(self, parent, columns):
+        wx.ListCtrl.__init__(self, parent, -1, style=wx.LC_REPORT|wx.LC_VIRTUAL)
+
+        # Define and retreive two arrows, one upwards, the other downwards
+        self.imagelist = wx.ImageList(16, 16)
+        self.sm_up = self.imagelist.Add(getSmallUpArrowBitmap())
+        self.sm_dn = self.imagelist.Add(getSmallDnArrowBitmap())
+        self.SetImageList(self.imagelist, wx.IMAGE_LIST_SMALL)
+
+        # Iterate over the given columns and create the specified ones
+        self.columnlist = []
+        for i, k in enumerate(columns):
+            self.InsertColumn(i, k[1]) # Insert the column
+            self.SetColumnWidth(i, k[2]) # Set the width
+            self.columnlist.append(k[0]) # Append each SQL column name to a list
+
+        # Use the mixins
+        listmix.ListCtrlAutoWidthMixin.__init__(self)
+        listmix.ColumnSorterMixin.__init__(self, len(self.columnlist))
+
+        # Do inital update
+        self.OnUpdate(self)
+        # Do initial sorting on column 0, ascending order (1)
+        self.SortListItems(0, 1)
+
+        # Define events
+        self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnItemActivated)
+
+    def OnItemActivated(self, event):
+        # Get the MMSI number associated with the row activated
+        itemmmsi = self.itemIndexMap[event.m_itemIndex]
+        # Open the detail window
+        dlg = DetailWindow(None, -1, itemmmsi)
+        dlg.Show()
+
+    def OnUpdate(self, query="mmsi LIKE '%'"):
+        # Create a comma separated string from self.columnlist
+        # If the remark column is in list, don't use it in
+        columnlistcopy = self.columnlist[:]
+        if 'remark' in self.columnlist:
+            columnlistcopy.remove('remark')
+        columnlist_string = ','.join([v for v in columnlistcopy])
+        # Run the main SQL-query
+        query_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi,time,%s FROM data WHERE %s" % (columnlist_string, query), ())]))
+        # Run the IDDB query
+        iddb_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE (SELECT mmsi FROM data)",())]))
+        # If alertstring has content, run the alert query and create a list from the result
+        self.alertitems = []
+        if len(alertstring) > 3:
+            alertquery_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE %s" % alertstring, ())]))
+            self.alertitems = [v[0] for v in alertquery_result]
+        # Put the number of objects in a variable
+        nrofobjects = len(query_result)
+        # If the number of objects returned from the SQL-query doesn't match number currently in the listctrl, set new ItemCount.
+        if self.GetItemCount() != nrofobjects:
+            self.SetItemCount(nrofobjects)
+        # Loop over query_result using function LoopQuery and put the result into data
+        data = self.LoopQuery(query_result, iddb_result)
+        # Create another dictionary and a list of keys from data
+        self.itemDataMap = data
+        self.itemIndexMap = data.keys()
+        # Create a dictionary from query_result with mmsi as key and time as value
+        self.itemOldMap = {}
+        for v in query_result:
+            self.itemOldMap[v[0]] = v[1]
+        # Sort the data (including a refresh of the listctrl)
+        self.SortListItems()
+
+    def LoopQuery(self, query_result, iddb_result):
+        # Create an IDDB dictionary and map the result from iddb_result to it
+        iddb_dict = {}
+        for v in iddb_result:
+            # For each list v in iddb_result, map the mmsi as key for iddb_dict and add imo, name and callsign
+            iddb_dict[v[0]] = (v[1], v[2], v[3])
+        # Create a dictionary, data, and populate it with data from the SQL-query. Use MMSI numbers as keys.
+        data = {}
+        for v in query_result:
+            # Create a temporary list, r, to assign new values to 
+            mmsi = v[0]
+            r = list(v[2:])
+            # Check for some special cases and edit r as needed
+            # If imo, name or callsign is None, try to use data from iddb_dict
+            if 'imo' in self.columnlist:
+                pos = self.columnlist.index('imo')
+                if r[pos] == None and mmsi in iddb_dict:
+                    r[pos] = unicode(iddb_dict[mmsi][0]) + "'"
+            if 'name' in self.columnlist:
+                pos = self.columnlist.index('name')
+                if r[pos] == None and mmsi in iddb_dict:
+                    r[pos] = unicode(iddb_dict[mmsi][1]) + "'"
+            if 'callsign' in self.columnlist:
+                pos = self.columnlist.index('callsign')
+                if r[pos] == None and mmsi in iddb_dict:
+                    r[pos] = unicode(iddb_dict[mmsi][2]) + "'"
+            # Other special cases
+            if 'creationtime' in self.columnlist:
+                pos = self.columnlist.index('creationtime')
+                try: r[pos] = r[pos][11:]
+                except: r[pos] = None
+            if 'time' in self.columnlist:
+                pos = self.columnlist.index('time')
+                try: r[pos] = r[pos][11:]
+                except: r[pos] = None
+            if 'eta' in self.columnlist:
+                pos = self.columnlist.index('eta')
+                if r[pos] == '00002460': r[pos] = None
+                else: r[pos] = r[pos]
+            if 'bit' in self.columnlist:
+                pos = self.columnlist.index('bit')
+                if r[pos] == '0': r[pos] = unicode('OK')
+                elif r[pos] == None: r[pos] = None
+                else: r[pos] = unicode('Fel')
+            if 'tamper' in self.columnlist:
+                pos = self.columnlist.index('tamper')
+                if r[pos] == '0': r[pos] = unicode('No')
+                elif r[pos] == None: r[pos] = None
+                else: r[pos] = unicode('YES')
+            if 'posacc' in self.columnlist:
+                pos = self.columnlist.index('posacc')
+                if r[pos] == '0': r[pos] = unicode('Bad')
+                elif r[pos] == None: r[pos] = None
+                else: r[pos] = unicode('DGPS')
+            # Very special case, the remark column
+            if 'remark' in self.columnlist:
+                pos = self.columnlist.index('remark')
+                if remarkdict.has_key(mmsi):
+                    r.insert(pos, str(remarkdict[mmsi]))
+                else:
+                    r.insert(pos, None)
+            # Populate the dictionary
+            data[mmsi] = r
+        return data
+
+    def OnGetItemText(self, item, col):
+        # Return the text in item, col
+        mmsi = self.itemIndexMap[item]
+        string = self.itemDataMap[mmsi][col]
+        # Workaround: the mmsi is an integer for sorting reasons, convert to unicode before displaying
+        if 'mmsi' in self.columnlist:
+            pos = self.columnlist.index('mmsi')
+            if col == pos:
+                string = unicode(string)
+        # If string is a Nonetype, replace with an empty string
+        if string == None:
+            string = unicode('')
+        return string
+
+    def OnGetItemAttr(self, item):
+        # Return an attribute
+
+        # Get the mmsi of the item
+        mmsi = self.itemIndexMap[item]
+        # Create the attribute
+        self.attr = wx.ListItemAttr()
+
+        # If item is in alertitems: make background red
+        if mmsi in self.alertitems:
+            self.attr.SetBackgroundColour("TAN")
+
+        # If item is old enough, make the text grey
+        try:
+            # Create a datetime object from the time string
+            lasttime = datetime.datetime(*time.strptime(self.itemOldMap[mmsi], "%Y-%m-%dT%H:%M:%S")[0:6])
+            if lasttime + datetime.timedelta(0,config['common'].as_int('listmakegreytime')) < datetime.datetime.now():
+                self.attr.SetTextColour("LIGHT GREY")
+        except: pass
+        return self.attr
+
+    #---------------------------------------------------
+    # Matt C, 2006/02/22
+    # Here's a better SortItems() method --
+    # the ColumnSorterMixin.__ColumnSorter() method already handles the ascending/descending,
+    # and it knows to sort on another column if the chosen columns have the same value.
+
+    def SortItems(self,sorter=cmp):
+        items = list(self.itemDataMap.keys())
+        items.sort(sorter)
+        self.itemIndexMap = items
+        
+        # Redraw the list
+        self.Refresh()
+
+    # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
+    def GetListCtrl(self):
+        return self
+
+    # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
+    def GetSortImages(self):
+        return (self.sm_dn, self.sm_up)
+
+
 class DetailWindow(wx.Dialog):
     def __init__(self, parent, id, itemmmsi):
         # Define the dialog
@@ -810,7 +806,7 @@ class DetailWindow(wx.Dialog):
         wx.StaticBox(voyagedata_panel,-1,' Färddata ',pos=(3,5),size=(290,210))
         wx.StaticBox(transponderdata_panel,-1,' Mottagen transponderdata ',pos=(3,5),size=(400,103))
         wx.StaticBox(objinfo_panel,-1,' Objektinformation ',pos=(3,5),size=(290,102))
-        wx.StaticBox(comment_panel,-1,' Kommentar ', pos=(3,5),size=(700,150))
+        wx.StaticBox(comment_panel,-1,' Kommentar ', pos=(3,5),size=(700,50))
         # Fartygsdata
         wx.StaticText(shipdata_panel,-1,'MMSI-nr: ',pos=(12,25),size=(150,16))
         wx.StaticText(shipdata_panel,-1,'IMO-nr: ',pos=(12,45),size=(150,16))
@@ -906,24 +902,30 @@ class DetailWindow(wx.Dialog):
 
     def OnUpdate(self, event):
         # Sökfråga baserad på MMSI-nr på objektet
-        try:
-            itemdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM data WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
-            iddbdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
+        try: itemdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM data WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
         except: return
+        try: iddbdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
+        except: pass
         # Sätt in fartygsdata
         self.text_mmsi.SetLabel(str(itemdata[0]))
-        if itemdata[2]: self.text_imo.SetLabel(itemdata[2])
-        elif not itemdata[2] and iddbdata[1]: self.text_imo.SetLabel('* '+str(iddbdata[1])+' *')
+        try:
+            if itemdata[2]: self.text_imo.SetLabel(itemdata[2])
+            elif not itemdata[2] and iddbdata[1]: self.text_imo.SetLabel('* '+str(iddbdata[1])+' *')
+        except: pass
         if itemdata[1] or not itemdata[1]:
             country = '[Non ISO]'
             if itemdata[1]: country = itemdata[1]
             if midfull.has_key(str(itemdata[0])[0:3]): country += ' - ' + midfull[str(itemdata[0])[0:3]]
             self.text_country.SetLabel(country)
-        if itemdata[3]: self.text_name.SetLabel(itemdata[3])
-        elif not itemdata[3] and iddbdata[2]: self.text_name.SetLabel('* '+str(iddbdata[2])+' *')
+        try:
+            if itemdata[3]: self.text_name.SetLabel(itemdata[3])
+            elif not itemdata[3] and iddbdata[2]: self.text_name.SetLabel('* '+str(iddbdata[2])+' *')
+        except: pass
         if itemdata[4] and itemdata[5]: self.text_type.SetLabel(itemdata[4]+' - '+itemdata[5])
-        if itemdata[6]: self.text_callsign.SetLabel(itemdata[6])
-        elif not itemdata[6] and iddbdata[3]: self.text_callsign.SetLabel('* '+str(iddbdata[3])+' *')
+        try:
+            if itemdata[6]: self.text_callsign.SetLabel(itemdata[6])
+            elif not itemdata[6] and iddbdata[3]: self.text_callsign.SetLabel('* '+str(iddbdata[3])+' *')
+        except: pass
         if itemdata[17]: self.text_length.SetLabel(itemdata[17]+' m')
         if itemdata[18]: self.text_width.SetLabel(itemdata[18]+' m')
         if itemdata[19]: self.text_draught.SetLabel(itemdata[19]+' m')
@@ -1820,7 +1822,6 @@ class SerialThread:
         s = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff)
         maint = MainThread()
         serialt = SerialThread()
-        networkservert = NetworkServerThread()
         queueitem = ''
         temp = ''
         while True:
@@ -1857,7 +1858,10 @@ class SerialThread:
                 parser = dict(decode.telegramparser(indata))
                 if len(parser) > 0:
                     # Put in NetworkServer's queue
-                    if parser.has_key('mmsi'): networkservert.put(parser)
+                    if parser.has_key('mmsi'):
+                        networkdata.append(parser)
+                        while len(networkdata) > 500:
+                            networkdata.popleft()
                     # Set source in parser as serial
                     parser['source'] = 'serial'
                     maint.put(parser)
@@ -1893,14 +1897,13 @@ class SerialThread:
 
 
 class NetworkServerThread:
-    queue = Queue.Queue()
-
     class NetworkClientHandler(SocketServer.BaseRequestHandler):
         def handle(self):
             message = ''
             while True:
                 try:
-                    message = NetworkServerThread.queue.get()
+                    # Pop message from queue
+                    message = networkdata.popleft()
                 except: pass
                 if message == 'stop': break
                 # message has a length greater than 1, pickle message and send it to socket
@@ -1917,9 +1920,6 @@ class NetworkServerThread:
         server = SocketServer.ThreadingTCPServer((server_address, server_port), self.NetworkClientHandler)
         server.serve_forever()
 
-    def put(self, item):
-        self.queue.put(item)
-
     def start(self):
         try:
             r = threading.Thread(target=self.server, name='NetworkServer')
@@ -1931,7 +1931,7 @@ class NetworkServerThread:
 
     def stop(self):
         for i in range(0,100):
-            self.put('stop')
+            networkdata.append('stop')
 
 
 class NetworkClientThread:
@@ -1988,7 +1988,6 @@ class MainThread:
         execSQL(DbCmd(SqlCmd, [
             ("create table data (mmsi PRIMARY KEY, mid, imo, name, type, typename, callsign, latitude, longitude, georef, creationtime, time, sog, cog, heading, destination, eta, length, width, draught, rateofturn, bit, tamper, navstatus, posacc, distance, bearing, source, soundalerted);",()),
             ("create table iddb (mmsi PRIMARY KEY, imo, name, callsign);",()),
-            ("create table metadata (mmsi PRIMARY KEY, alertlevel, comment);",()),
             ("CREATE TRIGGER update_iddb AFTER UPDATE OF imo ON data BEGIN INSERT OR IGNORE INTO iddb (mmsi) VALUES (new.mmsi); UPDATE iddb SET imo=new.imo,name=new.name,callsign=new.callsign WHERE mmsi=new.mmsi; END;",())]))
         lastcleartime = time.time()
         lastlogtime = time.time()
@@ -2018,7 +2017,7 @@ class MainThread:
                 # Beräkna avstånd och bäring till objekt
                 if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and 'latitude' in parser and 'longitude' in parser:
                     try:
-                        dist = ListFunctions().distance(parser['latitude'],parser['longitude'])
+                        dist = Distance().distance(parser['latitude'],parser['longitude'])
                         parser['distance'] = str(round(dist['km'], 1)).zfill(5)
                         parser['bearing'] = str(round(dist['bearing'], 1)).zfill(5)
                     except: pass
