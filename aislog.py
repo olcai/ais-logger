@@ -24,7 +24,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import sys, os, getopt, logging
+import sys, os, optparse, logging
 import time, datetime
 import threading, Queue, collections
 import socket, SocketServer
@@ -44,27 +44,22 @@ elif os.name == 'posix': import serialposix as serial
 ### Fetch command line arguments
 # Define standard config file
 configfile = 'config.ini'
-# If user has supplied an argument, run test cases
-if len(sys.argv) > 1:
-    # Check if user wants to supply a config file
-    str_argv = ''
-    for x in sys.argv:
-        str_argv += x + ' '
-    # Check against valid arguments
-    argv_conf = False
-    if str_argv.find('-c') != -1: argv_conf = sys.argv.index('-c')
-    elif str_argv.find('-config') != -1: argv_conf = sys.argv.index('-config')
-    # Check if any matches
-    if argv_conf:
-        # Try to open file
+
+# Create optparse object
+cmdlineparser = optparse.OptionParser()
+# Add an option for supplying a different config file than the default one
+cmdlineparser.add_option("-c", "--config", dest="configfile", help="Specify a config file other than the default")
+# Parse the arguments
+(cmdlineoptions, cmdlineargs) = cmdlineparser.parse_args()
+if cmdlineoptions.configfile:
+    # Try to open the supplied config file
         try:
-            testopen = open(sys.argv[argv_conf+1], 'r')
+            testopen = open(cmdlineoptions.configfile, 'r')
             testopen.close()
-            configfile = sys.argv[argv_conf+1]
+            configfile = cmdlineoptions.configfile
         except (IOError, IndexError):
+            # Could not read the file, aborting program
             sys.exit("Unable to open config file. Aborting.")
-    else:
-        sys.exit("Unknown argument. Aborting.")
 
 ### Load or create configuration
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
