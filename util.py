@@ -386,7 +386,7 @@ def georef(lat,long):
 #
 # From WxPython demo file images.py
 
-from wxPython.wx import wxImageFromStream, wxBitmapFromImage
+from wx import ImageFromStream, BitmapFromImage
 import cStringIO
 
 def getSmallUpArrowData():
@@ -399,11 +399,11 @@ def getSmallUpArrowData():
 \x82' 
 
 def getSmallUpArrowBitmap():
-    return wxBitmapFromImage(getSmallUpArrowImage())
+    return BitmapFromImage(getSmallUpArrowImage())
 
 def getSmallUpArrowImage():
     stream = cStringIO.StringIO(getSmallUpArrowData())
-    return wxImageFromStream(stream)
+    return ImageFromStream(stream)
 
 def getSmallDnArrowData():
     return \
@@ -415,8 +415,8 @@ def getSmallDnArrowData():
 \x1d\xc4;\xb7\x00\x00\x00\x00IEND\xaeB`\x82" 
 
 def getSmallDnArrowBitmap():
-    return wxBitmapFromImage(getSmallDnArrowImage())
+    return BitmapFromImage(getSmallDnArrowImage())
 
 def getSmallDnArrowImage():
     stream = cStringIO.StringIO(getSmallDnArrowData())
-    return wxImageFromStream(stream)
+    return ImageFromStream(stream)
