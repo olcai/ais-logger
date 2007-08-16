@@ -145,7 +145,7 @@ class MainWindow(wx.Frame):
         #self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
         #locale.setlocale(locale.LC_ALL, 'EN')
         
-        # Skapar statusrad
+        # Create status row
         statusbar = wx.StatusBar(self, -1)
         statusbar.SetFieldsCount(2)
         self.SetStatusBar(statusbar)
@@ -153,8 +153,7 @@ class MainWindow(wx.Frame):
         self.SetStatusText(_("Own position:"),0)
         self.SetStatusText(_("Total nr of objects / old: "),1)
 
-        # Skapar meny
-
+        # Create menu
         menubar = wx.MenuBar()
         file = wx.Menu()
 
@@ -216,21 +215,21 @@ class MainWindow(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnSettings, id=302)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=401)
 
-        # Läs in typ- och MID-koder
+        # Read type codes and MID codes from file
         self.readmid()
         self.readtype()
         # Try to read an alert file and a remark file
         self.readalertfile()
         self.readremarkfile()
         
-        # Skapa och dela två fönster, listfönstret och alarmfönstret
+        # Create and split two windows, a list window and an alert window
         self.split = wx.SplitterWindow(self, -1, style=wx.SP_3D)
         self.splist = ListWindow(self.split, -1)
         self.spalert = AlertWindow(self.split, -1)
         self.split.SetSashGravity(0.5)
         self.splitwindows()
 
-        # Timer för statusradens uppdatering
+        # Timer for updating the status row
         self.timer = wx.Timer(self, -1)
         self.timer.Start(5000)
         wx.EVT_TIMER(self, -1, self.OnRefreshStatus)
@@ -240,8 +239,7 @@ class MainWindow(wx.Frame):
         else: self.split.SplitHorizontally(self.splist, self.spalert, 0)
 
     def readmid(self):
-        # Funktionen läser in en lista med MID till nation från
-        # filen mid.lst i samma katalog som programmet
+        # Read a list from MID to nation from file mid.lst
         f = open('mid.lst', 'r')
         for line in f:
             # For each line, strip any whitespace and then split the data using ','
@@ -255,8 +253,7 @@ class MainWindow(wx.Frame):
         f.close()
 
     def readtype(self):
-        # Funktionen läser in en lista med fartygstyper från
-        # filen typkod.lst i samma katalog som programmet
+        # Read a list with ship type codes from typkod.lst
         f = open('typkod.lst', 'r')
         for line in f:
             # For each line, strip any whitespace and then split the data using ','
@@ -276,15 +273,15 @@ class MainWindow(wx.Frame):
                     del data[0]
                     self.queryitems.extend(data[:])
                 file.close()
-                # Kopiera listan till alertlist
+                # Copy list to alertlist
                 global alertlist
                 alertlist = self.queryitems[:]
-                # Skapa sammansatt sträng av listan
+                # Create a joined string from the list
                 global alertstring
                 if len(alertlist) > 0:
                     alertstring = '(' + ') OR ('.join(zip(*alertlist)[0]) + ')'
                 else: alertstring = '()'
-                # Skapa sammansätt sträng av listan för de med ljudlarm
+                # Create a joined string from the sound alert list
                 querysoundlist = []
                 global alertstringsound
                 # Loop over alertlist and append those with sound alert to alertsoundlist
@@ -296,7 +293,7 @@ class MainWindow(wx.Frame):
                     alertstringsound = '(' + ') OR ('.join(zip(*querysoundlist)[0]) + ')'
                 else: alertstringsound = '()'
             except:
-                dlg = wx.MessageDialog(self, _("Error, could not load the alertfile!\n\n") + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Error, could not load the alertfile!") + "\n\n" + str(sys.exc_info()[0]), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
 
     def readremarkfile(self):
@@ -314,23 +311,23 @@ class MainWindow(wx.Frame):
                 global remarkdict
                 remarkdict = data.copy()
             except:
-                dlg = wx.MessageDialog(self, _("Error, could not load the remark file!\n\n") + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Error, could not load the remark file!") + "\n\n" + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
                 dlg.ShowModal()
 
     def OnRefreshStatus(self, event):
-        # Uppdatera statusraden
-        # Hämta totalt antal rader i databasen
+        # Update the status row
+        # Fetch the total number of rows in the db
         query1 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data", ())]))
         nritems = len(query1)
-        # Hämta utåldrade rader i databasen
+        # Fetch the greyed out rows in the db
         query2 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE datetime(time) < datetime('now', 'localtime', '-%s seconds')" % config['common'].as_int('listmakegreytime'), ())]))
         nrgreyitems = len(query2)
-        # Skriv ut strängar
+        # Print strings
         if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and owndata.has_key('owngeoref'):
-            # Skapa snygg latitudsträng
+            # Create a nice latitude string
             latitude = owndata['ownlatitude']
             latitude =  latitude[1:3] + '° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
-            # Skapa snygg longitudsträng
+            # Create a nice longitude string
             longitude = owndata['ownlongitude']
             longitude = longitude[1:4] + '° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
             self.SetStatusText(_("Own position: ") + latitude + '  ' + longitude + ' - ' + owndata['owngeoref'], 0)
@@ -341,7 +338,7 @@ class MainWindow(wx.Frame):
         dlg.Show()
 
     def OnCalcHorizon(self, event):
-        # Beräknar en slags "horisont", dvs avstånd till tappade objekt
+        # Calculate a "horizon", the distance to greyed out objects
         dlg = wx.Dialog(self,-1, _("Statistics"),size=(305,270))
         dlg.Show()
         buttonsizer = dlg.CreateStdDialogButtonSizer(wx.OK)
@@ -355,12 +352,12 @@ class MainWindow(wx.Frame):
         wx.StaticText(dlg,-1,_("Maximum: "),pos=(12,140),size=(150,16))
         wx.StaticText(dlg,-1,_("Mean value: "),pos=(12,160),size=(150,16))
         wx.StaticText(dlg,-1,_("Median value: "),pos=(12,180),size=(150,16))
-        # Beräkna horisonten
+        # Calculate horizon
         old = []
-        # Hämta totalt antal rader i databasen
+        # Fetch the total number of rows in the db
         query1 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data", ())]))
         nritems = len(query1)
-        # Hämta utåldrade rader i databasen
+        # Fetch the greyed out rows in the db
         query2 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi, distance FROM data WHERE datetime(time) < datetime('now', 'localtime', '-%s seconds')" % config['common'].as_int('listmakegreytime'), ())]))
         nrgreyitems = len(query2)
         # Set as initial values
@@ -373,7 +370,7 @@ class MainWindow(wx.Frame):
                 totaldistance += float(v[1])
                 distancevalues.append(float(v[1]))
                 nrhorizonitems += 1
-        # Beräkna median
+        # Calculate median
         median = 0
         # Calculate meanvalue
         if totaldistance > 0: mean = (totaldistance/nrhorizonitems)
@@ -394,7 +391,7 @@ class MainWindow(wx.Frame):
             minimum = min(distancevalues)
             maximum = max(distancevalues)
         except: pass
-        # Sätt in data
+        # Set the text strings
         wx.StaticText(dlg,-1,str(nritems),pos=(130,25),size=(300,16))
         wx.StaticText(dlg,-1,str(nrgreyitems),pos=(130,45),size=(300,16))
         wx.StaticText(dlg,-1,str(nrhorizonitems),pos=(130,65),size=(300,16))
@@ -419,17 +416,17 @@ class MainWindow(wx.Frame):
                 file.close()
                 self.OnRefresh(event)
             except IOError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except KeyError, error:
-                dlg = wx.MessageDialog(self, _("File contains illegal values\n") + str(error))
+                dlg = wx.MessageDialog(self, _("File contains illegal values") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
                 open_dlg.Destroy()
             except:
-                dlg = wx.MessageDialog(self, _("Unknown error\n") + str(sys.exc_info()[0]))
+                dlg = wx.MessageDialog(self, _("Unknown error") + "\n" + str(sys.exc_info()[0]), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
 
     def OnSaveFile(self, event):
@@ -446,10 +443,10 @@ class MainWindow(wx.Frame):
                 pickle.dump(query,output)
                 output.close()
             except IOError, error:
-                dlg = wx.MessageDialog(self, _("Could not save file\n") + str(error))
+                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Could not save file\n") + str(error))
+                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
                 open_dlg.Destroy()
 
@@ -465,17 +462,17 @@ class MainWindow(wx.Frame):
                 self.rawfileloader(path)
                 self.OnRefresh(event)
             except IOError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
                 open_dlg.Destroy()
 
     def rawfileloader(self, filename):
-        # Ladda data från fil och befolka den globala variabeln data
+        # Load raw data from file and queue it to the MainThread
 
-        # Öppna filen med namnet filename med läsrättigheter
+        # Open file
         f=open(filename, 'r')
 
         num_lines = 0
@@ -483,17 +480,17 @@ class MainWindow(wx.Frame):
             num_lines += 1
         f.seek(0)
 
-        # Skapar fortskridanderuta
+        # Create a progress dialog
         progress = wx.ProgressDialog(_("Loading file..."), _("Loading file..."), num_lines)
 
-        # Stega fram varje rad i filen i en for-loop
+        # Step through each row in the file
         temp = ''
         cur_line = 0
         lastupdate_line = 0
         maint = MainThread()
         for line in f:
 
-            # Kontrollera om meddelandet är uppdelat på flera paket
+            # Check if message is split on several rows
             lineinfo = line.split(',')
             if lineinfo[0] == '!AIVDM' and int(lineinfo[1]) > 1:
                 temp += line
@@ -503,13 +500,13 @@ class MainWindow(wx.Frame):
                 else:
                     continue
 
-            # Sätt resultatet från telegramparser i dictionaryn parser och ställ den i kö
+            # Use the result from telegramparser and put it in MainThread's queue
             try:
                 parser = dict(decode.telegramparser(line))
                 if len(parser) > 0:
                     parser['source'] = 'file'
                     maint.put(parser)
-                # Uppdatera framåtskridanderutan var hundrade rad
+                # Update the progress dialog for each 100 rows
                 cur_line += 1
                 if lastupdate_line + 100 < cur_line:
                     progress.Update(cur_line)
@@ -517,7 +514,7 @@ class MainWindow(wx.Frame):
             except:
                 cur_line += 1
                 continue
-        # Stäng filen
+        # Close file
         f.close()
         progress.Destroy()
 
@@ -533,7 +530,7 @@ class MainWindow(wx.Frame):
 
     def OnAbout(self, event):
         aboutstring = 'AIS Logger\n(C) Erik I.J. Olsson 2006-2007\n\naislog.py\ndecode.py\nutil.py'
-        dlg = wx.MessageDialog(self, aboutstring, _('About'), wx.OK | wx.ICON_INFORMATION)
+        dlg = wx.MessageDialog(self, aboutstring, _("About"), wx.OK|wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -637,9 +634,9 @@ class AlertWindow(wx.Panel):
 
 class Distance:
     def distance(self, latitude, longitude):
-        # Lat/long i DM-format till lat/long i grader
+        # Calculate lat/long in whole degrees from DM-format
         def floatlatitude(latitude):
-            # Latitud
+            # Latitude
             wholedegree = float(latitude[1:3])
             decimaldegree = float((latitude[3:5] + '.' + latitude[5:])) * (1/60.)
             if latitude[0] == 'S':
@@ -648,7 +645,7 @@ class Distance:
                 latitude = +(wholedegree + decimaldegree)
             return latitude
         def floatlongitude(longitude):
-            # Longitud
+            # Longitude
             wholedegree = float(longitude[1:4])
             decimaldegree = float((longitude[4:6] + '.' + longitude[6:])) * (1/60.)
             if longitude[0] == 'W':
@@ -847,12 +844,6 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         except: pass
         return self.attr
 
-    #---------------------------------------------------
-    # Matt C, 2006/02/22
-    # Here's a better SortItems() method --
-    # the ColumnSorterMixin.__ColumnSorter() method already handles the ascending/descending,
-    # and it knows to sort on another column if the chosen columns have the same value.
-
     def SortItems(self,sorter=cmp):
         items = list(self.itemDataMap.keys())
         items.sort(sorter)
@@ -886,7 +877,7 @@ class DetailWindow(wx.Dialog):
         wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,103))
         wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(290,102))
         wx.StaticBox(remark_panel,-1,_(" Remark "), pos=(3,5),size=(700,70))
-        # Fartygsdata
+        # Ship data
         wx.StaticText(shipdata_panel,-1,_("MMSI nbr: "),pos=(12,25),size=(150,16))
         wx.StaticText(shipdata_panel,-1,_("IMO nbr: "),pos=(12,45),size=(150,16))
         wx.StaticText(shipdata_panel,-1,_("Nation: "),pos=(12,65),size=(150,16))
@@ -896,7 +887,7 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(shipdata_panel,-1,_("Length: "),pos=(12,145),size=(150,16))
         wx.StaticText(shipdata_panel,-1,_("Width: "),pos=(12,165),size=(150,16))
         wx.StaticText(shipdata_panel,-1,_("Draught: "),pos=(12,185),size=(150,16))
-        # Färddata
+        # Voyage data
         wx.StaticText(voyagedata_panel,-1,_("Destination: "),pos=(12,25),size=(150,16))
         wx.StaticText(voyagedata_panel,-1,_("ETA: "),pos=(12,45),size=(150,16))
         wx.StaticText(voyagedata_panel,-1,_("Latitude: "),pos=(12,65),size=(150,16))
@@ -906,12 +897,12 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(voyagedata_panel,-1,_("Course: "),pos=(12,145),size=(150,16))
         wx.StaticText(voyagedata_panel,-1,_("Heading: "),pos=(12,165),size=(150,16))
         wx.StaticText(voyagedata_panel,-1,_("Rate of turn: "),pos=(12,185),size=(150,16))
-        # Transponderdata
+        # Transponder data
         wx.StaticText(transponderdata_panel,-1,_("BIT: "),pos=(12,25),size=(150,16))
         wx.StaticText(transponderdata_panel,-1,_("Tamper: "),pos=(12,45),size=(150,16))
         wx.StaticText(transponderdata_panel,-1,_("Nav Status: "),pos=(12,65),size=(150,16))
         wx.StaticText(transponderdata_panel,-1,_("Accuracy: "),pos=(12,85),size=(150,16))
-        # Bäring
+        # Local information such as bearing and distance
         wx.StaticText(objinfo_panel,-1,_("Bearing: "),pos=(12,25),size=(150,16))
         wx.StaticText(objinfo_panel,-1,_("Distance: "),pos=(12,45),size=(150,16))
         wx.StaticText(objinfo_panel,-1,_("Created: "),pos=(12,65),size=(150,16))
@@ -919,7 +910,7 @@ class DetailWindow(wx.Dialog):
         # Remark text
         wx.StaticText(remark_panel,-1,_("Remark: "),pos=(12,25),size=(150,16))
 
-        # Sätt fartygsdata
+        # Set ship data
         self.text_mmsi = wx.StaticText(shipdata_panel,-1,'',pos=(100,25),size=(300,16))
         self.text_imo = wx.StaticText(shipdata_panel,-1,'',pos=(100,45),size=(300,16))
         self.text_country = wx.StaticText(shipdata_panel,-1,'',size=(300,16),pos=(100,65))
@@ -929,7 +920,7 @@ class DetailWindow(wx.Dialog):
         self.text_length = wx.StaticText(shipdata_panel,-1,'',pos=(100,145),size=(300,16))
         self.text_width = wx.StaticText(shipdata_panel,-1,'',pos=(100,165),size=(300,16))
         self.text_draught = wx.StaticText(shipdata_panel,-1,'',pos=(100,185),size=(300,16))
-        # Sätt färddata
+        # Set voyage data
         self.text_destination = wx.StaticText(voyagedata_panel,-1,'',pos=(100,25),size=(185,16))
         self.text_etatime = wx.StaticText(voyagedata_panel,-1,'',pos=(100,45),size=(185,16))
         self.text_latitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,65),size=(185,16))
@@ -939,12 +930,12 @@ class DetailWindow(wx.Dialog):
         self.text_cog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,145),size=(185,16))
         self.text_heading = wx.StaticText(voyagedata_panel,-1,'',pos=(100,165),size=(185,16))
         self.text_rateofturn = wx.StaticText(voyagedata_panel,-1,'',pos=(100,185),size=(185,16))
-        # Sätt transponderdata
+        # Set transponderdata
         self.text_bit = wx.StaticText(transponderdata_panel,-1,'',pos=(105,25),size=(185,16))
         self.text_tamper = wx.StaticText(transponderdata_panel,-1,'',pos=(105,45),size=(185,16))
         self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(105,65),size=(185,16))
         self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(105,85),size=(185,16))
-        # Sätt egen info
+        # Set local information
         self.text_bearing = wx.StaticText(objinfo_panel,-1,'',pos=(105,25),size=(185,16))
         self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(185,16))
         self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(185,16))
@@ -952,7 +943,7 @@ class DetailWindow(wx.Dialog):
         # Set remark text
         self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(100,25),size=(500,40))
 
-        # Knappar och händelser
+        # Buttons & events
         closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
         self.Bind(wx.EVT_BUTTON, self.OnClose, id=1)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
@@ -972,24 +963,24 @@ class DetailWindow(wx.Dialog):
         mainsizer.Add(sizer2, flag=wx.ALIGN_RIGHT)
         self.SetSizerAndFit(mainsizer)
 
-        # Gör om itemmsi till ett eget objekt
+        # Set self.itemmmsi to itemmmsi
         self.itemmmsi = itemmmsi
 
-        # Uppdatera direkt en gång
+        # Update the initial data
         self.OnUpdate('')
 
-        # Timer för uppdateringar
+        # Timer for updating the window
         self.timer = wx.Timer(self, -1)
         self.timer.Start(2000)
         wx.EVT_TIMER(self, -1, self.OnUpdate)
 
     def OnUpdate(self, event):
-        # Sökfråga baserad på MMSI-nr på objektet
+        # Query based on object's MMSI number
         try: itemdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM data WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
         except: return
         try: iddbdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
         except: pass
-        # Sätt in fartygsdata
+        # Set ship data
         self.text_mmsi.SetLabel(str(itemdata[0]))
         try:
             if itemdata[2]: self.text_imo.SetLabel(itemdata[2])
@@ -1012,7 +1003,7 @@ class DetailWindow(wx.Dialog):
         if itemdata[17]: self.text_length.SetLabel(itemdata[17]+' m')
         if itemdata[18]: self.text_width.SetLabel(itemdata[18]+' m')
         if itemdata[19]: self.text_draught.SetLabel(itemdata[19]+' m')
-        # Sätt in färddata
+        # Set voyage data
         if itemdata[15]: self.text_destination.SetLabel(itemdata[15])
         if itemdata[16]:
             try:
@@ -1036,7 +1027,7 @@ class DetailWindow(wx.Dialog):
         if itemdata[13]: self.text_cog.SetLabel(str(itemdata[13])+'°')
         if itemdata[14]: self.text_heading.SetLabel(str(itemdata[14])+'°')
         if itemdata[20]: self.text_rateofturn.SetLabel(str(itemdata[20])+' °/m')
-        # Sätt in transponderdata
+        # Set transponder data
         if itemdata[21]:
             if itemdata[21] == '0': bit = _("OK")
             else: bit = _("Error")
@@ -1051,7 +1042,7 @@ class DetailWindow(wx.Dialog):
             if itemdata[24] == '0': posacc = _("Good / GPS")
             else: posacc = _("Very good / DGPS")
             self.text_posacc.SetLabel(posacc)
-        # Sätt in egen info
+        # Set local info
         if itemdata[25] and itemdata[26]:
             self.text_bearing.SetLabel(str(itemdata[26])+'°')
             self.text_distance.SetLabel(str(itemdata[25])+' km')
@@ -1273,10 +1264,10 @@ class SetAlertsWindow(wx.Dialog):
         # and if not, update either the alertlist or the remarkdict
         if dlg.ShowModal() == wx.ID_OK:
             if not textbox.GetValue().isdigit() or len(textbox.GetValue()) > 9:
-                dlg = wx.MessageDialog(self, _("Only nine digits are allowed in a MMSI number! Insert failed."), _("Error"), wx.OK | wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Only nine digits are allowed in a MMSI number! Insert failed."), _("Error"), wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             elif self.lc.CheckForMmsi(int(textbox.GetValue())):
-                dlg = wx.MessageDialog(self, _("The specified MMSI number already exists! Insert failed."), _("Error"), wx.OK | wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("The specified MMSI number already exists! Insert failed."), _("Error"), wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             elif radiobox.GetSelection() == 0:
                 query = "mmsi LIKE '" + unicode(textbox.GetValue()) + "'"
@@ -1302,12 +1293,12 @@ class SetAlertsWindow(wx.Dialog):
         if config['alert'].as_bool('alertfile_on'):
             self.SaveAlertFile(alert_file)
         else:
-            dlg = wx.MessageDialog(self, _("Cannot save alert file. No alert file is loaded.") + "\n" + _("Edit the alert file settings and restart the program."), style=wx.OK|wx.wx.ICON_ERROR)
+            dlg = wx.MessageDialog(self, _("Cannot save alert file. No alert file is loaded.") + "\n" + _("Edit the alert file settings and restart the program."), style=wx.OK|wx.ICON_ERROR)
             dlg.ShowModal()
         if config['alert'].as_bool('remarkfile_on'):
             self.SaveRemarkFile(remark_file)
         else:
-            dlg = wx.MessageDialog(self, _("Cannot save remark file. No remark file is loaded.") + "\n" + _("Edit the remark file settings and restart the program."), style=wx.OK|wx.wx.ICON_ERROR)
+            dlg = wx.MessageDialog(self, _("Cannot save remark file. No remark file is loaded.") + "\n" + _("Edit the remark file settings and restart the program."), style=wx.OK|wx.ICON_ERROR)
             dlg.ShowModal()
 
     def SaveAlertFile(self, file):
@@ -1320,10 +1311,10 @@ class SetAlertsWindow(wx.Dialog):
                 pickle.dump(outdata,output)
                 output.close()
             except IOError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
    
     def SaveRemarkFile(self, file):
@@ -1338,10 +1329,10 @@ class SetAlertsWindow(wx.Dialog):
                     output.write(mmsi + "," + remark + "\n")
                 output.close()
             except IOError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
 
     def OnExportList(self, event):
@@ -1371,10 +1362,10 @@ class SetAlertsWindow(wx.Dialog):
                 output.write(exportdata)
                 output.close()
             except IOError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
 
 
@@ -2035,44 +2026,44 @@ class RawDataWindow(wx.Dialog):
 
 
 class AdvancedAlertWindow(wx.Dialog):
-    # Kopiera de larm som finns i alertlist
+    # Copy alerts from alertlist
     queryitems = alertlist[:]
 
     def __init__(self, parent, id):
-        # Skapa dialogruta med två ramar
+        # Create a dialog with two static boxes
         self.dlg = wx.Dialog.__init__(self, parent, id, title=_("Advanced alert editor"), size=(590,550))
         wx.StaticBox(self,-1,_(" Current alerts "),pos=(3,5),size=(583,200))
         wx.StaticBox(self,-1,_(" New alert "),pos=(3,210),size=(583,265))
 
-        # Visa en lista över inlagda larm, samt tillhörande knappar
-        # panel1 - huvudpanel
+        # Show a list with current alerts
+        # panel1 - main panel
         panel1 = wx.Panel(self, -1, pos=(15,25), size=(560,170))
-        # panel2 - underpanel för att hålla listkontrollen
+        # panel2 - sub panel containing the list ctrl
         panel2 = wx.Panel(panel1, -1, pos=(100,0), size=(455,165))
         self.querylist = wx.ListCtrl(panel2, -1, style=wx.LC_REPORT)
-        # Skapa box så att rullningslisterna fungerar
+        # Create a BoxSizer for the scroll ctrl
         box = wx.BoxSizer(wx.VERTICAL)
         box.Add(self.querylist, 1, wx.EXPAND)
         panel2.SetSizer(box)
         panel2.Layout()
-        # Lägg till kolumner
+        # Add columns to list
         self.querylist.InsertColumn(0, _("Sound alert"))
         self.querylist.SetColumnWidth(0, 70)
         self.querylist.InsertColumn(1, _("SQL string"))
         self.querylist.SetColumnWidth(1, 370)
-        # Lägg till knappar
+        # Add buttons
         wx.Button(panel1,01,_("&Remove"),pos=(0,10))
         wx.Button(panel1,02,_("C&lear list"),pos=(0,50))
         wx.Button(panel1,03,_("&Edit..."),pos=(0,90))
         wx.Button(panel1,04,_("&Import..."),pos=(0,130))
 
         panel3 = wx.Panel(self, -1, pos=(15,230), size=(560,235))
-        # Förklara kort hur larmfrågor läggs till
+        # Short explanation of how to add alert queries
         wx.StaticText(panel3, -1,
                 _("New alerts are created as SQL queries by combining the three fields below.\n"
                 "The argument between each field is AND."),
                 pos=(0,0), size=(570,50))
-        # Skapa paneler med totalt tre möjliga SQL-frågedelar
+        # Create panels with a total of three possible SQL query parts
         wx.StaticText(panel3, -1, 'I:', pos=(0,61))
         self.searcharg1 = self.NewSearchPanel(panel3, -1, pos=(45,35))
         wx.StaticText(panel3, -1, 'II: AND', pos=(0,116))
@@ -2081,17 +2072,17 @@ class AdvancedAlertWindow(wx.Dialog):
         self.searcharg3 = self.NewSearchPanel(panel3, -1, pos=(45,145))
         # Checkbox for alert on/off
         self.searchalertbox = wx.CheckBox(panel3, -1, _("A&ctivate sound alert"), pos=(60, 207))
-        # Knapp för att lägga till en fråga till listan
+        # Button to add a query to list
         wx.Button(panel3,05,_("A&dd to list"),pos=(405,200))
 
-        # Fönsterknappar
+        # Window buttons
         wx.Button(self,10,_("O&pen..."),pos=(3,490))
         wx.Button(self,11,_("&Save..."),pos=(103,490))
         wx.Button(self,12,_("&Close"),pos=(300,490))
         wx.Button(self,13,_("&Apply"),pos=(400,490))
         wx.Button(self,14,_("&OK"),pos=(500,490))
 
-        # Koppla händelser
+        # Events
         self.Bind(wx.EVT_BUTTON, self.OnOpen, id=10)
         self.Bind(wx.EVT_BUTTON, self.OnSave, id=11)
         self.Bind(wx.EVT_BUTTON, self.OnClose, id=12)
@@ -2108,7 +2099,7 @@ class AdvancedAlertWindow(wx.Dialog):
 
         # Update the temporary list from alertlist
         self.queryitems = alertlist[:]
-        # Uppdatera listan
+        # Update list ctrl
         self.UpdateValues()
 
     def OnKey(self, event):
@@ -2118,13 +2109,13 @@ class AdvancedAlertWindow(wx.Dialog):
 
     class NewSearchPanel(wx.Panel):
         def __init__(self, parent, id, pos):
-            # Skapa en panel
+            # Create panel
             wx.Panel.__init__(self, parent, id, pos=pos, size=(465,50))
-            # Definiera ett litet typsnitt
+            # Define a small font
             smallfont = wx.Font(8, wx.NORMAL, wx.NORMAL, wx.NORMAL)
-            # Lista med SQL-villkor
+            # List with SQL conditions
             sqlchoices = ['LIKE', 'NOT LIKE', '=', '<', '<=', '>', '>=']
-            # Skapa dictionary med nyckeln som visas i comboboxen och värdet som kolumnnamn för sql-fråga
+            # Create a dict with key as in the combobox and the value as column name for the SQL-query
             self.fieldmap = {_("MMSI number"): 'mmsi',
                     _("Nation (2 chars)"): 'mid',
                     _("IMO number"): 'imo',
@@ -2143,26 +2134,26 @@ class AdvancedAlertWindow(wx.Dialog):
                     _("Nav Status"): 'navstatus',
                     _("Bearing"): 'bearing',
                     _("Distance"): 'distance'}
-            # Iterera över fieldchoices och skapa en sorterad lista av nyklarna
+            # Iterate over fieldchoices and create a sorted list of the keys
             self.fieldchoices = []
             for i in self.fieldmap.iterkeys(): self.fieldchoices.append(i)
             self.fieldchoices.sort()
 
-            # Skapa combobox för fältval
+            # Create a combo box for fiels choice
             self.fieldbox = wx.ComboBox(self, -1, pos=(10,20),size=(150,-1), value=_("MMSI number"), choices=self.fieldchoices, style=wx.CB_READONLY)
             fieldtext = wx.StaticText(self, -1, _("Column"), pos=(10,5))
             fieldtext.SetFont(smallfont)
-            # Skapa combobox för sql-villkorsval
+            # Create combo box for SQL condition choice
             self.sqlbox = wx.ComboBox(self, -1, pos=(175,20),size=(100,-1), value='LIKE', choices=sqlchoices, style=wx.CB_READONLY)
             sqltext= wx.StaticText(self, -1, _("Condition"), pos=(175,5))
             sqltext.SetFont(smallfont)
-            # Skapa inmatningsbox för värde
+            # Create textctrl for value input
             self.valuebox = wx.TextCtrl(self, -1, pos=(290,20),size=(170,-1))
             valuetext = wx.StaticText(self, -1, _("Value"), pos=(290,5))
             valuetext.SetFont(smallfont)
 
     def UpdateValues(self):
-        # Uppdatera larmlistan med värden från listan queryitems
+        # Update the list ctrl with values from list queryitems
         self.querylist.DeleteAllItems()
         for x in self.queryitems:
             if x[1] == 0: col0 = _("No")
@@ -2170,7 +2161,7 @@ class AdvancedAlertWindow(wx.Dialog):
             currentrow = self.querylist.GetItemCount()
             self.querylist.InsertStringItem(currentrow, col0)
             self.querylist.SetStringItem(currentrow, 1, x[0])
-        # Rensa inmatningsboxarna
+        # Clear the input boxes
         self.searcharg1.valuebox.Clear()
         self.searcharg1.valuebox.SetFocus()
         self.searcharg2.valuebox.Clear()
@@ -2179,13 +2170,13 @@ class AdvancedAlertWindow(wx.Dialog):
 
     def OnAdd(self, event):
         sqlargs = self.ExtractInputData(['searcharg1', 'searcharg2', 'searcharg3'])
-        # Skapa en frågesträng med AND mellan delarna
+        # Create a query string with AND between each part
         if len(sqlargs) > 0:
             if self.searchalertbox.GetValue():
                 alert = 1
             else: alert = 0
             self.queryitems.append((' AND '.join(sqlargs),alert,0))
-        # Uppdatera larmlistan och rensa inmatningen
+        # Update the list ctrl and clear input
         self.UpdateValues()
 	# Make sure that the added query is visible in list
 	nritems = self.querylist.GetItemCount()
@@ -2234,23 +2225,23 @@ class AdvancedAlertWindow(wx.Dialog):
                         self.UpdateValues()
         # If more than one item selected, show error
         elif self.querylist.GetSelectedItemCount() > 1:
-            dlg = wx.MessageDialog(self, _("You can only edit one query at a time!"), _("Error"), wx.OK | wx.ICON_ERROR)
+            dlg = wx.MessageDialog(self, _("You can only edit one query at a time!"), _("Error"), wx.OK|wx.ICON_ERROR)
             dlg.ShowModal()
 
     def OnRemove(self, event):
-        # Ta bort det objekt i listan som är markerat i boxen
-        # Stega bakifrån i listan och kontrollera om varje objekt är markerat
+        # Remove the object that is selected in list
+        # Step backwards in list and check if each object is selected
         for x in range(self.querylist.GetItemCount(), -1, -1):
             if self.querylist.GetItemState(x, wx.LIST_STATE_SELECTED):
                 del self.queryitems[x]
-        # Rensa & uppdatera
+        # Clear & update
         self.UpdateValues()
         return
 
     def OnRemoveAll(self, event):
-        # Ta bort alla objekt
+        # Remove all objects
         del self.queryitems[:]
-        # Uppdatera larmlistan
+        # Update the list ctrl
         self.UpdateValues()
         return
 
@@ -2317,7 +2308,7 @@ class AdvancedAlertWindow(wx.Dialog):
             for i in queries:
                 formattedqueries += str(i) + '\n'
             # Create a dialog with a yes- and a no-button
-            dlg = wx.MessageDialog(self, formattedqueries, _("Approve import"), wx.YES_NO | wx.ICON_QUESTION)
+            dlg = wx.MessageDialog(self, formattedqueries, _("Approve import"), wx.YES_NO|wx.ICON_QUESTION)
             # If user answers 'yes' use the imported data and destroy dialogs
             if dlg.ShowModal() == wx.ID_YES:
                 fullqueries = []
@@ -2341,15 +2332,15 @@ class AdvancedAlertWindow(wx.Dialog):
             self.Destroy()
 
     def OnApply(self, event):
-        # Kopiera listan till alertlist
+        # Copy list to alertlist
         global alertlist
         alertlist = self.queryitems[:]
-        # Skapa sammansatt sträng av listan
+        # Create a joined string of list
         global alertstring
         if len(alertlist) > 0:
             alertstring = '(' + ') OR ('.join(zip(*alertlist)[0]) + ')'
         else: alertstring = '()'
-        # Skapa sammansätt sträng av listan för de med ljudlarm
+        # Create a joined string of sound alert list
         querysoundlist = []
         global alertstringsound
         # Loop over alertlist and append those with sound alert to alertsoundlist
@@ -2362,14 +2353,15 @@ class AdvancedAlertWindow(wx.Dialog):
         else: alertstringsound = '()'
 
     def OnOK(self, event):
+        # If user pressed OK, run apply function and destroy dialog
         self.OnApply('')
         self.Destroy()
 
     def OnOpen(self, event):
         path = ''
-        wcd = 'Larmfiler (*.alt)|*.alt|Alla filer (*)|*'
+        wcd = _("Alert files (*.alt)|*.alt|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message='Välj en fil', defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -2382,25 +2374,25 @@ class AdvancedAlertWindow(wx.Dialog):
                 file.close()
                 self.UpdateValues()
             except IOError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej öppna filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except KeyError, error:
-                dlg = wx.MessageDialog(self, 'Innehållsfel, filen innehåller inte giltiga värden\n' + str(error))
+                dlg = wx.MessageDialog(self, _("File contains illegal values") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej öppna filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
                 open_dlg.Destroy()
             except:
-                dlg = wx.MessageDialog(self, 'Okänt fel\n' + str(sys.exc_info()[0]))
+                dlg = wx.MessageDialog(self, _("Unknown error") + "\n" + str(sys.exc_info()[0]), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
 
     def OnSave(self, event):
         self.OnApply('')
         path = ''
-        wcd = 'Larmfiler (*.alt)|*.alt|Alla filer (*)|*'
+        wcd = _("Alert files (*.alt)|*.alt|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message='Välj en fil', defaultDir=dir, defaultFile='larm.alt', wildcard=wcd, style=wx.SAVE|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='alert.alt', wildcard=wcd, style=wx.SAVE|wx.CHANGE_DIR)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -2411,10 +2403,10 @@ class AdvancedAlertWindow(wx.Dialog):
                 pickle.dump(outdata,output)
                 output.close()
             except IOError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej spara filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej spara filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
                 open_dlg.Destroy()
 
@@ -2433,8 +2425,7 @@ class SerialThread:
     queue = Queue.Queue()
 
     def reader(self, port, baudrate, rtscts, xonxoff, repr_mode):
-        """loop forever and copy serial->console"""
-        # Definiera serieportsuppkoppling
+        # Define serial port connection
         s = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff)
         maint = MainThread()
         serialt = SerialThread()
@@ -2459,7 +2450,7 @@ class SerialThread:
             while len(rawdata) > 500:
                 rawdata.popleft()
 
-            # Kontrollera om meddelandet är uppdelat på flera paket
+            # Check if message is split on several lines
             lineinfo = indata.split(',')
             if lineinfo[0] == '!AIVDM' and int(lineinfo[1]) > 1:
                 temp += indata
@@ -2469,7 +2460,7 @@ class SerialThread:
                 else:
                     continue
 
-            # Sätt resultatet från telegramparser i dictionaryn parser och ställ den i kö
+            # Set the telegramparser result in dict parser and queue it
             try:
                 parser = dict(decode.telegramparser(indata))
                 if len(parser) > 0:
@@ -2611,23 +2602,22 @@ class MainThread:
         parser = {}
         self.loadiddb()
         while True:
-            # Lagra resultatet från telegramparser i dictionaryn parser
+            # Store the result from telegramparser in dict parser
             try:
                 parser = self.queue.get()
             except: pass
             if parser == 'stop': break
-            # Kontrollera att resultatet från telegramparsern innehåller MMSI-nyckel
-            # som i sin tur är nio tecken långt
+            # Check that parser contains a MMSI number
             if parser.has_key('mmsi') and len(parser['mmsi']) > 1:
-                # Räkna ut GEOREF
+                # Calculate position in GEOREF
                 if parser.has_key('latitude') and parser.has_key('longitude') and len(parser['latitude']) == 9 and len(parser['longitude']) == 10:
                     try:
                         parser['georef'] = georef(parser['latitude'],parser['longitude'])
                     except: pass
-                # Mappa MMSI-nr till land enligt MID-lista
+                # Map MMSI nbr to nation from MID list
                 if 'mmsi' in parser and mid.has_key(parser['mmsi'][0:3]):
                     parser['mid'] = mid[parser['mmsi'][0:3]]
-                # Mappa typnr till typ enligt lista
+                # Map type nbr to type name from list
                 if 'type' in parser and len(parser['type']) > 0 and typecode.has_key(parser['type']):
                     parser['typename'] = typecode[parser['type']]
                 # Check if user has set a fixed manual position, and if so, use it...
@@ -2639,13 +2629,14 @@ class MainThread:
                     owngeoref = georef(ownlatitude,ownlongitude)
                     v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
                     owndata.update(v)
-                # Beräkna avstånd och bäring till objekt
+                # Calculate bearing and distance to object
                 if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and 'latitude' in parser and 'longitude' in parser:
                     try:
                         dist = Distance().distance(parser['latitude'],parser['longitude'])
                         parser['distance'] = str(round(dist['km'], 1)).zfill(5)
                         parser['bearing'] = str(round(dist['bearing'], 1)).zfill(5)
                     except: pass
+                # Append data to dbexp and dbvalues
                 dbexp = []
                 dbvalues = []
                 if 'mid' in parser: dbexp.append('mid'); dbvalues.append(parser['mid'])
@@ -2673,9 +2664,9 @@ class MainThread:
                 if 'time' in parser: dbexp.append('time'); dbvalues.append(parser['time'])
                 if 'distance' in parser: dbexp.append('distance'); dbvalues.append(parser['distance'])
                 if 'bearing' in parser: dbexp.append('bearing'); dbvalues.append(parser['bearing'])
-                # Skapa uttryck av de kolumn=värde-par som definierats ovan
+                # Create an expression from the column=value pairs from aboce
                 dbexpression = ','.join(['''%s="%s"''' % (e, v) for e,v in zip(dbexp, dbvalues)])
-                # Skapa eller bevara raden enligt MMSI-nyckeln, uppdatera denna rad med aktuella värden
+                # Create or ignore a row from the MMSI key and update this row with current values
                 execSQL(DbCmd(SqlCmd, [
                     ("INSERT OR IGNORE INTO data (mmsi, creationtime) VALUES (%s,'%s')" % (int(parser['mmsi']), parser['time']),()),
                     ("UPDATE data SET %s WHERE mmsi=%s" % (dbexpression, int(parser['mmsi'])),())]))
@@ -2686,12 +2677,12 @@ class MainThread:
                 v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
                 owndata.update(v)
 
-            # Ta bort om senaste uppdateringstiden överstiger tröskeln
+            # Remove object if last update time is above threshold
             if lastcleartime + 10 < time.time():
                 execSQL(DbCmd(SqlCmd, [("DELETE FROM data WHERE datetime(time, '+%s seconds') < datetime('now', 'localtime')" % config['common'].as_int('deleteitemtime'),())]))
                 lastcleartime = time.time()
                         
-            # Starta loggning om tiden överstiger tröskeln
+            # Initiate logging to disk of log time is above threshold
             if config['logging'].as_bool('logging_on'):
                 if config['logging'].as_int('logtime') == 0: continue
                 elif lastlogtime + config['logging'].as_int('logtime') < time.time():
@@ -2815,8 +2806,7 @@ if config['network'].as_bool('client_on'):
     NetworkClientThread().start()
 
 # Start the GUI
-# Let all the thread have som time to start before
-# launching the GUI
+# Wait some time before initiating, to let the threads settle
 time.sleep(0.2)
 app = GUI(0)
 app.MainLoop()
