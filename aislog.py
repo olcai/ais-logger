@@ -34,6 +34,7 @@ import md5
 from pysqlite2 import dbapi2 as sqlite
 import wx
 import wx.lib.mixins.listctrl as listmix
+import gettext
 from configobj import ConfigObj
 
 import decode
@@ -136,63 +137,70 @@ remarkdict = {}
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, size=(800,500))
+
+        # Gettext call
+        gettext.install('aislogger', ".", unicode=False)
+        #self.presLan_en = gettext.translation("aislogger", "./locale", languages=['en'])
+        #self.presLan_en.install()
+        #self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
+        #locale.setlocale(locale.LC_ALL, 'EN')
         
         # Skapar statusrad
         statusbar = wx.StatusBar(self, -1)
         statusbar.SetFieldsCount(2)
         self.SetStatusBar(statusbar)
         self.SetStatusWidths([-2, -1])
-        self.SetStatusText('Egen position:',0)
-        self.SetStatusText('Totalt antal / utåldrade: ',1)
+        self.SetStatusText(_("Own position:"),0)
+        self.SetStatusText(_("Total nr of objects / old: "),1)
 
         # Skapar meny
 
         menubar = wx.MenuBar()
-        files = wx.Menu()
+        file = wx.Menu()
 
-        load = wx.MenuItem(files, 101, '&Ladda ögonblicksfil\tCtrl+L', 'Laddar en ögonblicksfil')
-        files.AppendItem(load)
+        load = wx.MenuItem(file, 101, _("&Load snapshot file\tCtrl+L"), _("Loads a snapshot file"))
+        file.AppendItem(load)
 
-        save = wx.MenuItem(files, 102, '&Spara ögonblicksfil\tCtrl+S', 'Sparar de data som finns i minnet till fil')
-        files.AppendItem(save)
-        files.AppendSeparator()
+        save = wx.MenuItem(file, 102, _("&Save snapshot file\tCtrl+S"), _("Saves the data in memory to a snapshot file"))
+        file.AppendItem(save)
+        file.AppendSeparator()
 
-        load_raw = wx.MenuItem(files, 103, 'Ladda &rådatafil', 'Ladda rådata från fil')
-        files.AppendItem(load_raw)
-        files.AppendSeparator()
+        load_raw = wx.MenuItem(file, 103, _("Load &raw data"), _("Loads a file containing raw (unparsed) messages"))
+        file.AppendItem(load_raw)
+        file.AppendSeparator()
 
-        quit = wx.MenuItem(files, 104, '&Avsluta\tCtrl+A', 'Avsluta')
-        files.AppendItem(quit)
+        quit = wx.MenuItem(file, 104, _("E&xit\tCtrl+X"), _("Exit program"))
+        file.AppendItem(quit)
 
         view = wx.Menu()
-        showsplit = wx.MenuItem(view, 201, 'Visa &larmlista', 'Visar respektive gömmer larmlistan')
+        showsplit = wx.MenuItem(view, 201, _("Show &alert view"), _("Shows or hides the alert view"))
         view.AppendItem(showsplit)
 
-        refresh = wx.MenuItem(view, 202, '&Uppdatera listan\tF5', 'Uppdatera listan manuellt')
+        refresh = wx.MenuItem(view, 202, _("&Refresh views\tF5"), _("Do a forced refresh of list views"))
         view.AppendItem(refresh)
         view.AppendSeparator()
 
-        showrawdata = wx.MenuItem(view, 203, '&Visa rådata', 'Visar inkommande rådata i separat fönster')
+        showrawdata = wx.MenuItem(view, 203, _("Show raw &data window"), _("Shows a window containing the incoming raw (unparsed) data"))
         view.AppendItem(showrawdata)
         
-        settings = wx.MenuItem(view, 204, '&Inställningar\tCtrl+I', 'Visar aktuella programinställningar')
-        view.AppendItem(settings)
-
         tools = wx.Menu()
-        alertsettings = wx.MenuItem(tools, 301, 'Ställ in &larm', 'Ställer in larm')
+        alertsettings = wx.MenuItem(tools, 301, _("Set &alerts"), _("Shows a window where one can set different alerts"))
         tools.AppendItem(alertsettings)
         
-        calchorizon = wx.MenuItem(tools, 302, 'Beräkna aktuell &horisont', 'Beräkna aktuell horisont utifrån de utåldrade rapporterna')
+        calchorizon = wx.MenuItem(tools, 302, _("Show s&tatistics"), _("Shows a window containing various statistics"))
         tools.AppendItem(calchorizon)
-        
+
+        settings = wx.MenuItem(tools, 303, _("&Settings"), ("Opens the settings window"))
+        tools.AppendItem(settings)
+
         help = wx.Menu()
-        about = wx.MenuItem(help, 401, '&Om\tF1', 'Om programmet')
+        about = wx.MenuItem(help, 401, _("&About\tF1"), _("About the software"))
         help.AppendItem(about)
 
-        menubar.Append(files, '&Arkiv')
-        menubar.Append(view, '&Visa')
-        menubar.Append(tools, 'V&erktyg')
-        menubar.Append(help, '&Hjälp')
+        menubar.Append(file, _("&File"))
+        menubar.Append(view, _("&View"))
+        menubar.Append(tools, _("&Tools"))
+        menubar.Append(help, _("&Help"))
 
         self.SetMenuBar(menubar)
 
@@ -203,9 +211,10 @@ class MainWindow(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnShowSplit, id=201)
         self.Bind(wx.EVT_MENU, self.OnRefresh, id=202)
         self.Bind(wx.EVT_MENU, self.OnShowRawdata, id=203)
-        self.Bind(wx.EVT_MENU, self.OnSettings, id=204)
         self.Bind(wx.EVT_MENU, self.OnSetAlert, id=301)
         self.Bind(wx.EVT_MENU, self.OnCalcHorizon, id=302)
+        self.Bind(wx.EVT_MENU, self.OnSettings, id=303)
+        self.Bind(wx.EVT_MENU, self.OnID, id=305)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=401)
 
         # Läs in typ- och MID-koder
@@ -288,7 +297,7 @@ class MainWindow(wx.Frame):
                     alertstringsound = '(' + ') OR ('.join(zip(*querysoundlist)[0]) + ')'
                 else: alertstringsound = '()'
             except:
-                dlg = wx.MessageDialog(self, 'Fel, kunde ej ladda in larmfil!\n\n' + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Error, could not load the alertfile!\n\n") + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
                 dlg.ShowModal()
 
     def readremarkfile(self):
@@ -306,7 +315,7 @@ class MainWindow(wx.Frame):
                 global remarkdict
                 remarkdict = data.copy()
             except:
-                dlg = wx.MessageDialog(self, 'Fel, kunde ej ladda in anmärkningsfil!\n\n' + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg = wx.MessageDialog(self, _("Error, could not load the remark file!\n\n") + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
                 dlg.ShowModal()
 
     def OnRefreshStatus(self, event):
@@ -325,8 +334,8 @@ class MainWindow(wx.Frame):
             # Skapa snygg longitudsträng
             longitude = owndata['ownlongitude']
             longitude = longitude[1:4] + '° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
-            self.SetStatusText('Egen position: ' + latitude + '  ' + longitude + ' - ' + owndata['owngeoref'], 0)
-        self.SetStatusText('Totalt antal / utåldrade: ' + str(nritems) + ' / ' + str(nrgreyitems), 1)
+            self.SetStatusText(_("Own position: ") + latitude + '  ' + longitude + ' - ' + owndata['owngeoref'], 0)
+        self.SetStatusText(_("Total nr of objects / old: ") + str(nritems) + ' / ' + str(nrgreyitems), 1)
 
     def OnShowRawdata(self, event):
         dlg = RawDataWindow(None, -1)
@@ -334,19 +343,19 @@ class MainWindow(wx.Frame):
 
     def OnCalcHorizon(self, event):
         # Beräknar en slags "horisont", dvs avstånd till tappade objekt
-        dlg = wx.Dialog(self,-1, 'Beräkna aktuell horisont',size=(305,270))
+        dlg = wx.Dialog(self,-1, _("Statistics"),size=(305,270))
         dlg.Show()
-	buttonsizer = dlg.CreateStdDialogButtonSizer(wx.OK)
-	buttonsizer.SetDimension(220, 210, 80, 40)
-        wx.StaticBox(dlg,-1,' Rapportinfo ',pos=(3,5),size=(300,90))
-        wx.StaticBox(dlg,-1,' Aktuell horisont ',pos=(3,100),size=(300,110))
-        wx.StaticText(dlg,-1,'Antal rapporter: ',pos=(12,25),size=(150,16))
-        wx.StaticText(dlg,-1,'Varav utåldrade: ',pos=(12,45),size=(150,16))
-        wx.StaticText(dlg,-1,'Varav horisont: ',pos=(12,65),size=(150,16))
-        wx.StaticText(dlg,-1,'Minvärde: ',pos=(12,120),size=(150,16))
-        wx.StaticText(dlg,-1,'Maxvärde: ',pos=(12,140),size=(150,16))
-        wx.StaticText(dlg,-1,'Medelvärde: ',pos=(12,160),size=(150,16))
-        wx.StaticText(dlg,-1,'Medianvärde: ',pos=(12,180),size=(150,16))
+        buttonsizer = dlg.CreateStdDialogButtonSizer(wx.OK)
+        buttonsizer.SetDimension(220, 210, 80, 40)
+        wx.StaticBox(dlg,-1,_(" Reports "),pos=(3,5),size=(300,90))
+        wx.StaticBox(dlg,-1,_(" Calculation of horizon "),pos=(3,100),size=(300,110))
+        wx.StaticText(dlg,-1,_("Number of reports: "),pos=(12,25),size=(150,16))
+        wx.StaticText(dlg,-1,_("Number of old reports: "),pos=(12,45),size=(150,16))
+        wx.StaticText(dlg,-1,_("Reports with a calculated distance: "),pos=(12,65),size=(150,16))
+        wx.StaticText(dlg,-1,_("Minimum: "),pos=(12,120),size=(150,16))
+        wx.StaticText(dlg,-1,_("Maximum: "),pos=(12,140),size=(150,16))
+        wx.StaticText(dlg,-1,_("Mean value: "),pos=(12,160),size=(150,16))
+        wx.StaticText(dlg,-1,_("Median value: "),pos=(12,180),size=(150,16))
         # Beräkna horisonten
         old = []
         # Hämta totalt antal rader i databasen
@@ -397,9 +406,9 @@ class MainWindow(wx.Frame):
     
     def OnLoadFile(self, event):
         path = ''
-        wcd = 'Ögonblicksfiler (*.pkl)|*.pkl|Alla filer (*)|*'
+        wcd = _("Snapshot files (*.pkl)|*.pkl|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message='Välj en fil', defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -411,24 +420,24 @@ class MainWindow(wx.Frame):
                 file.close()
                 self.OnRefresh(event)
             except IOError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej öppna filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
                 dlg.ShowModal()
             except KeyError, error:
-                dlg = wx.MessageDialog(self, 'Innehållsfel, filen innehåller inte giltiga värden\n' + str(error))
+                dlg = wx.MessageDialog(self, _("File contains illegal values\n") + str(error))
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej öppna filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
                 dlg.ShowModal()
                 open_dlg.Destroy()
             except:
-                dlg = wx.MessageDialog(self, 'Okänt fel\n' + str(sys.exc_info()[0]))
+                dlg = wx.MessageDialog(self, _("Unknown error\n") + str(sys.exc_info()[0]))
                 dlg.ShowModal()
 
     def OnSaveFile(self, event):
         path = ''
-        wcd = 'Ögonblicksfiler (*.pkl)|*.pkl|Alla filer (*)|*'
+        wcd = _("Snapshot files (*.pkl)|*.pkl|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message='Välj en fil', defaultDir=dir, defaultFile='datadump.pkl', wildcard=wcd, style=wx.SAVE|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='datadump.pkl', wildcard=wcd, style=wx.SAVE|wx.CHANGE_DIR)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -438,18 +447,18 @@ class MainWindow(wx.Frame):
                 pickle.dump(query,output)
                 output.close()
             except IOError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej spara filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not save file\n") + str(error))
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej spara filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not save file\n") + str(error))
                 dlg.ShowModal()
                 open_dlg.Destroy()
 
     def OnLoadRawFile(self, event):
         path = ''
-        wcd = 'Alla filer (*)|*|Textfiler (*.txt)|*.txt'
+        wcd = _('All files (*)|*|Text files (*.txt)|*.txt')
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message='Välj en fil', defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -457,10 +466,10 @@ class MainWindow(wx.Frame):
                 self.rawfileloader(path)
                 self.OnRefresh(event)
             except IOError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej öppna filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
                 dlg.ShowModal()
             except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, 'Kan ej öppna filen\n' + str(error))
+                dlg = wx.MessageDialog(self, _("Could not open file\n") + str(error))
                 dlg.ShowModal()
                 open_dlg.Destroy()
 
@@ -476,7 +485,7 @@ class MainWindow(wx.Frame):
         f.seek(0)
 
         # Skapar fortskridanderuta
-        progress = wx.ProgressDialog("Laddar fil...", "Laddar fil...", num_lines)
+        progress = wx.ProgressDialog(_("Loading file..."), _("Loading file..."), num_lines)
 
         # Stega fram varje rad i filen i en for-loop
         temp = ''
@@ -525,7 +534,7 @@ class MainWindow(wx.Frame):
 
     def OnAbout(self, event):
         aboutstring = 'AIS Logger\n(C) Erik I.J. Olsson 2006-2007\n\naislog.py\ndecode.py\nutil.py'
-        dlg = wx.MessageDialog(self, aboutstring, 'Om', wx.OK | wx.ICON_INFORMATION)
+        dlg = wx.MessageDialog(self, aboutstring, _('About'), wx.OK | wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -852,7 +861,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 class DetailWindow(wx.Dialog):
     def __init__(self, parent, id, itemmmsi):
         # Define the dialog
-        wx.Dialog.__init__(self, parent, id, title='Detaljfönster')
+        wx.Dialog.__init__(self, parent, id, title=_("Detail window"))
         # Create panels
         shipdata_panel = wx.Panel(self, -1)
         voyagedata_panel = wx.Panel(self, -1)
@@ -860,43 +869,43 @@ class DetailWindow(wx.Dialog):
         objinfo_panel = wx.Panel(self, -1)
         remark_panel = wx.Panel(self, -1)
         # Create static boxes
-        wx.StaticBox(shipdata_panel,-1,' Fartygsdata ',pos=(3,5),size=(400,210))
-        wx.StaticBox(voyagedata_panel,-1,' Färddata ',pos=(3,5),size=(290,210))
-        wx.StaticBox(transponderdata_panel,-1,' Mottagen transponderdata ',pos=(3,5),size=(400,103))
-        wx.StaticBox(objinfo_panel,-1,' Objektinformation ',pos=(3,5),size=(290,102))
-        wx.StaticBox(remark_panel,-1,' Anmärkning ', pos=(3,5),size=(700,70))
+        wx.StaticBox(shipdata_panel,-1,_(" Ship data "),pos=(3,5),size=(400,210))
+        wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(290,210))
+        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,103))
+        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(290,102))
+        wx.StaticBox(remark_panel,-1,_(" Remark "), pos=(3,5),size=(700,70))
         # Fartygsdata
-        wx.StaticText(shipdata_panel,-1,'MMSI-nr: ',pos=(12,25),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'IMO-nr: ',pos=(12,45),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'Nation: ',pos=(12,65),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'Namn: ',pos=(12,85),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'Typ: ',pos=(12,105),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'Callsign: ',pos=(12,125),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'Längd: ',pos=(12,145),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'Bredd: ',pos=(12,165),size=(150,16))
-        wx.StaticText(shipdata_panel,-1,'Djupgående: ',pos=(12,185),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("MMSI nbr: "),pos=(12,25),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("IMO nbr: "),pos=(12,45),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("Nation: "),pos=(12,65),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("Name: "),pos=(12,85),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("Type: "),pos=(12,105),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("Callsign: "),pos=(12,125),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("Length: "),pos=(12,145),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("Width: "),pos=(12,165),size=(150,16))
+        wx.StaticText(shipdata_panel,-1,_("Draught: "),pos=(12,185),size=(150,16))
         # Färddata
-        wx.StaticText(voyagedata_panel,-1,'Destination: ',pos=(12,25),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'ETA: ',pos=(12,45),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'Latitud: ',pos=(12,65),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'Longitud: ',pos=(12,85),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'GEOREF: ',pos=(12,105),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'Fart: ',pos=(12,125),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'Kurs: ',pos=(12,145),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'Heading: ',pos=(12,165),size=(150,16))
-        wx.StaticText(voyagedata_panel,-1,'Girhastighet: ',pos=(12,185),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("Destination: "),pos=(12,25),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("ETA: "),pos=(12,45),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("Latitude: "),pos=(12,65),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("Longitude: "),pos=(12,85),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("GEOREF: "),pos=(12,105),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("Speed: "),pos=(12,125),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("Course: "),pos=(12,145),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("Heading: "),pos=(12,165),size=(150,16))
+        wx.StaticText(voyagedata_panel,-1,_("Rate of turn: "),pos=(12,185),size=(150,16))
         # Transponderdata
-        wx.StaticText(transponderdata_panel,-1,'BIT: ',pos=(12,25),size=(150,16))
-        wx.StaticText(transponderdata_panel,-1,'Tamper: ',pos=(12,45),size=(150,16))
-        wx.StaticText(transponderdata_panel,-1,'Navstatus: ',pos=(12,65),size=(150,16))
-        wx.StaticText(transponderdata_panel,-1,'Noggrannhet: ',pos=(12,85),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("BIT: "),pos=(12,25),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Tamper: "),pos=(12,45),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Nav Status: "),pos=(12,65),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Accuracy: "),pos=(12,85),size=(150,16))
         # Bäring
-        wx.StaticText(objinfo_panel,-1,'Bäring: ',pos=(12,25),size=(150,16))
-        wx.StaticText(objinfo_panel,-1,'Avstånd: ',pos=(12,45),size=(150,16))
-        wx.StaticText(objinfo_panel,-1,'Skapad: ',pos=(12,65),size=(150,16))
-        wx.StaticText(objinfo_panel,-1,'Uppdaterad: ',pos=(12,85),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Bearing: "),pos=(12,25),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Distance: "),pos=(12,45),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Created: "),pos=(12,65),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Updated: "),pos=(12,85),size=(150,16))
         # Remark text
-        wx.StaticText(remark_panel,-1,'Anmärkning: ',pos=(12,25),size=(150,16))
+        wx.StaticText(remark_panel,-1,_("Remark: "),pos=(12,25),size=(150,16))
 
         # Sätt fartygsdata
         self.text_mmsi = wx.StaticText(shipdata_panel,-1,'',pos=(100,25),size=(300,16))
@@ -932,7 +941,7 @@ class DetailWindow(wx.Dialog):
         self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(100,25),size=(500,40))
 
         # Knappar och händelser
-        closebutton = wx.Button(self,1,'&Stäng',pos=(490,438))
+        closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
         self.Bind(wx.EVT_BUTTON, self.OnClose, id=1)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
@@ -975,7 +984,7 @@ class DetailWindow(wx.Dialog):
             elif not itemdata[2] and iddbdata[1]: self.text_imo.SetLabel('* '+str(iddbdata[1])+' *')
         except: pass
         if itemdata[1] or not itemdata[1]:
-            country = '[Non ISO]'
+            country = _("[Non ISO]")
             if itemdata[1]: country = itemdata[1]
             if midfull.has_key(str(itemdata[0])[0:3]): country += ' - ' + midfull[str(itemdata[0])[0:3]]
             self.text_country.SetLabel(country)
@@ -996,7 +1005,7 @@ class DetailWindow(wx.Dialog):
         if itemdata[16]:
             try:
                 etatime = 0,int(itemdata[16][0:2]),int(itemdata[16][2:4]),int(itemdata[16][4:6]),int(itemdata[16][6:8]),1,1,1,1
-                fulletatime = time.strftime("%d %B kl %H:%M",etatime)
+                fulletatime = time.strftime(_("%d %B kl %H:%M"),etatime)
             except: fulletatime = itemdata[16]
             if fulletatime == '00002460': fulletatime = ''
             self.text_etatime.SetLabel(fulletatime)
@@ -1017,29 +1026,29 @@ class DetailWindow(wx.Dialog):
         if itemdata[20]: self.text_rateofturn.SetLabel(str(itemdata[20])+' °/m')
         # Sätt in transponderdata
         if itemdata[21]:
-            if itemdata[21] == '0': bit = 'OK'
-            else: bit = 'Fel'
+            if itemdata[21] == '0': bit = _("OK")
+            else: bit = _("Error")
             self.text_bit.SetLabel(bit)
         if itemdata[22]:
-            if itemdata[22] == '0': tamper = 'Nej'
-            else: tamper = 'JA'
+            if itemdata[22] == '0': tamper = _("No")
+            else: tamper = _("YES")
             self.text_tamper.SetLabel(tamper)
         if itemdata[23]:
             self.text_navstatus.SetLabel(itemdata[23])
         if itemdata[24]:
-            if itemdata[24] == '0': posacc = 'Dålig / GPS'
-            else: posacc = 'Bra / DGPS'
+            if itemdata[24] == '0': posacc = _("Good / GPS")
+            else: posacc = _("Very good / DGPS")
             self.text_posacc.SetLabel(posacc)
         # Sätt in egen info
         if itemdata[25] and itemdata[26]:
             self.text_bearing.SetLabel(str(itemdata[26])+'°')
             self.text_distance.SetLabel(str(itemdata[25])+' km')
         if itemdata[10]:
-            try: creationtime = itemdata[10].replace('T', ' kl ')
+            try: creationtime = itemdata[10].replace('T', _(" kl "))
             except: creationtime = ''
             self.text_creationtime.SetLabel(creationtime)
         if itemdata[11]:
-            try: lasttime = itemdata[11].replace('T', ' kl ')
+            try: lasttime = itemdata[11].replace('T', _(" kl "))
             except: lasttime = ''
             self.text_time.SetLabel(lasttime)
         # Set remark text
@@ -1052,7 +1061,7 @@ class DetailWindow(wx.Dialog):
 
 class SettingsWindow(wx.Dialog):
     def __init__(self, parent, id):
-        wx.Dialog.__init__(self, parent, id, title='Inställningar')
+        wx.Dialog.__init__(self, parent, id, title=_("Settings"))
         # Define a notebook
         notebook = wx.Notebook(self, -1)
         # Define panels for each tab in the notebook
@@ -1067,32 +1076,32 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for common options
         # Common list settings
         commonlist_panel = wx.Panel(common_panel, -1)
-        wx.StaticBox(commonlist_panel, -1, ' Allmänna listinställningar ', pos=(10,5), size=(450,140))
-        wx.StaticText(commonlist_panel, -1, 'Tid för utgråning av objekt (s):', pos=(20,35))
+        wx.StaticBox(commonlist_panel, -1, _(" General view settings "), pos=(10,5), size=(450,140))
+        wx.StaticText(commonlist_panel, -1, _("Threshold for greying-out objects (s):"), pos=(20,35))
         self.commonlist_greytime = wx.SpinCtrl(commonlist_panel, -1, pos=(250,30), min=10, max=604800)
-        wx.StaticText(commonlist_panel, -1, 'Tid för borttagning av objekt (s):', pos=(20,72))
+        wx.StaticText(commonlist_panel, -1, _("Threshold for removal of objects (s):"), pos=(20,72))
         self.commonlist_deletetime = wx.SpinCtrl(commonlist_panel, -1, pos=(250,65), min=10, max=604800)
-        wx.StaticText(commonlist_panel, -1, 'Tid mellan listuppdateringar (ms):', pos=(20,107))
+        wx.StaticText(commonlist_panel, -1, _("Time between view refreshes (ms):"), pos=(20,107))
         self.commonlist_refreshtime = wx.SpinCtrl(commonlist_panel, -1, pos=(250,100), min=1000, max=600000)
         # Manual position config
         manualpos_panel = wx.Panel(common_panel, -1)
-        wx.StaticBox(manualpos_panel, -1, ' Manuell positionsinställning ', pos=(10,-1), size=(450,140))
-        self.manualpos_overridetoggle = wx.CheckBox(manualpos_panel, -1, 'Använd manuell position och ignorera positionsmeddelanden', pos=(20,23))
-        wx.StaticText(manualpos_panel, -1, 'Latitud:', pos=(20,60))
+        wx.StaticBox(manualpos_panel, -1, _(" Manual position settings "), pos=(10,-1), size=(450,140))
+        self.manualpos_overridetoggle = wx.CheckBox(manualpos_panel, -1, _("Use the supplied manual position and ignore position messages"), pos=(20,23))
+        wx.StaticText(manualpos_panel, -1, _("Latitude:"), pos=(20,60))
         self.manualpos_latdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,54), size=(55,-1), min=0, max=90)
-        wx.StaticText(manualpos_panel, -1, 'deg', pos=(145,60))
+        wx.StaticText(manualpos_panel, -1, _("deg"), pos=(145,60))
         self.manualpos_latmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,54), size=(55,-1), min=0, max=60)
-        wx.StaticText(manualpos_panel, -1, 'min', pos=(235,60))
+        wx.StaticText(manualpos_panel, -1, _("min"), pos=(235,60))
         self.manualpos_latdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,54), size=(55,-1), min=0, max=100)
-        wx.StaticText(manualpos_panel, -1, 'dec min', pos=(325,60))
+        wx.StaticText(manualpos_panel, -1, _("dec min"), pos=(325,60))
         self.manualpos_latquad = wx.ComboBox(manualpos_panel, -1, pos=(390,54), size=(55,-1), choices=('N', 'S'), style=wx.CB_READONLY)
-        wx.StaticText(manualpos_panel, -1, 'Longitud:', pos=(20,100))
+        wx.StaticText(manualpos_panel, -1, _("Longitude:"), pos=(20,100))
         self.manualpos_longdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,94), size=(55,-1), min=0, max=180)
-        wx.StaticText(manualpos_panel, -1, 'deg', pos=(145,100))
+        wx.StaticText(manualpos_panel, -1, _("deg"), pos=(145,100))
         self.manualpos_longmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,94), size=(55,-1), min=0.0, max=60)
-        wx.StaticText(manualpos_panel, -1, 'min', pos=(235,100))
+        wx.StaticText(manualpos_panel, -1, _("min"), pos=(235,100))
         self.manualpos_longdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,94), size=(55,-1), min=0, max=100)
-        wx.StaticText(manualpos_panel, -1, 'dec min', pos=(325,100))
+        wx.StaticText(manualpos_panel, -1, _("dec min"), pos=(325,100))
         self.manualpos_longquad = wx.ComboBox(manualpos_panel, -1, pos=(390,94), size=(55,-1), choices=('E', 'W'), style=wx.CB_READONLY)
         # Add panels to main sizer
         common_panel_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1103,24 +1112,24 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for serial input config
         # Port A config
         porta_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(porta_panel, -1, ' Läsning från primär serieport ', pos=(10,5), size=(450,190))
-        self.porta_serialon = wx.CheckBox(porta_panel, -1, 'Aktivera läsning från primär serieport', pos=(20,28))
-        wx.StaticText(porta_panel, -1, 'Port: ', pos=(20,60))
+        wx.StaticBox(porta_panel, -1, _(" Settings for a primary serial port "), pos=(10,5), size=(450,190))
+        self.porta_serialon = wx.CheckBox(porta_panel, -1, _("Activate reading from the primary serial port"), pos=(20,28))
+        wx.StaticText(porta_panel, -1, _("Port: "), pos=(20,60))
         self.porta_port = wx.ComboBox(porta_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2'))
-        wx.StaticText(porta_panel, -1, 'Hastighet: ', pos=(20,95))
+        wx.StaticText(porta_panel, -1, _("Speed: "), pos=(20,95))
         self.porta_speed = wx.ComboBox(porta_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
-        self.porta_xonxoff = wx.CheckBox(porta_panel, -1, 'Mjukvarukontroll:', pos=(20,130), style=wx.ALIGN_RIGHT)
-        self.porta_rtscts = wx.CheckBox(porta_panel, -1, 'RTS/CTS-kontroll:', pos=(20,160), style=wx.ALIGN_RIGHT)
+        self.porta_xonxoff = wx.CheckBox(porta_panel, -1, _("Software flow control:"), pos=(20,130), style=wx.ALIGN_RIGHT)
+        self.porta_rtscts = wx.CheckBox(porta_panel, -1, _("RTS/CTS flow control:"), pos=(20,160), style=wx.ALIGN_RIGHT)
         # Port B config
         portb_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(portb_panel, -1, ' Läsning från sekundär serieport ', pos=(10,-1), size=(450,190))
-        self.portb_serialon = wx.CheckBox(portb_panel, -1, 'Aktivera läsning från sekundär serieport', pos=(20,28))
-        wx.StaticText(portb_panel, -1, 'Port: ', pos=(20,60))
+        wx.StaticBox(portb_panel, -1, _(" Settings for a secondary serial port "), pos=(10,-1), size=(450,190))
+        self.portb_serialon = wx.CheckBox(portb_panel, -1, _("Activate reading from the secondary serial port"), pos=(20,28))
+        wx.StaticText(portb_panel, -1, _("Port: "), pos=(20,60))
         self.portb_port = wx.ComboBox(portb_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2'))
-        wx.StaticText(portb_panel, -1, 'Hastighet: ', pos=(20,95))
+        wx.StaticText(portb_panel, -1, _("Speed: "), pos=(20,95))
         self.portb_speed = wx.ComboBox(portb_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
-        self.portb_xonxoff = wx.CheckBox(portb_panel, -1, 'Mjukvarukontroll:', pos=(20,130), style=wx.ALIGN_RIGHT)
-        self.portb_rtscts = wx.CheckBox(portb_panel, -1, 'RTS/CTS-kontroll:', pos=(20,160), style=wx.ALIGN_RIGHT)
+        self.portb_xonxoff = wx.CheckBox(portb_panel, -1, _("Software flow control:"), pos=(20,130), style=wx.ALIGN_RIGHT)
+        self.portb_rtscts = wx.CheckBox(portb_panel, -1, _("RTS/CTS flow control:"), pos=(20,160), style=wx.ALIGN_RIGHT)
         # Add panels to main sizer
         serial_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         serial_panel_sizer.Add(porta_panel, 0)
@@ -1130,19 +1139,19 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for network config
         # Network receive config
         netrec_panel = wx.Panel(network_panel, -1)
-        wx.StaticBox(netrec_panel, -1, ' Läsning från nätverksserver ', pos=(10,5), size=(450,135))
-        self.netrec_clienton = wx.CheckBox(netrec_panel, -1, 'Aktivera läsning från en nätverksserver', pos=(20,28))
-        wx.StaticText(netrec_panel, -1, 'Sändande serverns adress (IP):', pos=(20,65))
+        wx.StaticBox(netrec_panel, -1, _(" Settings for reading from a network server "), pos=(10,5), size=(450,135))
+        self.netrec_clienton = wx.CheckBox(netrec_panel, -1, _("Activate reading from server"), pos=(20,28))
+        wx.StaticText(netrec_panel, -1, _("Address of streaming host (IP):"), pos=(20,65))
         self.netrec_clientaddress = wx.TextCtrl(netrec_panel, -1, pos=(230,58), size=(175,-1))
-        wx.StaticText(netrec_panel, -1, 'Sändande serverns port:', pos=(20,100))
+        wx.StaticText(netrec_panel, -1, _("Port of streaming host:"), pos=(20,100))
         self.netrec_clientport = wx.SpinCtrl(netrec_panel, -1, pos=(230,93), min=0, max=65535)
         # Network send config
         netsend_panel = wx.Panel(network_panel, -1)
-        wx.StaticBox(netsend_panel, -1, ' Agera som nätverksserver ', pos=(10,-1), size=(450,140))
-        self.netsend_serveron = wx.CheckBox(netsend_panel, -1, 'Aktivera nätverksserver som vidarebefodrar serieportsdata', pos=(20,28))
-        wx.StaticText(netsend_panel, -1, 'Den här serverns adress (IP):', pos=(20,65))
+        wx.StaticBox(netsend_panel, -1, _(" Settings for acting as a network server "), pos=(10,-1), size=(450,140))
+        self.netsend_serveron = wx.CheckBox(netsend_panel, -1, _("Activate streaming network server (relay serial port data)"), pos=(20,28))
+        wx.StaticText(netsend_panel, -1, _("Server address (this server) (IP):"), pos=(20,65))
         self.netsend_serveraddress = wx.TextCtrl(netsend_panel, -1, pos=(220,58), size=(175,-1))
-        wx.StaticText(netsend_panel, -1, 'Den här serverns port:', pos=(20,100))
+        wx.StaticText(netsend_panel, -1, _("Server port (this server):"), pos=(20,100))
         self.netsend_serverport = wx.SpinCtrl(netsend_panel, -1, pos=(220,93), min=0, max=65535)
         # Add panels to main sizer
         network_panel_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1153,23 +1162,23 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for log config
         # Log config
         filelog_panel = wx.Panel(logging_panel, -1)
-        wx.StaticBox(filelog_panel, -1, ' Loggning till fil ', pos=(10,5), size=(450,140))
-        self.filelog_logtoggle = wx.CheckBox(filelog_panel, -1, 'Aktivera loggning till databasfil', pos=(20,28))
-        wx.StaticText(filelog_panel, -1, 'Tid mellan loggningarna (s): _', pos=(20,65))
+        wx.StaticBox(filelog_panel, -1, _(" Logging to file "), pos=(10,5), size=(450,140))
+        self.filelog_logtoggle = wx.CheckBox(filelog_panel, -1, _("Activate logging to database file"), pos=(20,28))
+        wx.StaticText(filelog_panel, -1, _("Time between loggings (s):"), pos=(20,65))
         self.filelog_logtime = wx.SpinCtrl(filelog_panel, -1, pos=(230,60), min=1, max=604800)
-        wx.StaticText(filelog_panel, -1, 'Loggfil:', pos=(20,105))
+        wx.StaticText(filelog_panel, -1, _("Log file"), pos=(20,105))
         self.filelog_logfile = wx.TextCtrl(filelog_panel, -1, pos=(75,99), size=(275,-1))
-        self.filelog_logfileselect = wx.Button(filelog_panel, -1, '&Bläddra...', pos=(365,95))
+        self.filelog_logfileselect = wx.Button(filelog_panel, -1, _("&Browse..."), pos=(365,95))
         self.Bind(wx.EVT_BUTTON, self.OnLogFileDialog, self.filelog_logfileselect)
         # Identification DB config
         iddblog_panel = wx.Panel(logging_panel, -1)
-        wx.StaticBox(iddblog_panel, -1, ' Loggning till identifieringsdatabas (IDDB) ', pos=(10,5), size=(450,140))
-        self.iddblog_logtoggle = wx.CheckBox(iddblog_panel, -1, 'Aktivera loggning till IDDB-fil', pos=(20,28))
-        wx.StaticText(iddblog_panel, -1, 'Tid mellan loggningarna (s): _', pos=(20,65))
+        wx.StaticBox(iddblog_panel, -1, _(" Logging to identification database (IDDB) "), pos=(10,5), size=(450,140))
+        self.iddblog_logtoggle = wx.CheckBox(iddblog_panel, -1, _("Activate logging to IDDB file"), pos=(20,28))
+        wx.StaticText(iddblog_panel, -1, _("Time between loggings (s):"), pos=(20,65))
         self.iddblog_logtime = wx.SpinCtrl(iddblog_panel, -1, pos=(230,60), min=1, max=604800)
-        wx.StaticText(iddblog_panel, -1, 'IDDB-fil:', pos=(20,105))
+        wx.StaticText(iddblog_panel, -1, _("IDDB file:"), pos=(20,105))
         self.iddblog_logfile = wx.TextCtrl(iddblog_panel, -1, pos=(75,99), size=(275,-1))
-        self.iddblog_logfileselect = wx.Button(iddblog_panel, -1, '&Bläddra...', pos=(365,95))
+        self.iddblog_logfileselect = wx.Button(iddblog_panel, -1, _("&Browse..."), pos=(365,95))
         self.Bind(wx.EVT_BUTTON, self.OnIDDBFileDialog, self.iddblog_logfileselect)
         # Add panels to main sizer
         logging_panel_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1180,27 +1189,27 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for alert config
         # Alert file config
         alertfile_panel = wx.Panel(alert_panel, -1)
-        wx.StaticBox(alertfile_panel, -1, ' Larmfil ', pos=(10,5), size=(450,100))
-        self.alertfile_toggle = wx.CheckBox(alertfile_panel, -1, 'Läs larmfil vid programstart', pos=(20,28))
-        wx.StaticText(alertfile_panel, -1, 'Larmfil:', pos=(20,65))
+        wx.StaticBox(alertfile_panel, -1, _(" Alert file "), pos=(10,5), size=(450,100))
+        self.alertfile_toggle = wx.CheckBox(alertfile_panel, -1, _("Read alert file at program startup"), pos=(20,28))
+        wx.StaticText(alertfile_panel, -1, _("Alert file:"), pos=(20,65))
         self.alertfile_file = wx.TextCtrl(alertfile_panel, -1, pos=(105,59), size=(250,-1))
-        self.alertfile_fileselect = wx.Button(alertfile_panel, -1, '&Bläddra...', pos=(365,55))
+        self.alertfile_fileselect = wx.Button(alertfile_panel, -1, _("&Browse..."), pos=(365,55))
         self.Bind(wx.EVT_BUTTON, self.OnAlertFileDialog, self.alertfile_fileselect)
         # Remark file config
         remarkfile_panel = wx.Panel(alert_panel, -1)
-        wx.StaticBox(remarkfile_panel, -1, ' Anmärkningsfil ', pos=(10,5), size=(450,100))
-        self.remarkfile_toggle = wx.CheckBox(remarkfile_panel, -1, 'Läs anmärkningsfil vid programstart', pos=(20,28))
-        wx.StaticText(remarkfile_panel, -1, 'Anmärk. fil:', pos=(20,65))
+        wx.StaticBox(remarkfile_panel, -1, _(" Remark file "), pos=(10,5), size=(450,100))
+        self.remarkfile_toggle = wx.CheckBox(remarkfile_panel, -1, _("Read remark file at program startup"), pos=(20,28))
+        wx.StaticText(remarkfile_panel, -1, _("Remark file:"), pos=(20,65))
         self.remarkfile_file = wx.TextCtrl(remarkfile_panel, -1, pos=(105,59), size=(250,-1))
-        self.remarkfile_fileselect = wx.Button(remarkfile_panel, -1, '&Bläddra...', pos=(365,55))
+        self.remarkfile_fileselect = wx.Button(remarkfile_panel, -1, _("&Browse..."), pos=(365,55))
         self.Bind(wx.EVT_BUTTON, self.OnRemarkFileDialog, self.remarkfile_fileselect)
         # Alert sound file config
         alertsoundfile_panel = wx.Panel(alert_panel, -1)
-        wx.StaticBox(alertsoundfile_panel, -1, ' Ljudlarminställningar ', pos=(10,-1), size=(450,100))
-        self.alertsoundfile_toggle = wx.CheckBox(alertsoundfile_panel, -1, 'Aktivera ljudlarm', pos=(20,23))
-        wx.StaticText(alertsoundfile_panel, -1, 'Ljudlarmsfil:', pos=(20,60))
+        wx.StaticBox(alertsoundfile_panel, -1, _(" Sound alert settings "), pos=(10,-1), size=(450,100))
+        self.alertsoundfile_toggle = wx.CheckBox(alertsoundfile_panel, -1, _("Activate sound alert"), pos=(20,23))
+        wx.StaticText(alertsoundfile_panel, -1, _("Sound alert file:"), pos=(20,60))
         self.alertsoundfile_file = wx.TextCtrl(alertsoundfile_panel, -1, pos=(105,54), size=(250,-1))
-        self.alertsoundfile_fileselect = wx.Button(alertsoundfile_panel, -1, '&Bläddra...', pos=(365,50))
+        self.alertsoundfile_fileselect = wx.Button(alertsoundfile_panel, -1, _("&Browse..."), pos=(365,50))
         self.Bind(wx.EVT_BUTTON, self.OnAlertSoundFileDialog, self.alertsoundfile_fileselect)
         # Add panels to main sizer
         alert_panel_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1212,15 +1221,15 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for list view column setup
         # List view column config
         listcolumn_panel = wx.Panel(listview_panel, -1)
-        wx.StaticBox(listcolumn_panel, -1, ' Välj aktiva kolumner i listvyn ', pos=(10,5), size=(450,280))
-        wx.StaticText(listcolumn_panel, -1, 'Ej aktiva kolumner:', pos=(35,40))
+        wx.StaticBox(listcolumn_panel, -1, _(" Choose active columns in list view "), pos=(10,5), size=(450,280))
+        wx.StaticText(listcolumn_panel, -1, _("Not active columns:"), pos=(35,40))
         self.listcolumn_notactive = wx.ListBox(listcolumn_panel, -1, pos=(30,60), size=(130,200), style=wx.LB_SINGLE|wx.LB_SORT)
         wx.Button(listcolumn_panel, 50, '-->', pos=(180,120), size=(50,-1))
         wx.Button(listcolumn_panel, 51, '<--', pos=(180,170), size=(50,-1))
-        wx.StaticText(listcolumn_panel, -1, 'Aktiva kolumner:', pos=(255,40))
+        wx.StaticText(listcolumn_panel, -1, _("Active columns:"), pos=(255,40))
         self.listcolumn_active = wx.ListBox(listcolumn_panel, -1, pos=(250,60), size=(130,200), style=wx.LB_SINGLE)
-        wx.Button(listcolumn_panel, 52, 'Upp', pos=(395,120), size=(50,-1))
-        wx.Button(listcolumn_panel, 53, 'Ned', pos=(395,170), size=(50,-1))
+        wx.Button(listcolumn_panel, 52, _("Up"), pos=(395,120), size=(50,-1))
+        wx.Button(listcolumn_panel, 53, _("Down"), pos=(395,170), size=(50,-1))
         # Add panels to main sizer
         listview_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         listview_panel_sizer.Add(listcolumn_panel, 0)
@@ -1229,35 +1238,35 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for alert list view column setup
         # Alert list view column config
         alertlistcolumn_panel = wx.Panel(alertlistview_panel, -1)
-        wx.StaticBox(alertlistcolumn_panel, -1, ' Välj aktiva kolumner i larmvyn ', pos=(10,5), size=(450,280))
-        wx.StaticText(alertlistcolumn_panel, -1, 'Ej aktiva kolumner:', pos=(35,40))
+        wx.StaticBox(alertlistcolumn_panel, -1, _(" Choose active columns in alert list view "), pos=(10,5), size=(450,280))
+        wx.StaticText(alertlistcolumn_panel, -1, _("Not active columns:"), pos=(35,40))
         self.alertlistcolumn_notactive = wx.ListBox(alertlistcolumn_panel, -1, pos=(30,60), size=(130,200), style=wx.LB_SINGLE|wx.LB_SORT)
         wx.Button(alertlistcolumn_panel, 60, '-->', pos=(180,120), size=(50,-1))
         wx.Button(alertlistcolumn_panel, 61, '<--', pos=(180,170), size=(50,-1))
-        wx.StaticText(alertlistcolumn_panel, -1, 'Aktiva kolumner:', pos=(255,40))
+        wx.StaticText(alertlistcolumn_panel, -1, _("Active columns:"), pos=(255,40))
         self.alertlistcolumn_active = wx.ListBox(alertlistcolumn_panel, -1, pos=(250,60), size=(130,200), style=wx.LB_SINGLE)
-        wx.Button(alertlistcolumn_panel, 62, 'Upp', pos=(395,120), size=(50,-1))
-        wx.Button(alertlistcolumn_panel, 63, 'Ned', pos=(395,170), size=(50,-1))
+        wx.Button(alertlistcolumn_panel, 62, _("Up"), pos=(395,120), size=(50,-1))
+        wx.Button(alertlistcolumn_panel, 63, _("Down"), pos=(395,170), size=(50,-1))
         # Add panels to main sizer
         alertlistview_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         alertlistview_panel_sizer.Add(alertlistcolumn_panel, 0)
         alertlistview_panel.SetSizer(alertlistview_panel_sizer)
 
         # Dialog buttons
-        but1 = wx.Button(self,1,'&Spara')
-        but2 = wx.Button(self,2,'&Verkställ')
-        but3 = wx.Button(self,3,'&Avbryt')
+        but1 = wx.Button(self,1,_("&Save"))
+        but2 = wx.Button(self,2,_("&Apply"))
+        but3 = wx.Button(self,3,_("&Close"))
 
         # Sizer and notebook setup
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer2 = wx.BoxSizer(wx.HORIZONTAL)
-        notebook.AddPage(common_panel, "Allmänt")
-        notebook.AddPage(serial_panel, "Serieportar")
-        notebook.AddPage(network_panel, "Nätverk")
-        notebook.AddPage(logging_panel, "Loggning")
-        notebook.AddPage(alert_panel, "Larm")
-        notebook.AddPage(listview_panel, "Listvyn")
-        notebook.AddPage(alertlistview_panel, "Larmvyn")
+        notebook.AddPage(common_panel, _("Common"))
+        notebook.AddPage(serial_panel, _("Serial ports"))
+        notebook.AddPage(network_panel, _("Network"))
+        notebook.AddPage(logging_panel, _("Logging"))
+        notebook.AddPage(alert_panel, _("Alerts"))
+        notebook.AddPage(listview_panel, _("List view"))
+        notebook.AddPage(alertlistview_panel, _("Alert view"))
         sizer.Add(notebook, 1, wx.EXPAND, 0)
         sizer.AddSpacer((0,10))
         sizer.Add(sizer2, flag=wx.ALIGN_RIGHT)
@@ -1406,23 +1415,23 @@ class SettingsWindow(wx.Dialog):
         active.SetStringSelection(selection_active)
 
     def OnLogFileDialog(self, event):
-        try: self.filelog_logfile.SetValue(self.FileDialog('Välj loggfil', "Loggfil (*.log)|*.log|Alla filer (*)|*"))
+        try: self.filelog_logfile.SetValue(self.FileDialog(_("Choose log file"), _("Log file (*.log)|*.log|All files (*)|*")))
         except: return
 
     def OnIDDBFileDialog(self, event):
-        try: self.iddblog_logfile.SetValue(self.FileDialog('Välj IDDB-fil', "ID-databasfil (*.idb)|*.idb|Alla filer (*)|*"))
+        try: self.iddblog_logfile.SetValue(self.FileDialog(_("Choose IDDB file)"), _("ID database file (*.idb)|*.idb|All files (*)|*")))
         except: return
 
     def OnAlertFileDialog(self, event):
-        try: self.alertfile_file.SetValue(self.FileDialog('Välj larmfil', "Larmfil (*.alt)|*.alt|Alla filer (*)|*"))
+        try: self.alertfile_file.SetValue(self.FileDialog(_("Choose alert file"), _("Alert file (*.alt)|*.alt|All files (*)|*")))
         except: return
 
     def OnRemarkFileDialog(self, event):
-        try: self.remarkfile_file.SetValue(self.FileDialog('Välj anmärkningsfil', "Anmärkningsfil (*.key)|*.key|Alla filer (*)|*"))
+        try: self.remarkfile_file.SetValue(self.FileDialog(_("Choose remark file"), _("Remark file (*.key)|*.key|All files (*)|*")))
         except: return
 
     def OnAlertSoundFileDialog(self, event):
-        try: self.alertsoundfile_file.SetValue(self.FileDialog('Välj ljudlarmsfil', "Wavefil (*.wav)|*.wav|Alla filer (*)|*"))
+        try: self.alertsoundfile_file.SetValue(self.FileDialog(_("Choose sound alert file"), _("Wave file (*.wav)|*.wav|All files (*)|*")))
         except: return
 
     def FileDialog(self, label, wc):
@@ -1433,7 +1442,7 @@ class SettingsWindow(wx.Dialog):
             return(str(open_dlg.GetPath()))
 
     def OnSave(self, event):
-        dlg = wx.MessageDialog(self, 'Den här funktionen är inte implementerad ännu', 'FIXME', wx.OK | wx.ICON_INFORMATION)
+        dlg = wx.MessageDialog(self, _("This function is not implemented yet"), 'FIXME', wx.OK | wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -1446,14 +1455,14 @@ class SettingsWindow(wx.Dialog):
 
 class RawDataWindow(wx.Dialog):
     def __init__(self, parent, id):
-        wx.Dialog.__init__(self, parent, id, title='Rådata')#, size=(618,395))
+        wx.Dialog.__init__(self, parent, id, title=_("Raw data"))#, size=(618,395))
         panel = wx.Panel(self, -1)
-        wx.StaticBox(panel,-1,' Inkommande rådata ',pos=(3,5),size=(615,340))
+        wx.StaticBox(panel,-1,_(" Incoming raw data "),pos=(3,5),size=(615,340))
         # Create the textbox
         self.textbox = wx.TextCtrl(panel,-1,pos=(15,25),size=(595,305),style=(wx.TE_MULTILINE | wx.TE_READONLY))
         # Buttons
-        self.pausebutton = wx.ToggleButton(self,1,'&Pausa', size=(-1,35))
-        self.closebutton = wx.Button(self,2,'&Stäng', size=(-1,35))
+        self.pausebutton = wx.ToggleButton(self,1,_("&Pause"), size=(-1,35))
+        self.closebutton = wx.Button(self,2,_("&Close"), size=(-1,35))
 
         # Sizers
         sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1516,9 +1525,9 @@ class SetAlertWindow(wx.Dialog):
 
     def __init__(self, parent, id):
         # Skapa dialogruta med två ramar
-        self.dlg = wx.Dialog.__init__(self, parent, id, title='Ställ in larm', size=(590,550))
-        wx.StaticBox(self,-1,' Inlagda larm ',pos=(3,5),size=(583,200))
-        wx.StaticBox(self,-1,' Nytt larm ',pos=(3,210),size=(583,265))
+        self.dlg = wx.Dialog.__init__(self, parent, id, title=_("Set alerts"), size=(590,550))
+        wx.StaticBox(self,-1,_(" Current alerts "),pos=(3,5),size=(583,200))
+        wx.StaticBox(self,-1,_(" New alert "),pos=(3,210),size=(583,265))
 
         # Visa en lista över inlagda larm, samt tillhörande knappar
         # panel1 - huvudpanel
@@ -1532,21 +1541,21 @@ class SetAlertWindow(wx.Dialog):
         panel2.SetSizer(box)
         panel2.Layout()
         # Lägg till kolumner
-        self.querylist.InsertColumn(0, 'Ljudlarm')
+        self.querylist.InsertColumn(0, _("Sound alert"))
         self.querylist.SetColumnWidth(0, 70)
-        self.querylist.InsertColumn(1, 'SQL-sträng')
+        self.querylist.InsertColumn(1, _("SQL string"))
         self.querylist.SetColumnWidth(1, 370)
         # Lägg till knappar
-        wx.Button(panel1,01,'&Ta bort',pos=(0,10))
-        wx.Button(panel1,02,'Tö&m lista',pos=(0,50))
-        wx.Button(panel1,03,'&Redigera...',pos=(0,90))
-        wx.Button(panel1,04,'&Importera...',pos=(0,130))
+        wx.Button(panel1,01,_("&Remove"),pos=(0,10))
+        wx.Button(panel1,02,_("&Clear list"),pos=(0,50))
+        wx.Button(panel1,03,_("&Edit..."),pos=(0,90))
+        wx.Button(panel1,04,_("&Import..."),pos=(0,130))
 
         panel3 = wx.Panel(self, -1, pos=(15,230), size=(560,235))
         # Förklara kort hur larmfrågor läggs till
         wx.StaticText(panel3, -1,
-                'Nya larm skapas som SQL-frågor genom att kombinera de tre frågefälten här nedanför.\n'
-                'Argumentet mellan dem är OCH. I övrigt kan man kombinera dem efter godtycke.',
+                _("New alerts are created as SQL queries by combining the three fields below.\n"
+                "The argument between each field is AND."),
                 pos=(0,0), size=(570,50))
         # Skapa paneler med totalt tre möjliga SQL-frågedelar
         wx.StaticText(panel3, -1, 'I:', pos=(0,61))
@@ -1556,16 +1565,16 @@ class SetAlertWindow(wx.Dialog):
         wx.StaticText(panel3, -1, 'III: AND', pos=(0,171))
         self.searcharg3 = self.NewSearchPanel(panel3, -1, pos=(45,145))
         # Checkbox for alert on/off
-        self.searchalertbox = wx.CheckBox(panel3, -1, 'A&ktivera ljudlarm', pos=(60, 207))
+        self.searchalertbox = wx.CheckBox(panel3, -1, _("A&ctivate sound alert"), pos=(60, 207))
         # Knapp för att lägga till en fråga till listan
-        wx.Button(panel3,05,'&Lägg till',pos=(405,200))
+        wx.Button(panel3,05,_("A&dd to list"),pos=(405,200))
 
         # Fönsterknappar
-        wx.Button(self,10,'&Öppna...',pos=(3,490))
-        wx.Button(self,11,'&Spara...',pos=(103,490))
-        wx.Button(self,12,'&Avbryt',pos=(300,490))
-        wx.Button(self,13,'&Verkställ',pos=(400,490))
-        wx.Button(self,14,'&OK',pos=(500,490))
+        wx.Button(self,10,_("&Open..."),pos=(3,490))
+        wx.Button(self,11,_("&Save..."),pos=(103,490))
+        wx.Button(self,12,_("&Abort"),pos=(300,490))
+        wx.Button(self,13,_("A&pply"),pos=(400,490))
+        wx.Button(self,14,_("&OK"),pos=(500,490))
 
         # Koppla händelser
         self.Bind(wx.EVT_BUTTON, self.OnOpen, id=10)
@@ -1601,48 +1610,48 @@ class SetAlertWindow(wx.Dialog):
             # Lista med SQL-villkor
             sqlchoices = ['LIKE', 'NOT LIKE', '=', '<', '<=', '>', '>=']
             # Skapa dictionary med nyckeln som visas i comboboxen och värdet som kolumnnamn för sql-fråga
-            self.fieldmap = {'MMSI-nr': 'mmsi',
-                    'Land (2 tecken)': 'mid',
-                    'IMO-nr': 'imo',
-                    'Namn': 'name',
-                    'Typ (nummer)': 'type',
-                    'Callsign': 'callsign',
-                    'GEOREF': 'georef',
-                    'Fart': 'sog',
-                    'Kurs': 'cog',
-                    'Destination': 'destination',
-                    'ETA (MMDDhhmm)': 'eta',
-                    'Längd': 'length',
-                    'Bredd': 'width',
-                    'Djupgående': 'draught',
-                    'Girhastighet': 'rateofturn',
-                    'Navstatus': 'navstatus',
-                    'Bäring': 'bearing',
-                    'Avstånd': 'distance'}
+            self.fieldmap = {_("MMSI number"): 'mmsi',
+                    _("Nation (2 chars)"): 'mid',
+                    _("IMO number"): 'imo',
+                    _("Name"): 'name',
+                    _("Type (number)"): 'type',
+                    _("Callsign"): 'callsign',
+                    _("GEOREF"): 'georef',
+                    _("Speed"): 'sog',
+                    _("Course"): 'cog',
+                    _("Destination"): 'destination',
+                    _("ETA (MMDDhhmm)"): 'eta',
+                    _("Length"): 'length',
+                    _("Width"): 'width',
+                    _("Draught"): 'draught',
+                    _("Rate of turn"): 'rateofturn',
+                    _("Nav Status"): 'navstatus',
+                    _("Bearing"): 'bearing',
+                    _("Distance"): 'distance'}
             # Iterera över fieldchoices och skapa en sorterad lista av nyklarna
             self.fieldchoices = []
             for i in self.fieldmap.iterkeys(): self.fieldchoices.append(i)
             self.fieldchoices.sort()
 
             # Skapa combobox för fältval
-            self.fieldbox = wx.ComboBox(self, -1, pos=(10,20),size=(150,-1), value='MMSI-nr', choices=self.fieldchoices, style=wx.CB_READONLY)
-            fieldtext = wx.StaticText(self, -1, 'Fält', pos=(10,5))
+            self.fieldbox = wx.ComboBox(self, -1, pos=(10,20),size=(150,-1), value=_("MMSI number"), choices=self.fieldchoices, style=wx.CB_READONLY)
+            fieldtext = wx.StaticText(self, -1, _("Column"), pos=(10,5))
             fieldtext.SetFont(smallfont)
             # Skapa combobox för sql-villkorsval
             self.sqlbox = wx.ComboBox(self, -1, pos=(175,20),size=(100,-1), value='LIKE', choices=sqlchoices, style=wx.CB_READONLY)
-            sqltext= wx.StaticText(self, -1, 'Villkor', pos=(175,5))
+            sqltext= wx.StaticText(self, -1, _("Condition"), pos=(175,5))
             sqltext.SetFont(smallfont)
             # Skapa inmatningsbox för värde
             self.valuebox = wx.TextCtrl(self, -1, pos=(290,20),size=(170,-1))
-            valuetext = wx.StaticText(self, -1, 'Värde', pos=(290,5))
+            valuetext = wx.StaticText(self, -1, _("Value"), pos=(290,5))
             valuetext.SetFont(smallfont)
 
     def UpdateValues(self):
         # Uppdatera larmlistan med värden från listan queryitems
         self.querylist.DeleteAllItems()
         for x in self.queryitems:
-            if x[1] == 0: col0 = 'Nej'
-            elif x[1] == 1: col0 = 'Ja'
+            if x[1] == 0: col0 = _("No")
+            elif x[1] == 1: col0 = _("Yes")
             currentrow = self.querylist.GetItemCount()
             self.querylist.InsertStringItem(currentrow, col0)
             self.querylist.SetStringItem(currentrow, 1, x[0])
@@ -1700,9 +1709,9 @@ class SetAlertWindow(wx.Dialog):
                     # Retreive the string itself from queryitems
                     querystring = str(self.queryitems[x][0])
                     # Create a dialog with a textctrl, a checkbox and two buttons
-                    dlg = wx.Dialog(self, -1, 'Redigera larm', size=(400,130))
+                    dlg = wx.Dialog(self, -1, _("Edit alert"), size=(400,130))
                     textbox = wx.TextCtrl(dlg, -1, querystring, pos=(10,10), size=(380,70), style=wx.TE_MULTILINE)
-                    alertbox = wx.CheckBox(dlg, -1, 'A&ktivera ljudlarm', pos=(30, 95))
+                    alertbox = wx.CheckBox(dlg, -1, _("A&ctivate sound alert"), pos=(30, 95))
                     buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
                     buttonsizer.SetDimension(210, 85, 180, 40)
                     # Make the checkbox checked if the value is set in queryitems
@@ -1717,7 +1726,7 @@ class SetAlertWindow(wx.Dialog):
                         self.UpdateValues()
         # If more than one item selected, show error
         elif self.querylist.GetSelectedItemCount() > 1:
-            dlg = wx.MessageDialog(self, 'Du kan bara redigera en fråga i taget!', 'Fel', wx.OK | wx.ICON_ERROR)
+            dlg = wx.MessageDialog(self, _("You can only edit one query at a time!"), 'Fel', wx.OK | wx.ICON_ERROR)
             dlg.ShowModal()
 
     def OnRemove(self, event):
@@ -1745,15 +1754,15 @@ class SetAlertWindow(wx.Dialog):
 
     class Import(wx.Dialog):
         def __init__(self, parent, id):
-            wx.Dialog.__init__(self, parent, id, title='Importera', size=(503,350))
+            wx.Dialog.__init__(self, parent, id, title=_("Import"), size=(503,350))
             # Make a box for import from clipboard
-            wx.StaticBox(self,-1,' Importera från klippbordet ',pos=(3,5),size=(496,290))
+            wx.StaticBox(self,-1,_(" Import from clipboard"),pos=(3,5),size=(496,290))
             # Explain how the import is done
             wx.StaticText(self, -1,
-            'Vid import från klippbordet förväntas data vara i kolumnformat.\n'
-            'Tilläggsargument skrivs i de övre rutorna medan val av fält för den\n'
-            'importerade datan görs längst ned. Välj och tryck sedan Klistra in.\n'
-            'Ljudlarmsaktivering gäller för alla objekt.',
+            _("The data from the clipboard is expected to be in column format.\n"
+            "Additional arguments are written in the upper boxes while the choice\n"
+            "of column for imported data is in the bottom. Choose and press Paste.\n"
+            "Sound alert activation is for all the imported objects."),
             pos=(10,25), size=(470,70))
 
             # Map the parents variable queryitems to self.queryitems
@@ -1761,21 +1770,21 @@ class SetAlertWindow(wx.Dialog):
             self.parent = parent
 
             # Buttons and events
-            wx.Button(self,01,'K&listra in',pos=(200,217))
-            wx.Button(self,02,'&Avbryt',pos=(400,310))
+            wx.Button(self,01,_("&Paste"),pos=(200,217))
+            wx.Button(self,02,_("&Abort"),pos=(400,310))
             self.Bind(wx.EVT_BUTTON, self.OnDoPaste, id=01)
             self.Bind(wx.EVT_BUTTON, self.OnAbort, id=02)
             self.Bind(wx.EVT_CLOSE, self.OnAbort)
 
             # Create a combobox and map the resulting values
-            wx.StaticBox(self,-1,' Fält för dataimporten ',pos=(13,190),size=(475,90))
-            self.fieldbox = wx.ComboBox(self, -1, pos=(25,220),size=(150,-1), value='MMSI-nr', choices=('MMSI-nr', 'IMO-nr', 'Namn', 'Callsign'), style=wx.CB_READONLY)
-            self.fieldmap = {'MMSI-nr': 'mmsi', 'IMO-nr': 'imo', 'Namn': 'name', 'Callsign': 'callsign'}
+            wx.StaticBox(self,-1,_(" Fields for the data import "),pos=(13,190),size=(475,90))
+            self.fieldbox = wx.ComboBox(self, -1, pos=(25,220),size=(150,-1), value=_("MMSI number"), choices=(_("MMSI number"), _("IMO number"), _("Name"), _("Callsign")), style=wx.CB_READONLY)
+            self.fieldmap = {_("MMSI number"): 'mmsi', _("IMO number"): 'imo', _("Name"): 'name', _("Callsign"): 'callsign'}
             # Create a checkbox for alert on/off
-            self.alertbox = wx.CheckBox(self, -1, 'A&ktivera ljudlarm', (25, 255))
+            self.alertbox = wx.CheckBox(self, -1, _("A&ctivate sound alert"), (25, 255))
 
             # Create panels for additional search arguments
-            wx.StaticBox(self,-1,' Tilläggsargument ',pos=(13,100),size=(475,80))
+            wx.StaticBox(self,-1,_(" Additional arguments "),pos=(13,100),size=(475,80))
             SetAlertWindow.importsearcharg = parent.NewSearchPanel(self, -1, pos=(15,120))
 
         def OnDoPaste(self, event):
@@ -1796,11 +1805,11 @@ class SetAlertWindow(wx.Dialog):
                 if len(i) > 0:
                     queries.append(self.fieldmap[self.fieldbox.GetValue().encode('utf_8')] + " LIKE '" + i + "'" + addquery)
             # Create a nicely formatted question to approve the imported data
-            formattedqueries = "Godkänns importen av följande frågor?\n\n"
+            formattedqueries = _("Do you approve of importing the following queries?\n\n")
             for i in queries:
                 formattedqueries += str(i) + '\n'
             # Create a dialog with a yes- and a no-button
-            dlg = wx.MessageDialog(self, formattedqueries, 'Godkänn import', wx.YES_NO | wx.ICON_QUESTION)
+            dlg = wx.MessageDialog(self, formattedqueries, _("Approve import"), wx.YES_NO | wx.ICON_QUESTION)
             # If user answers 'yes' use the imported data and destroy dialogs
             if dlg.ShowModal() == wx.ID_YES:
                 fullqueries = []
