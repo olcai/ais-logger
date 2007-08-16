@@ -687,7 +687,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         listmix.ColumnSorterMixin.__init__(self, len(self.columnlist))
 
         # Do inital update
-        self.OnUpdate()
+        self.OnUpdate(query="mmsi LIKE ''")
         # Do initial sorting on column 0, ascending order (1)
         self.SortListItems(0, 1)
 
@@ -702,9 +702,6 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         dlg.Show()
 
     def OnUpdate(self, query="mmsi LIKE '%'"):
-        # FIXME: try: old_oldmap = self.itemOldMap.copy()
-        # FIXME: except: old_oldmap = {}
-
         # Check if a row is selected, if true, extract the mmsi
         selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
         if selected_row != -1:
@@ -739,6 +736,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         self.itemOldMap = {}
         for v in query_result:
             self.itemOldMap[v[0]] = v[1]
+
         # Sort the data (including a refresh of the listctrl)
         self.SortListItems()
 
@@ -1359,19 +1357,25 @@ class SetAlertsWindow(wx.Dialog):
             elif alert == 2:
                 alert = "Yes/Sound"
             exportdata += str(row[0]) + "," + row[1] + "," + row[2] + "," + row[3] + "," + alert + "," + row[5] + "\n"
-        # Define the clipboard
-        clipboard = wx.Clipboard()
-        # Try to open clipboard and copy text objects
-        if clipboard.Open():
-            clipboarddata = wx.TextDataObject()
-            clipboarddata.SetText(exportdata)
-            # FIXME: ERROR, app won't close when using setdata!
-            clipboard.SetData(clipboarddata)
-            clipboard.Close()
-            #clipboard.Destroy()
-            print "ok"
-        print "returning"
-        return
+        # Create file dialog
+        file = ''
+        wcd = _("CSV files (*.csv)|*.csv|All files (*)|*")
+        dir = os.getcwd()
+        open_dlg = wx.FileDialog(self, message=_("Choose file to save current list"), defaultDir=dir, defaultFile='list.csv', wildcard=wcd, style=wx.SAVE)
+        if open_dlg.ShowModal() == wx.ID_OK:
+            file = open_dlg.GetPath()
+        if len(file) > 0:
+            # Save the data
+            try:
+                output = open(file, 'w')
+                output.write(exportdata)
+                output.close()
+            except IOError, error:
+                dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg.ShowModal()
+            except UnicodeDecodeError, error:
+                dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg.ShowModal()
 
 
     class List(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSorterMixin):
@@ -2083,14 +2087,14 @@ class AdvancedAlertWindow(wx.Dialog):
         # Fönsterknappar
         wx.Button(self,10,_("O&pen..."),pos=(3,490))
         wx.Button(self,11,_("&Save..."),pos=(103,490))
-        wx.Button(self,12,_("&Cancel"),pos=(300,490))
+        wx.Button(self,12,_("&Close"),pos=(300,490))
         wx.Button(self,13,_("&Apply"),pos=(400,490))
         wx.Button(self,14,_("&OK"),pos=(500,490))
 
         # Koppla händelser
         self.Bind(wx.EVT_BUTTON, self.OnOpen, id=10)
         self.Bind(wx.EVT_BUTTON, self.OnSave, id=11)
-        self.Bind(wx.EVT_BUTTON, self.OnCancel, id=12)
+        self.Bind(wx.EVT_BUTTON, self.OnClose, id=12)
         self.Bind(wx.EVT_BUTTON, self.OnApply, id=13)
         self.Bind(wx.EVT_BUTTON, self.OnOK, id=14)
         self.Bind(wx.EVT_BUTTON, self.OnRemove, id=01)
@@ -2100,7 +2104,7 @@ class AdvancedAlertWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnAdd, id=05)
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnEdit, self.querylist)
         self.Bind(wx.EVT_KEY_UP, self.OnKey) 
-        self.Bind(wx.EVT_CLOSE, self.OnCancel)
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
 
         # Update the temporary list from alertlist
         self.queryitems = alertlist[:]
@@ -2199,15 +2203,8 @@ class AdvancedAlertWindow(wx.Dialog):
             valuebox = "self." + i + ".valuebox.GetValue()"
             # If a value has been entered into the valuebox, process
             if len(eval(valuebox)) > 0:
-                # If valuebox only contains digits, don't add ' ' around the expression
-                # FIXME: LÄGGER TILL ' ' PGA FUNDERINGAR PÅ IMPLEMENTATIONEN!!!
-                if eval(valuebox).isdigit():
-                    sqlargs.append(eval(fieldmap)[eval(fieldbox).encode('utf_8')]
-                    + " " + eval(sqlbox) + " '" + eval(valuebox) + "'")
-                # If valuebox contains something else besides digits, add ' ' around the expression
-                else:
-                    sqlargs.append(eval(fieldmap)[eval(fieldbox).encode('utf_8')]
-                    + " " + eval(sqlbox) + " '" + eval(valuebox) + "'")
+                sqlargs.append(eval(fieldmap)[eval(fieldbox).encode('utf_8')]
+                + " " + eval(sqlbox) + " '" + eval(valuebox) + "'")
         return sqlargs
 
     def OnEdit(self, event):
@@ -2282,10 +2279,10 @@ class AdvancedAlertWindow(wx.Dialog):
 
             # Buttons and events
             wx.Button(self,01,_("&Paste"),pos=(200,217))
-            wx.Button(self,02,_("&Abort"),pos=(400,310))
+            wx.Button(self,02,_("&Close"),pos=(400,310))
             self.Bind(wx.EVT_BUTTON, self.OnDoPaste, id=01)
-            self.Bind(wx.EVT_BUTTON, self.OnAbort, id=02)
-            self.Bind(wx.EVT_CLOSE, self.OnAbort)
+            self.Bind(wx.EVT_BUTTON, self.OnClose, id=02)
+            self.Bind(wx.EVT_CLOSE, self.OnClose)
 
             # Create a combobox and map the resulting values
             wx.StaticBox(self,-1,_(" Fields for the data import "),pos=(13,190),size=(475,90))
@@ -2340,7 +2337,7 @@ class AdvancedAlertWindow(wx.Dialog):
             # If user press 'no' destroy only the approve-dialog
             dlg.Destroy()
 
-        def OnAbort(self, event):
+        def OnClose(self, event):
             self.Destroy()
 
     def OnApply(self, event):
@@ -2421,7 +2418,7 @@ class AdvancedAlertWindow(wx.Dialog):
                 dlg.ShowModal()
                 open_dlg.Destroy()
 
-    def OnCancel(self, event):
+    def OnClose(self, event):
         self.Destroy()
 
 
