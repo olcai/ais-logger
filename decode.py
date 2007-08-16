@@ -39,7 +39,6 @@ def jointelegrams(inputstring):
     # Check the checksum of each sentence and join them
     for x in telegrams[:]:
         if not checksum(x):
-            print 'ERROR: Checksum mismatch'
             return
         phrase = x.split(',')
         joinedphrase = joinedphrase + phrase[5]
@@ -65,7 +64,6 @@ def telegramparser(inputstring):
         if telegram[1] == '02':
             # Check the checksum
             if not checksum(inputstring):
-                print 'ERROR: Checksum mismatch'
                 return
             # MMSI number
             mmsi = str(int(telegram[2],16))
@@ -106,7 +104,6 @@ def telegramparser(inputstring):
         elif telegram[1] == '0E':
             # Check the checksum
             if not checksum(inputstring):
-                print 'ERROR: Checksum mismatch'
                 return
             # MMSI number
             mmsi = str(int(telegram[2],16))
@@ -131,7 +128,6 @@ def telegramparser(inputstring):
         elif telegram[1] == '0F':
             # Check the checksum
             if not checksum(inputstring):
-                print 'ERROR: Checksum mismatch'
                 return
             # MMSI number
             mmsi = str(int(telegram[2],16))
@@ -169,7 +165,6 @@ def telegramparser(inputstring):
         if int(bindata[0:6],2) == 1 or int(bindata[0:6],2) == 2 or int(bindata[0:6],2) == 3:
             # Check the checksum
             if not checksum(inputstring):
-                print 'ERROR: Checksum mismatch'
                 return
             # MMSI number
             mmsi = str(int(bindata[8:38],2))
@@ -223,7 +218,6 @@ def telegramparser(inputstring):
         if int(bindata[0:6],2) == 5 and int(bindata[38:40],2) == 0:
             # Check the checksum
             if not checksum(inputstring):
-                print 'ERROR: Checksum mismatch'
                 return
             # MMSI number
             mmsi = str(int(bindata[8:38],2))
@@ -264,7 +258,6 @@ def telegramparser(inputstring):
     if telegram[0] == '$GPGGA':
         # Check the checksum
         if not checksum(inputstring):
-            print 'ERROR: Checksum mismatch'
             return
         # Latitude
         latitude = telegram[3] + telegram[2][0:4] + telegram[2][5:9]
