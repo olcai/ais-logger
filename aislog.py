@@ -62,9 +62,16 @@ if cmdlineoptions.configfile:
             # Could not read the file, aborting program
             sys.exit("Unable to open config file. Aborting.")
 
+### Gettext call
+gettext.install('aislogger', ".", unicode=False)
+#self.presLan_en = gettext.translation("aislogger", "./locale", languages=['en'])
+#self.presLan_en.install()
+#self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
+#locale.setlocale(locale.LC_ALL, 'EN')
+        
 ### Load or create configuration
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
-columnsetup = {'mmsi': ['MMSI', 80], 'mid': ['Land', 40], 'imo': ['IMO', 80], 'name': ['Namn', 150], 'type': ['Nrtyp', 45], 'typename': ['Typ', 50], 'callsign': ['CS', 60], 'latitude': ['Latitud', 85], 'longitude': ['Longitud', 90], 'georef': ['GEOREF', 85], 'creationtime': ['Skapad', 70], 'time': ['Senast', 70], 'sog': ['Fart', 45], 'cog': ['Kurs', 45], 'heading': ['Heading', 62], 'destination': ['Destination', 150], 'eta': ['ETA', 80], 'length': ['Längd', 45], 'width': ['Bredd', 45], 'draught': ['Djupg.', 90], 'rateofturn': ['Girhast', 60], 'bit': ['BIT', 35], 'tamper': ['Tamper', 60], 'navstatus': ['NavStatus', 150], 'posacc': ['PosAcc', 55], 'bearing': ['Bäring', 50], 'distance': ['Avstånd', 60], 'remark': ['Anmärkning', 150]}
+columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 50], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 50], 'callsign': [_("CS"), 60], 'latitude': [_("Latitude"), 85], 'longitude': [_("Longitude"), 90], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 70], 'time': [_("Updated"), 70], 'sog': [_("Speed"), 50], 'cog': [_("Course"), 50], 'heading': [_("Heading"), 62], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'bit': [_("BIT"), 35], 'tamper': [_("Tamper"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'bearing': [_("Bearing"), 55], 'distance': [_("Distance"), 65], 'remark': [_("Remark"), 150]}
 # Set default keys and values
 defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 'deleteitemtime': 3600, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': ''},
@@ -138,13 +145,6 @@ class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, size=(800,500))
 
-        # Gettext call
-        gettext.install('aislogger', ".", unicode=False)
-        #self.presLan_en = gettext.translation("aislogger", "./locale", languages=['en'])
-        #self.presLan_en.install()
-        #self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
-        #locale.setlocale(locale.LC_ALL, 'EN')
-        
         # Create status row
         statusbar = wx.StatusBar(self, -1)
         statusbar.SetFieldsCount(2)
