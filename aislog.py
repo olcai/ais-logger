@@ -2113,6 +2113,15 @@ class MainThread:
                 # Mappa typnr till typ enligt lista
                 if 'type' in parser and len(parser['type']) > 0 and typecode.has_key(parser['type']):
                     parser['typename'] = typecode[parser['type']]
+                # Check if user has set a fixed manual position, and if so, use it...
+                if config['position'].as_bool('override_on'):
+                    config_lat = config['position']['latitude'].split(';')
+                    config_long = config['position']['longitude'].split(';')                   
+                    ownlatitude = config_lat[2] + (config_lat[0] + config_lat[1].split('.')[0] + config_lat[1].split('.')[1]).ljust(8, '0')
+                    ownlongitude = config_long[2] + (config_long[0] + config_long[1].split('.')[0] + config_long[1].split('.')[1]).ljust(9, '0')
+                    owngeoref = georef(ownlatitude,ownlongitude)
+                    v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
+                    owndata.update(v)
                 # Beräkna avstånd och bäring till objekt
                 if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and 'latitude' in parser and 'longitude' in parser:
                     try:
@@ -2153,22 +2162,9 @@ class MainThread:
                 execSQL(DbCmd(SqlCmd, [
                     ("INSERT OR IGNORE INTO data (mmsi, creationtime) VALUES (%s,'%s')" % (int(parser['mmsi']), parser['time']),()),
                     ("UPDATE data SET %s WHERE mmsi=%s" % (dbexpression, int(parser['mmsi'])),())]))
-                # FIXME: Denna funktion stannar kvar som referens vid jämförande prestandamätning för nu
-                # Check if parser contains data that should be inserted/updated into iddb:
-                #if 'imo' and 'name' and 'callsign' in parser:
-                #    iddb_expression = 'imo="' + parser['imo'] + '",name="' + parser['name'] + '",callsign="' + parser['callsign'] + '"'
-                #    execSQL(DbCmd(SqlCmd, [
-                #        ("INSERT OR IGNORE INTO iddb (mmsi) VALUES (%s)" % (int(parser['mmsi'])),()),
-                #        ("UPDATE iddb SET %s WHERE mmsi=%s" % (iddb_expression, int(parser['mmsi'])),())]))
-            elif parser.has_key('ownlatitude') and parser.has_key('ownlongitude') and len(parser['ownlatitude']) == 9 and len(parser['ownlongitude']) == 10:
-                if config['position'].as_bool('override_on'):
-                    config_lat = config['position']['latitude'].split(';')
-                    config_long = config['position']['longitude'].split(';')                   
-                    ownlatitude = config_lat[2] + (config_lat[0] + config_lat[1].split('.')[0] + config_lat[1].split('.')[1]).ljust(8, '0')
-                    ownlongitude = config_long[2] + (config_long[0] + config_long[1].split('.')[0] + config_long[1].split('.')[1]).ljust(9, '0')
-                else:
-                    ownlatitude = parser['ownlatitude']
-                    ownlongitude = parser['ownlongitude']
+            elif parser.has_key('ownlatitude') and parser.has_key('ownlongitude') and len(parser['ownlatitude']) == 9 and len(parser['ownlongitude']) == 10 and not config['position'].as_bool('override_on'):
+                ownlatitude = parser['ownlatitude']
+                ownlongitude = parser['ownlongitude']
                 owngeoref = georef(ownlatitude,ownlongitude)
                 v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
                 owndata.update(v)
