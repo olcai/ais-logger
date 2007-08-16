@@ -158,14 +158,14 @@ class MainWindow(wx.Frame):
         menubar = wx.MenuBar()
         file = wx.Menu()
 
-        load = wx.MenuItem(file, 101, _("&Load snapshot file\tCtrl+L"), _("Loads a snapshot file"))
+        load = wx.MenuItem(file, 101, _("&Load snapshot file..."), _("Loads a snapshot file"))
         file.AppendItem(load)
 
-        save = wx.MenuItem(file, 102, _("&Save snapshot file\tCtrl+S"), _("Saves the data in memory to a snapshot file"))
+        save = wx.MenuItem(file, 102, _("&Save snapshot file..."), _("Saves the data in memory to a snapshot file"))
         file.AppendItem(save)
         file.AppendSeparator()
 
-        load_raw = wx.MenuItem(file, 103, _("Load &raw data"), _("Loads a file containing raw (unparsed) messages"))
+        load_raw = wx.MenuItem(file, 103, _("Load &raw data...\tCtrl+R"), _("Loads a file containing raw (unparsed) messages"))
         file.AppendItem(load_raw)
         file.AppendSeparator()
 
@@ -173,28 +173,28 @@ class MainWindow(wx.Frame):
         file.AppendItem(quit)
 
         view = wx.Menu()
-        showsplit = wx.MenuItem(view, 201, _("Show &alert view"), _("Shows or hides the alert view"))
+        showsplit = wx.MenuItem(view, 201, _("Show &alert view\tF8"), _("Shows or hides the alert view"))
         view.AppendItem(showsplit)
 
         refresh = wx.MenuItem(view, 202, _("&Refresh views\tF5"), _("Do a forced refresh of list views"))
         view.AppendItem(refresh)
         view.AppendSeparator()
 
-        showrawdata = wx.MenuItem(view, 203, _("Show raw &data window"), _("Shows a window containing the incoming raw (unparsed) data"))
+        showrawdata = wx.MenuItem(view, 203, _("Show raw &data window..."), _("Shows a window containing the incoming raw (unparsed) data"))
         view.AppendItem(showrawdata)
         
-        tools = wx.Menu()
-        alertsettings = wx.MenuItem(tools, 301, _("Set &alerts"), _("Shows a window where one can set different alerts"))
-        tools.AppendItem(alertsettings)
-        
-        calchorizon = wx.MenuItem(tools, 302, _("Show s&tatistics"), _("Shows a window containing various statistics"))
-        tools.AppendItem(calchorizon)
+        calchorizon = wx.MenuItem(view, 204, _("Show s&tatistics..."), _("Shows a window containing various statistics"))
+        view.AppendItem(calchorizon)
 
-        settings = wx.MenuItem(tools, 303, _("&Settings"), ("Opens the settings window"))
+        tools = wx.Menu()
+        setalerts = wx.MenuItem(tools, 301, _("Set &alerts and remarks...\tCtrl+A"), _("Shows a window where one can set alerts and remarks"))
+        tools.AppendItem(setalerts)
+        
+        settings = wx.MenuItem(tools, 302, _("&Settings...\tCtrl+S"), ("Opens the settings window"))
         tools.AppendItem(settings)
 
         help = wx.Menu()
-        about = wx.MenuItem(help, 401, _("&About\tF1"), _("About the software"))
+        about = wx.MenuItem(help, 401, _("&About...\tF1"), _("About the software"))
         help.AppendItem(about)
 
         menubar.Append(file, _("&File"))
@@ -211,10 +211,9 @@ class MainWindow(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnShowSplit, id=201)
         self.Bind(wx.EVT_MENU, self.OnRefresh, id=202)
         self.Bind(wx.EVT_MENU, self.OnShowRawdata, id=203)
-        self.Bind(wx.EVT_MENU, self.OnSetAlert, id=301)
-        self.Bind(wx.EVT_MENU, self.OnCalcHorizon, id=302)
-        self.Bind(wx.EVT_MENU, self.OnSettings, id=303)
-        self.Bind(wx.EVT_MENU, self.OnID, id=305)
+        self.Bind(wx.EVT_MENU, self.OnCalcHorizon, id=204)
+        self.Bind(wx.EVT_MENU, self.OnSetAlerts, id=301)
+        self.Bind(wx.EVT_MENU, self.OnSettings, id=302)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=401)
 
         # Läs in typ- och MID-koder
@@ -335,7 +334,7 @@ class MainWindow(wx.Frame):
             longitude = owndata['ownlongitude']
             longitude = longitude[1:4] + '° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
             self.SetStatusText(_("Own position: ") + latitude + '  ' + longitude + ' - ' + owndata['owngeoref'], 0)
-        self.SetStatusText(_("Total nr of objects / old: ") + str(nritems) + ' / ' + str(nrgreyitems), 1)
+        self.SetStatusText(_("Total nbr of objects / old: ") + str(nritems) + ' / ' + str(nrgreyitems), 1)
 
     def OnShowRawdata(self, event):
         dlg = RawDataWindow(None, -1)
@@ -538,12 +537,12 @@ class MainWindow(wx.Frame):
         dlg.ShowModal()
         dlg.Destroy()
 
-    def OnSettings(self, event):
-        dlg = SettingsWindow(None, -1)
+    def OnSetAlerts(self, event):
+        dlg = SetAlertsWindow(None, -1)
         dlg.Show()
 
-    def OnSetAlert(self, event):
-        dlg = SetAlertWindow(None, -1)
+    def OnSettings(self, event):
+        dlg = SettingsWindow(None, -1)
         dlg.Show()
 
 
@@ -668,7 +667,7 @@ class Distance:
 
 class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSorterMixin):
     def __init__(self, parent, columns):
-        wx.ListCtrl.__init__(self, parent, -1, style=wx.LC_REPORT|wx.LC_VIRTUAL)
+        wx.ListCtrl.__init__(self, parent, -1, style=wx.LC_REPORT|wx.LC_VIRTUAL|wx.LC_SINGLE_SEL)
 
         # Define and retreive two arrows, one upwards, the other downwards
         self.imagelist = wx.ImageList(16, 16)
@@ -688,7 +687,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         listmix.ColumnSorterMixin.__init__(self, len(self.columnlist))
 
         # Do inital update
-        self.OnUpdate(self)
+        self.OnUpdate()
         # Do initial sorting on column 0, ascending order (1)
         self.SortListItems(0, 1)
 
@@ -703,6 +702,14 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         dlg.Show()
 
     def OnUpdate(self, query="mmsi LIKE '%'"):
+        # FIXME: try: old_oldmap = self.itemOldMap.copy()
+        # FIXME: except: old_oldmap = {}
+
+        # Check if a row is selected, if true, extract the mmsi
+        selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
+        if selected_row != -1:
+            selected_mmsi = self.itemIndexMap[selected_row]
+            print selected_mmsi
         # Create a comma separated string from self.columnlist
         # If the remark column is in list, don't use it in
         columnlistcopy = self.columnlist[:]
@@ -734,6 +741,13 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             self.itemOldMap[v[0]] = v[1]
         # Sort the data (including a refresh of the listctrl)
         self.SortListItems()
+
+        # See if the previous selected row exists after the list update
+        # If the mmsi is found, set the new position as selected
+        try:
+            new_position = self.FindItem(-1, unicode(selected_mmsi))
+            self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+        except: pass
 
     def LoopQuery(self, query_result, iddb_result):
         # Create an IDDB dictionary and map the result from iddb_result to it
@@ -1058,6 +1072,503 @@ class DetailWindow(wx.Dialog):
         self.timer.Stop()
         self.Destroy()
         
+
+class SetAlertsWindow(wx.Dialog):
+    def __init__(self, parent, id):
+        # Define the dialog
+        wx.Dialog.__init__(self, parent, id, title=_("Set alerts and remarks"))
+        # Create panels
+        filter_panel = wx.Panel(self, -1)
+        list_panel = wx.Panel(self, -1)
+        object_panel = wx.Panel(self, -1)
+        action_panel = wx.Panel(self, -1)
+        # Create static boxes
+        wx.StaticBox(filter_panel, -1, _(" Filter "), pos=(3,5), size=(700,100))
+        list_staticbox = wx.StaticBox(list_panel, -1, _(" List view "), pos=(3,5), size=(700,280))
+        wx.StaticBox(object_panel, -1, _(" Selected object "), pos=(3,5), size=(520,160))
+        wx.StaticBox(action_panel, -1, _(" Actions "), pos=(3,5), size=(170,160))
+
+        # Create objects on the filter panel
+        wx.StaticText(filter_panel, -1, _("Filter using the checkboxes or by typing in the text box"), pos=(20,28))
+        self.checkbox_filteralerts = wx.CheckBox(filter_panel, -1, _("Only show objects with alerts"), pos=(10,50))
+        self.checkbox_filterremarks = wx.CheckBox(filter_panel, -1, _("Only show objects with remarks"), pos=(10,70))
+        self.combobox_filtercolumn = wx.ComboBox(filter_panel, -1, pos=(300,60), size=(100,-1), value="Name", choices=("MMSI", "IMO", "Callsign", "Name"), style=wx.CB_READONLY)
+        self.textctrl_filtertext = wx.TextCtrl(filter_panel, -1, pos=(415,60),size=(250,-1))
+
+        # Define class-wide variable containing current filtering
+        # If filter_query is empty, no SQL-filter is set
+        # If filter_alerts is true, only show rows where alerts are set.
+        # If filter_rermarks is true, only show rows where remarks are set.
+        self.current_filter = {"filter_query": "", "filter_alerts": False, "filter_remarks": False}
+
+        # Create the list control
+        #innerlist_panel = wx.Panel(list_panel, -1, pos=(10,15), size=(670,250))
+        self.lc = self.List(list_panel, self)
+        #listsizer = wx.StaticBoxSizer(list_staticbox, wx.VERTICAL)
+        #listsizer.Add(self.lc, 1, wx.EXPAND)
+        #innerlist_panel.SetSizer(listsizer)
+
+        # Create the object information objects
+        wx.StaticText(object_panel, -1, _("MMSI nbr:"), pos=(20,25))
+        self.statictext_mmsi = wx.StaticText(object_panel, -1, '', pos=(20,45))
+        wx.StaticText(object_panel, -1, _("IMO nbr:"), pos=(120,25))
+        self.statictext_imo = wx.StaticText(object_panel, -1, '', pos=(120,45))
+        wx.StaticText(object_panel, -1, _("Callsign:"), pos=(220,25))
+        self.statictext_cs = wx.StaticText(object_panel, -1, '', pos=(220,45))
+        wx.StaticText(object_panel, -1, _("Name:"), pos=(320,25))
+        self.statictext_name = wx.StaticText(object_panel, -1, '', pos=(320,45))
+        statictext_remark = wx.StaticText(object_panel, -1, _("Remark field:"), pos=(25,73))
+        statictext_remark.SetFont(wx.Font(10, wx.NORMAL, wx.NORMAL, wx.NORMAL))
+        self.textctrl_remark = wx.TextCtrl(object_panel, -1, pos=(20,90), size=(300,60), style=wx.TE_MULTILINE)
+        self.radiobox_alert = wx.RadioBox(object_panel, -1, _(" Alert "), pos=(340,70), choices=(_("&No"), _("&Yes"), _("&Sound")))
+        update_button = wx.Button(object_panel, 10, _("Save &object"), pos=(350,120))
+
+        # Create buttons
+        wx.Button(action_panel, 20, _("&Insert new..."), pos=(20,40))
+        wx.Button(action_panel, 21, _("&Advanced..."), pos=(20,80))
+        wx.Button(action_panel, 22, _("&Export list..."), pos=(20,120))
+        close_button = wx.Button(self, 30, _("&Close"))
+        save_button = wx.Button(self, 31, _("&Save changes"))
+
+        # Create sizers
+        mainsizer = wx.BoxSizer(wx.VERTICAL)
+        sizer2 = wx.BoxSizer(wx.HORIZONTAL)
+        mainsizer.Add(filter_panel, 1, wx.EXPAND, 0)
+        mainsizer.Add(list_panel, 0)
+        lowsizer = wx.BoxSizer(wx.HORIZONTAL)
+        lowsizer.Add(object_panel, 1)
+        lowsizer.Add(action_panel, 0, wx.EXPAND)
+        mainsizer.Add(lowsizer, 0)
+        mainsizer.AddSpacer((0,10))
+        mainsizer.Add(sizer2, flag=wx.ALIGN_RIGHT)
+        sizer2.Add(close_button, 0)
+        sizer2.AddSpacer((20,0))
+        sizer2.Add(save_button, 0)
+        self.SetSizerAndFit(mainsizer)
+        mainsizer.Layout()
+
+        # Define events
+        self.Bind(wx.EVT_CHECKBOX, self.OnFilter, self.checkbox_filteralerts)
+        self.Bind(wx.EVT_CHECKBOX, self.OnFilter, self.checkbox_filterremarks)
+        self.Bind(wx.EVT_TEXT, self.OnFilter, self.textctrl_filtertext)
+        self.Bind(wx.EVT_BUTTON, self.OnSaveObject, id=10)
+        self.Bind(wx.EVT_BUTTON, self.OnInsertNew, id=20)
+        self.Bind(wx.EVT_BUTTON, self.OnAdvanced, id=21)
+        self.Bind(wx.EVT_BUTTON, self.OnExportList, id=22)
+        self.Bind(wx.EVT_BUTTON, self.OnClose, id=30)
+        self.Bind(wx.EVT_BUTTON, self.OnSaveChanges, id=31)
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
+
+    def GenerateAlertQuery(self):
+        # Create a query string from alertlist
+        global alertstring
+        if len(alertlist) > 0:
+            alertstring = '(' + ') OR ('.join(zip(*alertlist)[0]) + ')'
+        else: alertstring = '()'
+        # Initiate variabels for alert sound query
+        querysoundlist = []
+        global alertstringsound
+        # Loop over alertlist and append those with sound alert to alertsoundlist
+        for i in alertlist:
+            if i[1] == 1:
+               querysoundlist.append(i)
+        # If querysoundlist is not empty, make a query string of it
+        if len(querysoundlist) > 0:
+            alertstringsound = '(' + ') OR ('.join(zip(*querysoundlist)[0]) + ')'
+        else: alertstringsound = '()'
+
+    def PopulateObject(self, objectinfo):
+        # Populate the objec_panel with info from the currently selected list row
+        self.loaded_objectinfo = objectinfo
+        self.statictext_mmsi.SetLabel(unicode(objectinfo[0]))
+        self.statictext_imo.SetLabel(unicode(objectinfo[1]))
+        self.statictext_cs.SetLabel(unicode(objectinfo[2]))
+        self.statictext_name.SetLabel(unicode(objectinfo[3]))
+        self.radiobox_alert.SetSelection(int(objectinfo[4]))
+        self.textctrl_remark.SetValue(unicode(objectinfo[5]))
+
+    def OnSaveObject(self, event):
+        # Check if variable exist, if not, return
+        try:
+            assert self.loaded_objectinfo
+        except: return
+        # Read in the object information to be saved
+        mmsi = int(self.loaded_objectinfo[0])
+        alert_oldstate = self.loaded_objectinfo[4]
+        remark_oldstate = self.loaded_objectinfo[5]
+        alert_newstate = self.radiobox_alert.GetSelection()
+        remark_newstate = self.textctrl_remark.GetValue()
+        # Check if the alert state has changed
+        if alert_oldstate != alert_newstate:
+            # Create counter variables
+            i = 0
+            pos = -1
+            # Create query from mmsi
+            query = "mmsi LIKE '" + str(mmsi) + "'"
+            # Loop over alertlist, try to find the query matching the mmsi
+            # If found, set its list position in pos
+            for v in alertlist:
+                if v[0].find(query) != -1:
+                    pos = i
+                i += 1
+            # If alert is off
+            if alert_newstate == 0:
+                # Delete query if pos is set
+                if pos != -1:
+                    del alertlist[pos]
+            # If alert is on
+            elif alert_newstate == 1:
+                # Create tuple to insert into list
+                query_tuple = (query, 0, 0)
+                # If object already in alertlist, set pos to query_tuple, else append to alertlist
+                if pos != -1:
+                    alertlist[pos] = query_tuple
+                else:
+                    alertlist.append(query_tuple)
+            # If sound alert is set
+            elif alert_newstate == 2:
+                # Create tuple to insert into list
+                query_tuple = (query, 1, 0)
+                # If object already in alertlist, set pos to query_tuple, else append to alertlist
+                if pos != -1:
+                    alertlist[pos] = query_tuple
+                else:
+                    alertlist.append(query_tuple)
+            # Call function to generate the new alert and sound alert queries
+            self.GenerateAlertQuery()
+        # Remove remark if the remark text ctrl is empty or only contains whitespace
+        if len(remark_newstate) == 0 or remark_newstate.isspace():
+            try: del remarkdict[mmsi]
+            except: pass
+        else:
+            # Set the new remark
+            remarkdict[mmsi] = remark_newstate.replace(",", ";")
+        # Update the listctrl 
+        self.lc.OnUpdate()
+        # Update the objectinfo
+        self.lc.UpdateActiveItem()
+
+    def OnFilter(self, event):
+        # Read values from the filter controls and set appropriate values in self.current_filter
+        self.current_filter["filter_alerts"] = self.checkbox_filteralerts.GetValue()
+        self.current_filter["filter_remarks"] = self.checkbox_filterremarks.GetValue()
+        # If the text control contains text, create a SQL-query from the value in the combobox
+        # and the text control. Replace dangerous char (').
+        # Else, set the filter query to empty.
+        if len(self.textctrl_filtertext.GetValue()) > 0:
+            combostring = self.combobox_filtercolumn.GetValue()
+            self.current_filter["filter_query"] = combostring + " LIKE '%" + self.textctrl_filtertext.GetValue().replace("'","") + "%'"
+        else:
+            self.current_filter["filter_query"] = ""
+        # Update the listctrl
+        self.lc.OnUpdate()
+
+    def OnInsertNew(self, event):
+        # Create a dialog with a textctrl, a checkbox and two buttons
+        dlg = wx.Dialog(self, -1, _("Insert new MMSI number"), size=(300,225))
+        wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert and choose the data to associate it with."), pos=(20,10), size=(260,60)) 
+        textbox = wx.TextCtrl(dlg, -1, pos=(20,70), size=(150,-1))
+        radiobox = wx.RadioBox(dlg, -1, _(" Associate with "), pos=(20,110), choices=(_("&Alert"), _("&Remark")))
+        buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
+        buttonsizer.SetDimension(110, 165, 180, 40)
+        # If user press OK, check that the textbox only contains digits, check if the number already exists
+        # and if not, update either the alertlist or the remarkdict
+        if dlg.ShowModal() == wx.ID_OK:
+            if not textbox.GetValue().isdigit() or len(textbox.GetValue()) > 9:
+                dlg = wx.MessageDialog(self, _("Only nine digits are allowed in a MMSI number! Insert failed."), _("Error"), wx.OK | wx.ICON_ERROR)
+                dlg.ShowModal()
+            elif self.lc.CheckForMmsi(int(textbox.GetValue())):
+                dlg = wx.MessageDialog(self, _("The specified MMSI number already exists! Insert failed."), _("Error"), wx.OK | wx.ICON_ERROR)
+                dlg.ShowModal()
+            elif radiobox.GetSelection() == 0:
+                query = "mmsi LIKE '" + unicode(textbox.GetValue()) + "'"
+                alertlist.append((query, 0, 0))
+            elif radiobox.GetSelection() == 1:
+                remarkdict[int(textbox.GetValue())] = ""
+            # Update list ctrl
+            self.lc.OnUpdate()
+            # Set active item
+            self.lc.SetActiveItem(textbox.GetValue())
+
+    def OnAdvanced(self, event):
+        # Call the advanced alert editor
+        dlg = AdvancedAlertWindow(self, -1)
+        dlg.ShowModal()
+        # Update list ctrl to display any changes
+        self.lc.OnUpdate()
+
+    def OnSaveChanges(self, event):
+        # Saves both alerts and remarks to the loaded files.
+        alert_file = config['alert']['alertfile']
+        remark_file = config['alert']['remarkfile']
+        if config['alert'].as_bool('alertfile_on'):
+            self.SaveAlertFile(alert_file)
+        else:
+            dlg = wx.MessageDialog(self, _("Cannot save alert file. No alert file is loaded.") + "\n" + _("Edit the alert file settings and restart the program."), style=wx.OK|wx.wx.ICON_ERROR)
+            dlg.ShowModal()
+        if config['alert'].as_bool('remarkfile_on'):
+            self.SaveRemarkFile(remark_file)
+        else:
+            dlg = wx.MessageDialog(self, _("Cannot save remark file. No remark file is loaded.") + "\n" + _("Edit the remark file settings and restart the program."), style=wx.OK|wx.wx.ICON_ERROR)
+            dlg.ShowModal()
+
+    def SaveAlertFile(self, file):
+        # Saves alerts to a supplied file
+        if len(file) > 0:
+            try:
+                output = open(file, 'wb')
+                outdata = alertlist[:]
+                outdata.insert(0, 'Alertdata')
+                pickle.dump(outdata,output)
+                output.close()
+            except IOError, error:
+                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg.ShowModal()
+            except UnicodeDecodeError, error:
+                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg.ShowModal()
+   
+    def SaveRemarkFile(self, file):
+        # Saves remarks to a supplied file
+        if len(file) > 0:
+            try:
+                output = open(file, 'w')
+                for entry in remarkdict.iteritems():
+                    # For each entry split the data using ','
+                    mmsi = str(entry[0])
+                    remark = entry[1]
+                    output.write(mmsi + "," + remark + "\n")
+                output.close()
+            except IOError, error:
+                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg.ShowModal()
+            except UnicodeDecodeError, error:
+                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.wx.ICON_ERROR)
+                dlg.ShowModal()
+
+    def OnExportList(self, event):
+        # Exports the current list view to the clipboard.
+        exportdata = ""
+        for v in self.lc.itemDataMap.iteritems():
+            row = v[1]
+            alert = row[4]
+            if alert == 0:
+                alert = "No"
+            elif alert == 1:
+                alert = "Yes"
+            elif alert == 2:
+                alert = "Yes/Sound"
+            exportdata += str(row[0]) + "," + row[1] + "," + row[2] + "," + row[3] + "," + alert + "," + row[5] + "\n"
+        # Define the clipboard
+        clipboard = wx.Clipboard()
+        # Try to open clipboard and copy text objects
+        if clipboard.Open():
+            clipboarddata = wx.TextDataObject()
+            clipboarddata.SetText(exportdata)
+            # FIXME: ERROR, app won't close when using setdata!
+            clipboard.SetData(clipboarddata)
+            clipboard.Close()
+            #clipboard.Destroy()
+            print "ok"
+        print "returning"
+        return
+
+
+    class List(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSorterMixin):
+        def __init__(self, parent, topparent):
+            wx.ListCtrl.__init__(self, parent, -1, style=wx.LC_REPORT|wx.LC_VIRTUAL|wx.LC_SINGLE_SEL, size=(650,230), pos=(20,30))
+
+            self.topparent = topparent 
+
+            # Define and retreive two arrows, one upwards, the other downwards
+            self.imagelist = wx.ImageList(16, 16)
+            self.sm_up = self.imagelist.Add(getSmallUpArrowBitmap())
+            self.sm_dn = self.imagelist.Add(getSmallDnArrowBitmap())
+            self.SetImageList(self.imagelist, wx.IMAGE_LIST_SMALL)
+
+            # Iterate over the given columns and create the specified ones
+            self.InsertColumn(0, _("MMSI nbr"))
+            self.InsertColumn(1, _("IMO nbr"))
+            self.InsertColumn(2, _("CS"))
+            self.InsertColumn(3, _("Name"))
+            self.InsertColumn(4, _("Alert"))
+            self.InsertColumn(5, _("Remark"))
+            self.SetColumnWidth(0, 90)
+            self.SetColumnWidth(1, 80)
+            self.SetColumnWidth(2, 60)
+            self.SetColumnWidth(3, 150)
+            self.SetColumnWidth(4, 70)
+            self.SetColumnWidth(5, 190)
+
+            # Use the mixins
+            listmix.ListCtrlAutoWidthMixin.__init__(self)
+            listmix.ColumnSorterMixin.__init__(self, 6)
+
+            # Do inital update
+            self.OnUpdate()
+            # Do initial sorting on column 0, ascending order (1)
+            self.SortListItems(0, 1)
+
+            # Define events
+            self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnItemSelected)
+
+        def OnUpdate(self):
+            # Check if a row is selected, if true, extract the mmsi
+            selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
+            if selected_row != -1:
+                selected_mmsi = self.itemIndexMap[selected_row]
+
+            # Check if filter is unactive. If active, filter. Otherwise, return all rows.
+            if len(self.topparent.current_filter["filter_query"]) == 0:
+                query = "mmsi LIKE '%'"
+            else:
+                query = self.topparent.current_filter["filter_query"]
+
+            # Run the query against the iddb in memory
+            iddb_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE %s" % query,())]))
+
+            # Create a dictionary containing the data from the iddb_query.
+            # Use mmsi as key with value (imo, name, callsign)
+            iddb_dict = {}
+            for v in iddb_result:
+                iddb_dict[v[0]] = [(v[1], v[2], v[3])]
+
+            # Create a dictionary from the items in alertlist, extracting mmsi numbers from
+            # the SQL-queries. Use the mmsi as key and sound alert as value (0: false, 1: true)
+            alerts_mmsi_dict = {}
+            for v in alertlist:
+                query_string = v[0]
+                if query_string.find("mmsi") or query_string.find("MMSI"):
+                    try:
+                        mmsi = int(query_string.strip("msiMSIlikeLIKE '"))
+                        alerts_mmsi_dict[mmsi] = v[1]
+                    except: pass
+
+            # Create a set and make it contain all mmsi numbers from the dict keys
+            all_mmsi = set(iddb_dict.keys())
+            all_mmsi.update(alerts_mmsi_dict.keys())
+            all_mmsi.update(remarkdict.keys())
+
+            # Iterate over all the mmsi numbers and add the appropriate data
+            # from the different dictionaries to list_dict
+            list_dict = {}
+            for mmsi in all_mmsi:
+                # Define variables
+                imo = ''; name = ''; callsign = ''; alert = 0; remark = ''
+                # Extract data from iddb_dict (and from the inner list associated with the key)
+                if iddb_dict.has_key(mmsi):
+                    imo = iddb_dict[mmsi][0][0]
+                    name = iddb_dict[mmsi][0][1]
+                    callsign = iddb_dict[mmsi][0][2]
+                # Extract data from alerts_mmsi_dict (when alert is 1: alert active, when 2: alert+sound active)
+                if alerts_mmsi_dict.has_key(mmsi):
+                    alert = alerts_mmsi_dict[mmsi]
+                    if alert == 1:
+                        alert = 2
+                    elif alert == 0:
+                        alert = 1
+                # Extract data from remarkdict
+                if remarkdict.has_key(mmsi):
+                    remark = str(remarkdict[mmsi])
+                # If there are filters active and the conditions are met, skip adding entry to list_dict
+                filter = self.topparent.current_filter.copy()
+                filter_query = filter["filter_query"]
+                # Make sure that objects with only a mmsi won't show up when you use the filter on imo, name and callsign
+                if filter_query and filter_query.find("MMSI") == -1 and len(imo) == 0 and len(name) == 0 and len(callsign) == 0:
+                    pass
+                # Make also shure that when filtering on mmsi, only show matches
+                elif filter_query and filter_query.find("MMSI") != -1 and str(mmsi).find(filter_query.strip("msiMSIlikeLIKE '%")) == -1:
+                    pass
+                elif filter["filter_alerts"] and alert == 0:
+                    pass
+                elif filter["filter_remarks"] and remark == '':
+                    pass
+                else:
+                    # For each mmsi in all_mmsi, write to list_dict and map the mmsi as key and add imo, name, callsign, alert and remark to it
+                    list_dict[mmsi] = [mmsi, imo, callsign, name, alert, remark]
+                
+            # Set new ItemCount for the list ctrl if different from the current number
+            nrofobjects = len(list_dict)
+            if self.GetItemCount() != nrofobjects:
+                self.SetItemCount(nrofobjects)
+
+            # Assign to variables for the virtual list ctrl
+            self.itemDataMap = list_dict
+            self.itemIndexMap = list_dict.keys()
+
+            self.SortListItems()
+
+            # Set the selected row
+            try: self.SetActiveItem(selected_mmsi)
+            except: pass
+
+        def OnItemSelected(self, event):
+            # Get the MMSI number associated with the selected row
+            # Try to use event as a proper event, if except, use as a direct integer
+            try:
+                itemmmsi = self.itemIndexMap[event.m_itemIndex]
+            except:
+                itemmmsi = self.itemIndexMap[event]
+            # Populate the object box
+            self.topparent.PopulateObject(self.itemDataMap[itemmmsi])
+
+        def UpdateActiveItem(self):
+            # Get the currently selected row and call OnItemSelected
+            selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
+            self.OnItemSelected(selected_row)
+
+        def SetActiveItem(self, mmsi):
+            # Set the active row to the specified MMSI number
+            # See if the previous selected row exists after list update
+            new_position = self.FindItem(-1, str(mmsi))
+            # If the mmsi is found, set the new position as selected and visible
+            if new_position != -1:
+                self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+                self.EnsureVisible(new_position)
+                return True
+            else: return False
+
+        def CheckForMmsi(self, mmsi):
+            # This function simply checks if the supplied MMSI number is currently in the list ctrl
+            if mmsi in self.itemIndexMap:
+                return True
+            else:
+                return False
+        
+        def OnGetItemText(self, item, col):
+            # Return the text in item, col
+            mmsi = self.itemIndexMap[item]
+            string = self.itemDataMap[mmsi][col]
+            if col == 4:
+                if string == 0: string = _("No")
+                elif string == 1: string = _("Yes")
+                elif string == 2: string = _("Yes/Sound")
+            # If string is a Nonetype, replace with an empty string
+            if string == None:
+                string = unicode('')
+            if type(string) == int:
+                string = unicode(string)
+            return string
+
+        def SortItems(self,sorter=cmp):
+            items = list(self.itemDataMap.keys())
+            items.sort(sorter)
+            self.itemIndexMap = items
+            
+            # Redraw the list
+            self.Refresh()
+
+        # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
+        def GetListCtrl(self):
+            return self
+
+        # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
+        def GetSortImages(self):
+            return (self.sm_dn, self.sm_up)
+
+    def OnClose(self, event):
+        self.Destroy()
+
 
 class SettingsWindow(wx.Dialog):
     def __init__(self, parent, id):
@@ -1519,13 +2030,13 @@ class RawDataWindow(wx.Dialog):
         self.Destroy()
 
 
-class SetAlertWindow(wx.Dialog):
+class AdvancedAlertWindow(wx.Dialog):
     # Kopiera de larm som finns i alertlist
     queryitems = alertlist[:]
 
     def __init__(self, parent, id):
         # Skapa dialogruta med två ramar
-        self.dlg = wx.Dialog.__init__(self, parent, id, title=_("Set alerts"), size=(590,550))
+        self.dlg = wx.Dialog.__init__(self, parent, id, title=_("Advanced alert editor"), size=(590,550))
         wx.StaticBox(self,-1,_(" Current alerts "),pos=(3,5),size=(583,200))
         wx.StaticBox(self,-1,_(" New alert "),pos=(3,210),size=(583,265))
 
@@ -1547,7 +2058,7 @@ class SetAlertWindow(wx.Dialog):
         self.querylist.SetColumnWidth(1, 370)
         # Lägg till knappar
         wx.Button(panel1,01,_("&Remove"),pos=(0,10))
-        wx.Button(panel1,02,_("&Clear list"),pos=(0,50))
+        wx.Button(panel1,02,_("C&lear list"),pos=(0,50))
         wx.Button(panel1,03,_("&Edit..."),pos=(0,90))
         wx.Button(panel1,04,_("&Import..."),pos=(0,130))
 
@@ -1570,16 +2081,16 @@ class SetAlertWindow(wx.Dialog):
         wx.Button(panel3,05,_("A&dd to list"),pos=(405,200))
 
         # Fönsterknappar
-        wx.Button(self,10,_("&Open..."),pos=(3,490))
+        wx.Button(self,10,_("O&pen..."),pos=(3,490))
         wx.Button(self,11,_("&Save..."),pos=(103,490))
-        wx.Button(self,12,_("&Abort"),pos=(300,490))
-        wx.Button(self,13,_("A&pply"),pos=(400,490))
+        wx.Button(self,12,_("&Cancel"),pos=(300,490))
+        wx.Button(self,13,_("&Apply"),pos=(400,490))
         wx.Button(self,14,_("&OK"),pos=(500,490))
 
         # Koppla händelser
         self.Bind(wx.EVT_BUTTON, self.OnOpen, id=10)
         self.Bind(wx.EVT_BUTTON, self.OnSave, id=11)
-        self.Bind(wx.EVT_BUTTON, self.OnAbort, id=12)
+        self.Bind(wx.EVT_BUTTON, self.OnCancel, id=12)
         self.Bind(wx.EVT_BUTTON, self.OnApply, id=13)
         self.Bind(wx.EVT_BUTTON, self.OnOK, id=14)
         self.Bind(wx.EVT_BUTTON, self.OnRemove, id=01)
@@ -1589,7 +2100,7 @@ class SetAlertWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnAdd, id=05)
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnEdit, self.querylist)
         self.Bind(wx.EVT_KEY_UP, self.OnKey) 
-        self.Bind(wx.EVT_CLOSE, self.OnAbort)
+        self.Bind(wx.EVT_CLOSE, self.OnCancel)
 
         # Update the temporary list from alertlist
         self.queryitems = alertlist[:]
@@ -1716,7 +2227,7 @@ class SetAlertWindow(wx.Dialog):
                     buttonsizer.SetDimension(210, 85, 180, 40)
                     # Make the checkbox checked if the value is set in queryitems
                     if self.queryitems[x][1] == 1: alertbox.SetValue(True)
-                    # If user press OK, update the queryitems list and update the SetAlertWindow
+                    # If user press OK, update the queryitems list and update the AdvancedAlertWindow
                     if dlg.ShowModal() == wx.ID_OK:
                         if alertbox.GetValue():
                             alertstate = 1
@@ -1726,7 +2237,7 @@ class SetAlertWindow(wx.Dialog):
                         self.UpdateValues()
         # If more than one item selected, show error
         elif self.querylist.GetSelectedItemCount() > 1:
-            dlg = wx.MessageDialog(self, _("You can only edit one query at a time!"), 'Fel', wx.OK | wx.ICON_ERROR)
+            dlg = wx.MessageDialog(self, _("You can only edit one query at a time!"), _("Error"), wx.OK | wx.ICON_ERROR)
             dlg.ShowModal()
 
     def OnRemove(self, event):
@@ -1785,7 +2296,7 @@ class SetAlertWindow(wx.Dialog):
 
             # Create panels for additional search arguments
             wx.StaticBox(self,-1,_(" Additional arguments "),pos=(13,100),size=(475,80))
-            SetAlertWindow.importsearcharg = parent.NewSearchPanel(self, -1, pos=(15,120))
+            AdvancedAlertWindow.importsearcharg = parent.NewSearchPanel(self, -1, pos=(15,120))
 
         def OnDoPaste(self, event):
             queries = []
@@ -1910,7 +2421,7 @@ class SetAlertWindow(wx.Dialog):
                 dlg.ShowModal()
                 open_dlg.Destroy()
 
-    def OnAbort(self, event):
+    def OnCancel(self, event):
         self.Destroy()
 
 
@@ -2296,6 +2807,7 @@ class MainThread:
 
 
 # Start threads
+MainThread().start()
 if config['serial_a'].as_bool('serial_on'):
     SerialThread().start('serial_a')
 if config['serial_b'].as_bool('serial_on'):
@@ -2304,9 +2816,11 @@ if config['network'].as_bool('server_on'):
     NetworkServerThread().start()
 if config['network'].as_bool('client_on'):
     NetworkClientThread().start()
-MainThread().start()
 
 # Start the GUI
+# Let all the thread have som time to start before
+# launching the GUI
+time.sleep(0.2)
 app = GUI(0)
 app.MainLoop()
 
