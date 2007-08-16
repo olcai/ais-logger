@@ -345,38 +345,39 @@ def execSQL(s):
 # THE SOFTWARE.
 
 def georef(lat,long):
-    # Konverterar lat/long i DM-format till GEOREF
+    # Converts lat/long in DM format to GEOREF
 
-    # Definiera GEOREF-bokstäver
+    # Define GEOREF-letters
     letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
 
-    # Ta fram bokstavsruta för longituden
-    # Grader E/W konverteras till grader 0-360
-    # Storrutan = absolutvärdet, lillrutan = resten
+    # Extract letters for longitude
+    # Degrees E/W are converted to degrees 0-360
+    # Big square = abs value, small square = the reminder
     if long[0] == 'E': longdegree = 180 + int(long[1:4])
     elif long[0] == 'W': longdegree = 179 - int(long[1:4])
     bigsqlong = letters[longdegree / 15]
     smallsqlong = letters[longdegree % 15]
 
-    # Ta fram bokstavsruta för latituden
-    # Grader N/S konverteras till grader 0-180
-    # Storrutan = absolutvärdet, lillrutan = resten
+    # Extract letters for latitude
+    # Degrees N/S are converted to degrees 0-180
+    # Big square = abs value, small square = the reminder
     if lat[0] == 'N': latdegree = 90 + int(lat[1:3])
     elif lat[0] == 'S': latdegree = 89 - int(lat[1:3])
     bigsqlat = letters[latdegree / 15]
     smallsqlat = letters[latdegree % 15]
 
-    # Extrahera minuter ur longituden och latituden
-    # Ta hänsyn till att minuter utgår från nollmeridianen och
-    # ekvatorn - GEOREF utgår ju från datumgränsen... 
+    # Extract minutes from latitude and logitude
+    # Take into account that minutes start from the zero
+    # meridian and the equator - GEOREF start from the
+    # international date line...
     if long[0] == 'E' and lat[0] == 'N':
         minutes = long[4:6] + lat[3:5]
     elif long[0] == 'E' and lat [0] == 'S':
-        minutes = long[4:6] + str(59 - int(lat[3:5]))
+        minutes = long[4:6] + str(59 - int(lat[3:5])).zfill(2)
     elif long[0] == 'W' and lat[0] == 'N':
-        minutes = str(59 - int(long[4:6])) + lat[3:5]
+        minutes = str(59 - int(long[4:6])).zfill(2) + lat[3:5]
     elif long[0] == 'W' and lat[0] == 'S':
-        minutes = str(59 - int(long[4:6])) + str(59 - int(lat[3:5]))
+        minutes = str(59 - int(long[4:6])).zfill(2) + str(59 - int(lat[3:5])).zfill(2)
 
     return bigsqlong + bigsqlat + smallsqlong + smallsqlat + ' ' + minutes
 
