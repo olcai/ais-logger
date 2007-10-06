@@ -2641,7 +2641,10 @@ class MainThread:
                     config_long = config['position']['longitude'].split(';')                   
                     ownlatitude = config_lat[2] + (config_lat[0] + config_lat[1].split('.')[0] + config_lat[1].split('.')[1]).ljust(8, '0')
                     ownlongitude = config_long[2] + (config_long[0] + config_long[1].split('.')[0] + config_long[1].split('.')[1]).ljust(9, '0')
-                    owngeoref = georef(ownlatitude,ownlongitude)
+                    try:
+                        owngeoref = georef(ownlatitude,ownlongitude)
+                    except:
+                        owngeoref = ""
                     v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
                     owndata.update(v)
                 # Calculate bearing and distance to object
@@ -2689,7 +2692,10 @@ class MainThread:
             elif parser.has_key('ownlatitude') and parser.has_key('ownlongitude') and len(parser['ownlatitude']) == 9 and len(parser['ownlongitude']) == 10 and not config['position'].as_bool('override_on'):
                 ownlatitude = parser['ownlatitude']
                 ownlongitude = parser['ownlongitude']
-                owngeoref = georef(ownlatitude,ownlongitude)
+                try:
+                    owngeoref = georef(ownlatitude,ownlongitude)
+                except:
+                    owngeoref = ""
                 v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
                 owndata.update(v)
 
