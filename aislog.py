@@ -126,7 +126,9 @@ config['network'].comments['client_address'] = ['Server hostname or IP']
 config['network'].comments['client_port'] = ['Server port']
 
 # Log exceptions to file
+except_file = open('except.log', 'w')
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
+sys.stderr = except_file
 
 # Define global variables
 mid = {}
@@ -2708,6 +2710,11 @@ class SerialThread:
             while len(rawdata) > 500:
                 rawdata.popleft()
 
+            # Put in NetworkServer's queue
+            networkdata.append(indata)
+            while len(networkdata) > 500:
+                networkdata.popleft()
+
             # Check if message is split on several lines
             lineinfo = indata.split(',')
             if lineinfo[0] == '!AIVDM':
@@ -2742,11 +2749,6 @@ class SerialThread:
             try:
                 parser = dict(decode.telegramparser(indata))
                 if len(parser) > 0:
-                    # Put in NetworkServer's queue
-                    if parser.has_key('mmsi'):
-                        networkdata.append(parser)
-                        while len(networkdata) > 500:
-                            networkdata.popleft()
                     # Set source in parser as serial
                     parser['source'] = "Serial port " + port
                     maint.put(parser)
@@ -2793,12 +2795,12 @@ class NetworkServerThread:
                 try:
                     # Pop message from queue
                     message = networkdata.popleft()
+                except IndexError: continue
                 except: pass
                 if message == 'stop': break
-                # message has a length greater than 1, pickle message and send it to socket
+                # If message length is > 1, send message to socket
                 if len(message) > 1:
-                    pickled_message = pickle.dumps(message.copy())
-                    self.request.send(pickled_message)
+                    self.request.send(str(message))
             self.request.close()
 
 
@@ -2859,6 +2861,10 @@ class NetworkClientThread:
                     while len(rawdata) > 500:
                         rawdata.popleft()
 
+                    networkdata.append(indata)
+                    while len(networkdata) > 500:
+                        networkdata.popleft()
+
                     # Check if message is split on several lines
                     lineinfo = indata.split(',')
                     nbr_of_lines = 0
@@ -2896,12 +2902,7 @@ class NetworkClientThread:
                     try:
                         parser = dict(decode.telegramparser(indata))
                         if len(parser) > 0:
-                            # Put in NetworkServer's queue
-                            if parser.has_key('mmsi'):
-                                networkdata.append(parser)
-                                while len(networkdata) > 500:
-                                    networkdata.popleft()
-                            # Set source in parser as serial
+                            # Set source in parser as network
                             parser['source'] = "Network " + str(client_address)
                             maint.put(parser)
                             self.stats["parsed"] += 1
