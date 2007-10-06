@@ -78,8 +78,8 @@ defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'alertfile_on': False, 'alertfile': '', 'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
                  'position': {'override_on': False, 'latitude': '00;00.00;N', 'longitude': '000;00.00;E'},
-                 'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': '0', 'xonxoff': '0', 'repr_mode': '0'},
-                 'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': '0', 'xonxoff': '0', 'repr_mode': '0'},
+                 'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
+                 'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_address': 'localhost', 'client_port': '23000'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
@@ -123,10 +123,10 @@ config['network'].comments['server_address'] = ['Server hostname or IP (server s
 config['network'].comments['server_port'] = ['Server port (server side)']
 config['network'].comments['client_on'] = ['Enable network client']
 config['network'].comments['client_address'] = ['Server hostname or IP']
-config['network'].comments['client_port'] = ['Server port']
+config['network'].comments['client_port'] = ['Server port (client)']
 
 # Log exceptions to file
-except_file = open('except.log', 'w')
+except_file = open('except.log', 'a')
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
 sys.stderr = except_file
 
@@ -1195,7 +1195,7 @@ class StatsWindow(wx.Dialog):
             self.text_input_network_received.SetLabel(str(input_stats['network']['received'])+_(" msgs"))
             self.text_input_network_parsed.SetLabel(str(input_stats['network']['parsed'])+_(" msgs"))
             if rates.has_key('network'):
-                self.text_input_network_parserate.SetLabel(str(rates['network'])+_(" msgs"))
+                self.text_input_network_parserate.SetLabel(str(rates['network'])+_(" msgs/sec"))
 
     def CalcParseRate(self, input_stats):
         # Compare data from last run with new data and calculate a parse rate
@@ -2680,16 +2680,19 @@ class GUI(wx.App):
 
 class SerialThread:
     queue = Queue.Queue()
-    stats = {"received": 0, "parsed": 0}
 
-    def reader(self, port, baudrate, rtscts, xonxoff, repr_mode):
-        # Define serial port connection
-        s = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff)
+    def reader(self, port, baudrate, rtscts, xonxoff, repr_mode, portname):
+        # Define instance variables
         maint = MainThread()
         serialt = SerialThread()
+        self.stats = {"received": 0, "parsed": 0}
+        # Set queueitem and temp to empty, and seq_temp to "illegal" value
         queueitem = ''
         temp = ''
         seq_temp = 10
+        nbr_several_parsed = 0
+        # Define serial port connection
+        s = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff)
         while True:
             try:
                 queueitem = self.queue.get_nowait()
@@ -2742,6 +2745,7 @@ class SerialThread:
                         indata = decode.jointelegrams(temp)
                         temp = ''
                         seq_temp = 10
+                        nbr_several_parsed = nbr_of_lines
                     else:
                         continue
 
@@ -2749,10 +2753,16 @@ class SerialThread:
             try:
                 parser = dict(decode.telegramparser(indata))
                 if len(parser) > 0:
-                    # Set source in parser as serial
-                    parser['source'] = "Serial port " + port
+                    # Set source in parser as serial with portname and real port
+                    parser['source'] = "Serial port " + portname + " (" + port + ")"
                     maint.put(parser)
-                    self.stats["parsed"] += 1
+                    # Add to stats variable. If the message was more than one
+                    # line, add that number to stats.
+                    if nbr_several_parsed > 0:
+                        self.stats["parsed"] += nbr_several_parsed
+                        nbr_several_parsed = 0
+                    else:
+                        self.stats["parsed"] += 1
             except: continue
 
     def ReturnStats(self):
@@ -2763,19 +2773,20 @@ class SerialThread:
 
     def start(self, openport):
         if openport == 'serial_a':
-            port = config['serial_a']['port']
-            baudrate = config['serial_a'].as_int('baudrate')
-            rtscts = config['serial_a'].as_int('rtscts')
-            xonxoff = config['serial_a'].as_int('xonxoff')
-            repr_mode = config['serial_a'].as_int('repr_mode')
+            portconfig = config['serial_a']
+            # Set internal port name to A
+            portname = 'A'
         elif openport == 'serial_b':
-            port = config['serial_b']['port']
-            baudrate = config['serial_b'].as_int('baudrate')
-            rtscts = config['serial_b'].as_int('rtscts')
-            xonxoff = config['serial_b'].as_int('xonxoff')
-            repr_mode = config['serial_b'].as_int('repr_mode')
+            portconfig = config['serial_b']
+            # Set internal port name to B
+            portname = 'B'
+        port = portconfig['port']
+        baudrate = portconfig.as_int('baudrate')
+        rtscts = portconfig.as_bool('rtscts')
+        xonxoff = portconfig.as_bool('xonxoff')
+        repr_mode = portconfig.as_bool('repr_mode')
         try:
-            r = threading.Thread(target=self.reader, args=(port, baudrate, rtscts, xonxoff, repr_mode))
+            r = threading.Thread(target=self.reader, args=(port, baudrate, rtscts, xonxoff, repr_mode, portname))
             r.setDaemon(1)
             r.start()
             return True
@@ -2827,15 +2838,20 @@ class NetworkServerThread:
 
 class NetworkClientThread:
     queue = Queue.Queue()
-    stats = {"received": 0, "parsed": 0}
 
     def client(self):
+        # Define instance variables
+        maint = MainThread()
+        self.stats = {"received": 0, "parsed": 0}
+        # Set queueitem, data and temp to empty, and seq_temp to "illegal" value,
+        # set nbr_several_parsed to null
         queueitem = ''
         data = ''
         temp = ''
         seq_temp = 10
+        nbr_several_parsed = 0
         message = {}
-        maint = MainThread()
+        # Get config data and open socket
         client_address = config['network']['client_address']
         client_port = config['network'].as_int('client_port')
         socketobj = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -2895,6 +2911,7 @@ class NetworkClientThread:
                                 indata = decode.jointelegrams(temp)
                                 temp = ''
                                 seq_temp = 10
+                                nbr_several_parsed = nbr_of_lines
                             else:
                                 continue
 
@@ -2905,7 +2922,13 @@ class NetworkClientThread:
                             # Set source in parser as network
                             parser['source'] = "Network " + str(client_address)
                             maint.put(parser)
-                            self.stats["parsed"] += 1
+                            # Add to stats variable. If the message was more than one
+                            # line, add that number to stats.
+                            if nbr_several_parsed > 0:
+                                self.stats["parsed"] += nbr_several_parsed
+                                nbr_several_parsed = 0
+                            else:
+                                self.stats["parsed"] += 1
                     except: continue
 
     def ReturnStats(self):
