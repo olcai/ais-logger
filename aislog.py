@@ -128,7 +128,7 @@ config['network'].comments['client_port'] = ['Server port']
 # Log exceptions to file
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
 
-# Define empty global variables
+# Define global variables
 mid = {}
 midfull = {}
 typecode = {}
@@ -140,6 +140,7 @@ alertstringsound = ''
 rawdata = collections.deque()
 networkdata = collections.deque()
 remarkdict = {}
+start_time = datetime.datetime.now()
 
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
@@ -993,11 +994,11 @@ class DetailWindow(wx.Dialog):
             self.text_bearing.SetLabel(str(itemdata[26])+'°')
             self.text_distance.SetLabel(str(itemdata[25])+' km')
         if itemdata[10]:
-            try: creationtime = itemdata[10].replace('T', _(" kl "))
+            try: creationtime = itemdata[10].replace('T', " "+_("at")+" ")
             except: creationtime = ''
             self.text_creationtime.SetLabel(creationtime)
         if itemdata[11]:
-            try: lasttime = itemdata[11].replace('T', _(" kl "))
+            try: lasttime = itemdata[11].replace('T', " "+_("at")+" ")
             except: lasttime = ''
             self.text_time.SetLabel(lasttime)
         if itemdata[28]:
@@ -1020,13 +1021,14 @@ class StatsWindow(wx.Dialog):
         objects_panel = wx.Panel(self, -1)
         objects_panel.SetMinSize((280,-1))
         horizon_panel = wx.Panel(self, -1)
-        horizon_panel.SetMinSize((280,-1))
         input_panel = wx.Panel(self, -1)
         input_panel.SetMinSize((250,-1))
+        uptime_panel = wx.Panel(self, -1)
         # Create static boxes
         box_objects = wx.StaticBox(objects_panel,-1,_(" Objects "))
-        box_input = wx.StaticBox(input_panel,-1,_(" Input "))
         box_horizon = wx.StaticBox(horizon_panel,-1,_(" Radio Horizon (calculated) "))
+        box_input = wx.StaticBox(input_panel,-1,_(" Input "))
+        box_uptime = wx.StaticBox(uptime_panel,-1,_(" Uptime "))
         
         # Object panels, texts and sizers
         obj_panel_left = wx.Panel(objects_panel)
@@ -1063,26 +1065,40 @@ class StatsWindow(wx.Dialog):
         horizon_panel.SetSizer(hor_sizer)
 
         # Input panels, texts and sizers
-        input_panel_left = wx.Panel(input_panel)
-        input_panel_right = wx.Panel(input_panel)
-        wx.StaticText(input_panel_left,-1,_("Serial Port A received:"),pos=(-1,0))
-        wx.StaticText(input_panel_left,-1,_("Serial Port A parsed:"),pos=(-1,20))
-        wx.StaticText(input_panel_left,-1,_("Serial Port B received:"),pos=(-1,60))
-        wx.StaticText(input_panel_left,-1,_("Serial Port B parsed:"),pos=(-1,80))
-        wx.StaticText(input_panel_left,-1,_("Network received:"),pos=(-1,120))
-        wx.StaticText(input_panel_left,-1,_("Network parsed:"),pos=(-1,140))
-        self.text_input_ser_a_r = wx.StaticText(input_panel_right,-1,'',pos=(-1,0))
-        self.text_input_ser_a_p = wx.StaticText(input_panel_right,-1,'',pos=(-1,20))
-        self.text_input_ser_b_r = wx.StaticText(input_panel_right,-1,'',pos=(-1,60))
-        self.text_input_ser_b_p = wx.StaticText(input_panel_right,-1,'',pos=(-1,80))
-        self.text_input_net_r = wx.StaticText(input_panel_right,-1,'',pos=(-1,120))
-        self.text_input_net_p = wx.StaticText(input_panel_right,-1,'',pos=(-1,140))
-        input_sizer = wx.StaticBoxSizer(box_input, wx.HORIZONTAL)
+        serial_a = self.MakeInputStatSizer(input_panel," "+_("Serial Port A")+" ("+config['serial_a']['port']+") ")
+        serial_b = self.MakeInputStatSizer(input_panel," "+_("Serial Port B")+" ("+config['serial_a']['port']+") ")
+        network = self.MakeInputStatSizer(input_panel," "+_("Network client")+" ("+config['network']['client_address']+") ")
+        self.text_input_serial_a_received = serial_a[1]
+        self.text_input_serial_a_parsed = serial_a[2]
+        self.text_input_serial_a_parserate = serial_a[3]
+        self.text_input_serial_b_received = serial_b[1]
+        self.text_input_serial_b_parsed = serial_b[2]
+        self.text_input_serial_b_parserate = serial_b[3]
+        self.text_input_network_received = network[1]
+        self.text_input_network_parsed = network[2]
+        self.text_input_network_parserate = network[3]
+        input_sizer = wx.StaticBoxSizer(box_input, wx.VERTICAL)
         input_sizer.AddSpacer(5)
-        input_sizer.Add(input_panel_left)
-        input_sizer.AddSpacer(10)
-        input_sizer.Add(input_panel_right, wx.EXPAND)
+        input_sizer.Add(serial_a[0], 0, wx.EXPAND)
+        input_sizer.AddSpacer(5)
+        input_sizer.Add(serial_b[0], 0, wx.EXPAND)
+        input_sizer.AddSpacer(5)
+        input_sizer.Add(network[0], 0, wx.EXPAND)
         input_panel.SetSizer(input_sizer)
+
+        # Uptime panels, texts and sizers
+        up_panel_left = wx.Panel(uptime_panel)
+        up_panel_right = wx.Panel(uptime_panel)
+        wx.StaticText(up_panel_left,-1,_("Uptime:"),pos=(-1,0))
+        wx.StaticText(up_panel_left,-1,_("Up since:"),pos=(-1,20))
+        self.text_uptime_delta = wx.StaticText(up_panel_right,-1,'',pos=(-1,0))
+        self.text_uptime_since = wx.StaticText(up_panel_right,-1,'',pos=(-1,20))
+        up_sizer = wx.StaticBoxSizer(box_uptime, wx.HORIZONTAL)
+        up_sizer.AddSpacer(5)
+        up_sizer.Add(up_panel_left)
+        up_sizer.AddSpacer(10)
+        up_sizer.Add(up_panel_right, wx.EXPAND)
+        uptime_panel.SetSizer(up_sizer)
 
         # Buttons & events
         closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
@@ -1098,7 +1114,9 @@ class StatsWindow(wx.Dialog):
         # Sizer2 is an inner sizer for th transponder data panel and remark panel
         sizer2.Add(objects_panel, 0)
         sizer2.AddSpacer(5)
-        sizer2.Add(horizon_panel, 0)
+        sizer2.Add(horizon_panel, 0, wx.EXPAND)
+        sizer2.AddSpacer(5)
+        sizer2.Add(uptime_panel, 0, wx.EXPAND)
         sizer1.Add(sizer2)
         sizer1.AddSpacer(5)
         sizer1.Add(input_panel, 0, wx.EXPAND)
@@ -1109,6 +1127,8 @@ class StatsWindow(wx.Dialog):
         self.SetSizerAndFit(mainsizer)
 
         # Update the initial data
+        self.LastUpdateTime = 0
+        self.OldParseStats = {}
         self.OnUpdate('')
 
         # Timer for updating the window
@@ -1116,25 +1136,83 @@ class StatsWindow(wx.Dialog):
         self.timer.Start(2000)
         wx.EVT_TIMER(self, -1, self.OnUpdate)
 
+    def MakeInputStatSizer(self, panel, boxlabel):
+        # Creates a StaticBoxSizer and the StaticText in it
+        box = wx.StaticBox(panel, -1, boxlabel)
+        sizer = wx.StaticBoxSizer(box, wx.HORIZONTAL)
+        panel_left = wx.Panel(panel)
+        panel_right = wx.Panel(panel)
+        wx.StaticText(panel_left,-1,_("Received:"),pos=(-1,0))
+        wx.StaticText(panel_left,-1,_("Parsed:"),pos=(-1,20))
+        wx.StaticText(panel_left,-1,_("Parsed rate:"),pos=(-1,40))
+        received = wx.StaticText(panel_right,-1,'',pos=(-1,0))
+        parsed = wx.StaticText(panel_right,-1,'',pos=(-1,20))
+        parsed_rate = wx.StaticText(panel_right,-1,'',pos=(-1,40))
+        sizer.AddSpacer(5)
+        sizer.Add(panel_left, 0)
+        sizer.AddSpacer(10)
+        sizer.Add(panel_right, 1, wx.EXPAND)
+        return sizer, received, parsed, parsed_rate
+
     def OnUpdate(self, event):
+        # Update data in the window
         horizon = self.CalcHorizon()
         input_stats = GetStats()
+        rates = self.CalcParseRate(input_stats)
+        # Objects text
         self.text_object_nbr.SetLabel(str(horizon[0]))
         self.text_object_grey_nbr.SetLabel(str(horizon[1]))
         self.text_object_distance_nbr.SetLabel(str(horizon[2]))
+        # Horizon text
         self.text_horizon_min.SetLabel(str(horizon[3]) + " km")
         self.text_horizon_max.SetLabel(str(horizon[4]) + " km")
         self.text_horizon_mean.SetLabel(str(horizon[5]) + " km")
         self.text_horizon_median.SetLabel(str(horizon[6]) + " km")
+        # Uptime text
+        uptime = datetime.datetime.now() - start_time
+        up_since = start_time.isoformat()[:19]
+        self.text_uptime_delta.SetLabel(str(uptime).split('.')[0])
+        self.text_uptime_since.SetLabel(str(up_since.replace('T', " "+_("at")+" ")))
+        # Input text
         if input_stats.has_key('serial_a'):
-            self.text_input_ser_a_r.SetLabel(str(input_stats['serial_a']['received']))
-            self.text_input_ser_a_p.SetLabel(str(input_stats['serial_a']['parsed']))
+            self.text_input_serial_a_received.SetLabel(str(input_stats['serial_a']['received'])+_(" msgs"))
+            self.text_input_serial_a_parsed.SetLabel(str(input_stats['serial_a']['parsed'])+_(" msgs"))
+            if rates.has_key('serial_a'):
+                self.text_input_serial_a_parserate.SetLabel(str(rates['serial_a'])+_(" msgs/sec"))
         if input_stats.has_key('serial_b'):
-            self.text_input_ser_b_r.SetLabel(str(input_stats['serial_b']['received']))
-            self.text_input_ser_b_p.SetLabel(str(input_stats['serial_b']['parsed']))
+            self.text_input_serial_b_received.SetLabel(str(input_stats['serial_b']['received'])+_(" msgs"))
+            self.text_input_serial_b_parsed.SetLabel(str(input_stats['serial_b']['parsed'])+_(" msgs"))
+            if rates.has_key('serial_b'):
+                self.text_input_serial_a_parserate.SetLabel(str(rates['serial_b'])+_(" msgs/sec"))
         if input_stats.has_key('network'):
-            self.text_input_net_r.SetLabel(str(input_stats['network']['received']))
-            self.text_input_net_p.SetLabel(str(input_stats['network']['parsed']))
+            self.text_input_network_received.SetLabel(str(input_stats['network']['received'])+_(" msgs"))
+            self.text_input_network_parsed.SetLabel(str(input_stats['network']['parsed'])+_(" msgs"))
+            if rates.has_key('network'):
+                self.text_input_serial_a_parserate.SetLabel(str(rates['network'])+_(" msgs"))
+
+    def CalcParseRate(self, input_stats):
+        # Compare data from last run with new data and calculate a parse rate
+        data = {}
+        # If there are a LastUpdateTime, check for input_stats
+        if self.LastUpdateTime:
+            # Calculate a timediff (in seconds)
+            timediff = time.time() - self.LastUpdateTime
+            # Check if input_stats has key, and then check if OldParseStats are available
+            if input_stats.has_key('serial_a'):
+                if self.OldParseStats.has_key('serial_a'):
+                    rate = round(((input_stats['serial_a']['parsed'] - self.OldParseStats['serial_a']) / timediff), 1)
+                data['serial_a'] = rate
+            if input_stats.has_key('serial_b'):
+                if self.OldParseStats.has_key('serial_b'):
+                    rate = round(((input_stats['serial_b']['parsed'] - self.OldParseStats['serial_b']) / timediff), 1)
+                data['serial_b'] = rate
+            if input_stats.has_key('network'):
+                if self.OldParseStats.has_key('network'):
+                    rate = round(((input_stats['network']['parsed'] - self.OldParseStats['network']) / timediff), 1)
+                data['network'] = rate
+        # Set current time to LastUpdateTime
+        self.LastUpdateTime = time.time()
+        return data
 
     def CalcHorizon(self):
         # Calculate a "horizon", the distance to greyed out objects
@@ -2577,30 +2655,31 @@ class SerialThread:
 
             # Check if message is split on several lines
             lineinfo = indata.split(',')
-            nbr_of_lines = int(lineinfo[1])
-            line_nbr = int(lineinfo[2])
-            line_seq_id = int(lineinfo[3])
-            # If message is split, check that they belong together
-            if lineinfo[0] == '!AIVDM' and nbr_of_lines > 1:
-                # If first message, set seq_temp to the sequential message ID
-                if line_nbr == 1:
-                    temp = ''
-                    seq_temp = line_seq_id
-                # If not first message, check that the seq ID matches that in seq_temp
-                # If not true, reset variables and continue
-                elif line_seq_id != seq_temp:
-                    temp = ''
-                    seq_temp = 10
-                    continue
-                # Add data to variable temp
-                temp += indata
-                # If the final message has been received, join messages and decode
-                if len(temp.splitlines()) == nbr_of_lines:
-                    indata = decode.jointelegrams(temp)
-                    temp = ''
-                    seq_temp = 10
-                else:
-                    continue
+            if lineinfo[0] == '!AIVDM':
+                nbr_of_lines = int(lineinfo[1])
+                line_nbr = int(lineinfo[2])
+                line_seq_id = int(lineinfo[3])
+                # If message is split, check that they belong together
+                if nbr_of_lines > 1:
+                    # If first message, set seq_temp to the sequential message ID
+                    if line_nbr == 1:
+                        temp = ''
+                        seq_temp = line_seq_id
+                    # If not first message, check that the seq ID matches that in seq_temp
+                    # If not true, reset variables and continue
+                    elif line_seq_id != seq_temp:
+                        temp = ''
+                        seq_temp = 10
+                        continue
+                    # Add data to variable temp
+                    temp += indata
+                    # If the final message has been received, join messages and decode
+                    if len(temp.splitlines()) == nbr_of_lines:
+                        indata = decode.jointelegrams(temp)
+                        temp = ''
+                        seq_temp = 10
+                    else:
+                        continue
 
             # Set the telegramparser result in dict parser and queue it
             try:
