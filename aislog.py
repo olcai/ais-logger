@@ -128,7 +128,7 @@ config['network'].comments['client_port'] = ['Server port']
 # Log exceptions to file
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
 
-# Tomma variabler som behövs här och där
+# Define empty global variables
 mid = {}
 midfull = {}
 typecode = {}
@@ -210,7 +210,7 @@ class MainWindow(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnShowSplit, id=201)
         self.Bind(wx.EVT_MENU, self.OnRefresh, id=202)
         self.Bind(wx.EVT_MENU, self.OnShowRawdata, id=203)
-        self.Bind(wx.EVT_MENU, self.OnCalcHorizon, id=204)
+        self.Bind(wx.EVT_MENU, self.OnStatistics, id=204)
         self.Bind(wx.EVT_MENU, self.OnSetAlerts, id=301)
         self.Bind(wx.EVT_MENU, self.OnSettings, id=302)
         self.Bind(wx.EVT_MENU, self.OnAbout, id=401)
@@ -337,69 +337,10 @@ class MainWindow(wx.Frame):
         dlg = RawDataWindow(None, -1)
         dlg.Show()
 
-    def OnCalcHorizon(self, event):
-        # Calculate a "horizon", the distance to greyed out objects
-        dlg = wx.Dialog(self,-1, _("Statistics"),size=(305,270))
+    def OnStatistics(self, event):
+        dlg = StatsWindow(None, -1)
         dlg.Show()
-        buttonsizer = dlg.CreateStdDialogButtonSizer(wx.OK)
-        buttonsizer.SetDimension(220, 210, 80, 40)
-        wx.StaticBox(dlg,-1,_(" Reports "),pos=(3,5),size=(300,90))
-        wx.StaticBox(dlg,-1,_(" Calculation of horizon "),pos=(3,100),size=(300,110))
-        wx.StaticText(dlg,-1,_("Number of reports: "),pos=(12,25),size=(150,16))
-        wx.StaticText(dlg,-1,_("Number of old reports: "),pos=(12,45),size=(150,16))
-        wx.StaticText(dlg,-1,_("Reports with a calculated distance: "),pos=(12,65),size=(150,16))
-        wx.StaticText(dlg,-1,_("Minimum: "),pos=(12,120),size=(150,16))
-        wx.StaticText(dlg,-1,_("Maximum: "),pos=(12,140),size=(150,16))
-        wx.StaticText(dlg,-1,_("Mean value: "),pos=(12,160),size=(150,16))
-        wx.StaticText(dlg,-1,_("Median value: "),pos=(12,180),size=(150,16))
-        # Calculate horizon
-        old = []
-        # Fetch the total number of rows in the db
-        query1 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data", ())]))
-        nritems = len(query1)
-        # Fetch the greyed out rows in the db
-        query2 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi, distance FROM data WHERE datetime(time) < datetime('now', 'localtime', '-%s seconds')" % config['common'].as_int('listmakegreytime'), ())]))
-        nrgreyitems = len(query2)
-        # Set as initial values
-        nrhorizonitems = 0
-        totaldistance = 0
-        distancevalues = []
-        # Extract values from the SQL-query
-        for v in query2:
-            if v[1]:
-                totaldistance += float(v[1])
-                distancevalues.append(float(v[1]))
-                nrhorizonitems += 1
-        # Calculate median
-        median = 0
-        # Calculate meanvalue
-        if totaldistance > 0: mean = (totaldistance/nrhorizonitems)
-        else: mean = 0
-        # Sort the list and take the middle element.
-        n = len(distancevalues)
-        copy = distancevalues[:] # So that "numbers" keeps its original order
-        copy.sort()
-        if n > 2:
-            if n & 1:         # There is an odd number of elements
-                median = copy[n // 2]
-            else:
-                median = (copy[n // 2 - 1] + copy[n // 2]) / 2
-        # Calculate minimum and maximum
-        minimum = 0
-        maximum = 0
-        try:
-            minimum = min(distancevalues)
-            maximum = max(distancevalues)
-        except: pass
-        # Set the text strings
-        wx.StaticText(dlg,-1,str(nritems),pos=(130,25),size=(300,16))
-        wx.StaticText(dlg,-1,str(nrgreyitems),pos=(130,45),size=(300,16))
-        wx.StaticText(dlg,-1,str(nrhorizonitems),pos=(130,65),size=(300,16))
-        wx.StaticText(dlg,-1,str(round(minimum, 1))+' km',pos=(130,120),size=(150,16))
-        wx.StaticText(dlg,-1,str(round(maximum, 1))+' km',pos=(130,140),size=(150,16))
-        wx.StaticText(dlg,-1,str(round(mean, 1))+' km',pos=(130,160),size=(150,16))
-        wx.StaticText(dlg,-1,str(round(median, 1))+' km',pos=(130,180),size=(150,16))
-    
+
     def OnLoadFile(self, event):
         path = ''
         wcd = _("Snapshot files (*.pkl)|*.pkl|All files (*)|*")
@@ -1070,6 +1011,178 @@ class DetailWindow(wx.Dialog):
         self.timer.Stop()
         self.Destroy()
         
+
+class StatsWindow(wx.Dialog):
+    def __init__(self, parent, id):
+        # Define the dialog
+        wx.Dialog.__init__(self, parent, id, title=_("Statistics"))
+        # Create panels
+        objects_panel = wx.Panel(self, -1)
+        objects_panel.SetMinSize((280,-1))
+        horizon_panel = wx.Panel(self, -1)
+        horizon_panel.SetMinSize((280,-1))
+        input_panel = wx.Panel(self, -1)
+        input_panel.SetMinSize((250,-1))
+        # Create static boxes
+        box_objects = wx.StaticBox(objects_panel,-1,_(" Objects "))
+        box_input = wx.StaticBox(input_panel,-1,_(" Input "))
+        box_horizon = wx.StaticBox(horizon_panel,-1,_(" Radio Horizon (calculated) "))
+        
+        # Object panels, texts and sizers
+        obj_panel_left = wx.Panel(objects_panel)
+        obj_panel_right = wx.Panel(objects_panel)
+        wx.StaticText(obj_panel_left,-1,_("Number of objects:"),pos=(-1,0))
+        wx.StaticText(obj_panel_left,-1,_("Number of old objects:"),pos=(-1,20))
+        wx.StaticText(obj_panel_left,-1,_("Objects with a calculated distance:"),pos=(-1,40))
+        self.text_object_nbr = wx.StaticText(obj_panel_right,-1,'',pos=(-1,0))
+        self.text_object_grey_nbr = wx.StaticText(obj_panel_right,-1,'',pos=(-1,20))
+        self.text_object_distance_nbr = wx.StaticText(obj_panel_right,-1,'',pos=(-1,40))
+        obj_sizer = wx.StaticBoxSizer(box_objects, wx.HORIZONTAL)
+        obj_sizer.AddSpacer(5)
+        obj_sizer.Add(obj_panel_left)
+        obj_sizer.AddSpacer(10)
+        obj_sizer.Add(obj_panel_right, wx.EXPAND)
+        objects_panel.SetSizer(obj_sizer)
+
+        # Horizon panels, texts and sizers
+        hor_panel_left = wx.Panel(horizon_panel)
+        hor_panel_right = wx.Panel(horizon_panel)
+        wx.StaticText(hor_panel_left,-1,_("Minimum:"),pos=(-1,0))
+        wx.StaticText(hor_panel_left,-1,_("Maximum:"),pos=(-1,20))
+        wx.StaticText(hor_panel_left,-1,_("Mean value:"),pos=(-1,40))
+        wx.StaticText(hor_panel_left,-1,_("Median value:"),pos=(-1,60))
+        self.text_horizon_min = wx.StaticText(hor_panel_right,-1,'',pos=(-1,0))
+        self.text_horizon_max = wx.StaticText(hor_panel_right,-1,'',pos=(-1,20))
+        self.text_horizon_mean = wx.StaticText(hor_panel_right,-1,'',pos=(-1,40))
+        self.text_horizon_median = wx.StaticText(hor_panel_right,-1,'',pos=(-1,60))
+        hor_sizer = wx.StaticBoxSizer(box_horizon, wx.HORIZONTAL)
+        hor_sizer.AddSpacer(5)
+        hor_sizer.Add(hor_panel_left)
+        hor_sizer.AddSpacer(10)
+        hor_sizer.Add(hor_panel_right, wx.EXPAND)
+        horizon_panel.SetSizer(hor_sizer)
+
+        # Input panels, texts and sizers
+        input_panel_left = wx.Panel(input_panel)
+        input_panel_right = wx.Panel(input_panel)
+        wx.StaticText(input_panel_left,-1,_("Serial Port A received:"),pos=(-1,0))
+        wx.StaticText(input_panel_left,-1,_("Serial Port A parsed:"),pos=(-1,20))
+        wx.StaticText(input_panel_left,-1,_("Serial Port B received:"),pos=(-1,60))
+        wx.StaticText(input_panel_left,-1,_("Serial Port B parsed:"),pos=(-1,80))
+        wx.StaticText(input_panel_left,-1,_("Network received:"),pos=(-1,120))
+        wx.StaticText(input_panel_left,-1,_("Network parsed:"),pos=(-1,140))
+        self.text_input_ser_a_r = wx.StaticText(input_panel_right,-1,'',pos=(-1,0))
+        self.text_input_ser_a_p = wx.StaticText(input_panel_right,-1,'',pos=(-1,20))
+        self.text_input_ser_b_r = wx.StaticText(input_panel_right,-1,'',pos=(-1,60))
+        self.text_input_ser_b_p = wx.StaticText(input_panel_right,-1,'',pos=(-1,80))
+        self.text_input_net_r = wx.StaticText(input_panel_right,-1,'',pos=(-1,120))
+        self.text_input_net_p = wx.StaticText(input_panel_right,-1,'',pos=(-1,140))
+        input_sizer = wx.StaticBoxSizer(box_input, wx.HORIZONTAL)
+        input_sizer.AddSpacer(5)
+        input_sizer.Add(input_panel_left)
+        input_sizer.AddSpacer(10)
+        input_sizer.Add(input_panel_right, wx.EXPAND)
+        input_panel.SetSizer(input_sizer)
+
+        # Buttons & events
+        closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
+        self.Bind(wx.EVT_BUTTON, self.OnClose, id=1)
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
+
+        # Sizer setup
+        mainsizer = wx.BoxSizer(wx.VERTICAL)
+        sizer1 = wx.BoxSizer(wx.HORIZONTAL)
+        sizer2 = wx.BoxSizer(wx.VERTICAL)
+        sizer_button = wx.BoxSizer(wx.HORIZONTAL)
+        # Sizer1 is the sizer positioning the different panels (and static boxes)
+        # Sizer2 is an inner sizer for th transponder data panel and remark panel
+        sizer2.Add(objects_panel, 0)
+        sizer2.AddSpacer(5)
+        sizer2.Add(horizon_panel, 0)
+        sizer1.Add(sizer2)
+        sizer1.AddSpacer(5)
+        sizer1.Add(input_panel, 0, wx.EXPAND)
+        mainsizer.Add(sizer1)
+        mainsizer.AddSpacer((0,10))
+        sizer_button.Add(closebutton, 0)
+        mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
+        self.SetSizerAndFit(mainsizer)
+
+        # Update the initial data
+        self.OnUpdate('')
+
+        # Timer for updating the window
+        self.timer = wx.Timer(self, -1)
+        self.timer.Start(2000)
+        wx.EVT_TIMER(self, -1, self.OnUpdate)
+
+    def OnUpdate(self, event):
+        horizon = self.CalcHorizon()
+        input_stats = GetStats()
+        self.text_object_nbr.SetLabel(str(horizon[0]))
+        self.text_object_grey_nbr.SetLabel(str(horizon[1]))
+        self.text_object_distance_nbr.SetLabel(str(horizon[2]))
+        self.text_horizon_min.SetLabel(str(horizon[3]) + " km")
+        self.text_horizon_max.SetLabel(str(horizon[4]) + " km")
+        self.text_horizon_mean.SetLabel(str(horizon[5]) + " km")
+        self.text_horizon_median.SetLabel(str(horizon[6]) + " km")
+        if input_stats.has_key('serial_a'):
+            self.text_input_ser_a_r.SetLabel(str(input_stats['serial_a']['received']))
+            self.text_input_ser_a_p.SetLabel(str(input_stats['serial_a']['parsed']))
+        if input_stats.has_key('serial_b'):
+            self.text_input_ser_b_r.SetLabel(str(input_stats['serial_b']['received']))
+            self.text_input_ser_b_p.SetLabel(str(input_stats['serial_b']['parsed']))
+        if input_stats.has_key('network'):
+            self.text_input_net_r.SetLabel(str(input_stats['network']['received']))
+            self.text_input_net_p.SetLabel(str(input_stats['network']['parsed']))
+
+    def CalcHorizon(self):
+        # Calculate a "horizon", the distance to greyed out objects
+        old = []
+        # Fetch the total number of rows in the db
+        query1 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data", ())]))
+        nritems = len(query1)
+        # Fetch the greyed out rows in the db
+        query2 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi, distance FROM data WHERE datetime(time) < datetime('now', 'localtime', '-%s seconds')" % config['common'].as_int('listmakegreytime'), ())]))
+        nrgreyitems = len(query2)
+        # Set as initial values
+        nrhorizonitems = 0
+        totaldistance = 0
+        distancevalues = []
+        # Extract values from the SQL-query
+        for v in query2:
+            if v[1]:
+                totaldistance += float(v[1])
+                distancevalues.append(float(v[1]))
+                nrhorizonitems += 1
+        # Calculate median
+        median = 0
+        # Calculate meanvalue
+        if totaldistance > 0: mean = (totaldistance/nrhorizonitems)
+        else: mean = 0
+        # Sort the list and take the middle element.
+        n = len(distancevalues)
+        copy = distancevalues[:] # So that "numbers" keeps its original order
+        copy.sort()
+        if n > 2:
+            if n & 1:         # There is an odd number of elements
+                median = copy[n // 2]
+            else:
+                median = (copy[n // 2 - 1] + copy[n // 2]) / 2
+        # Calculate minimum and maximum
+        minimum = 0
+        maximum = 0
+        try:
+            minimum = min(distancevalues)
+            maximum = max(distancevalues)
+        except: pass
+        # Return strings
+        return nritems, nrgreyitems, nrhorizonitems, minimum, maximum, mean, median
+    
+    def OnClose(self, event):
+        self.timer.Stop()
+        self.Destroy()
+
 
 class SetAlertsWindow(wx.Dialog):
     def __init__(self, parent, id):
@@ -2441,6 +2554,7 @@ class SerialThread:
         serialt = SerialThread()
         queueitem = ''
         temp = ''
+        seq_temp = 10
         while True:
             try:
                 queueitem = self.queue.get_nowait()
@@ -2451,7 +2565,7 @@ class SerialThread:
 
             try:
                 indata = s.readline()
-                self.stats["received"] += stats["received"]
+                self.stats["received"] += 1
                 if repr_mode:
                     indata = repr(indata)[1:-1]
             except: continue
@@ -2463,11 +2577,28 @@ class SerialThread:
 
             # Check if message is split on several lines
             lineinfo = indata.split(',')
-            if lineinfo[0] == '!AIVDM' and int(lineinfo[1]) > 1:
+            nbr_of_lines = int(lineinfo[1])
+            line_nbr = int(lineinfo[2])
+            line_seq_id = int(lineinfo[3])
+            # If message is split, check that they belong together
+            if lineinfo[0] == '!AIVDM' and nbr_of_lines > 1:
+                # If first message, set seq_temp to the sequential message ID
+                if line_nbr == 1:
+                    temp = ''
+                    seq_temp = line_seq_id
+                # If not first message, check that the seq ID matches that in seq_temp
+                # If not true, reset variables and continue
+                elif line_seq_id != seq_temp:
+                    temp = ''
+                    seq_temp = 10
+                    continue
+                # Add data to variable temp
                 temp += indata
-                if len(temp.splitlines()) == int(lineinfo[1]):
+                # If the final message has been received, join messages and decode
+                if len(temp.splitlines()) == nbr_of_lines:
                     indata = decode.jointelegrams(temp)
                     temp = ''
+                    seq_temp = 10
                 else:
                     continue
 
@@ -2483,10 +2614,10 @@ class SerialThread:
                     # Set source in parser as serial
                     parser['source'] = "Serial port " + port
                     maint.put(parser)
-                    self.stats["parsed"] += stats["parsed"]
+                    self.stats["parsed"] += 1
             except: continue
 
-    def ReturnStatistics(self):
+    def ReturnStats(self):
         return self.stats
 
     def put(self, item):
@@ -2819,13 +2950,26 @@ class MainThread:
 # Start threads
 MainThread().start()
 if config['serial_a'].as_bool('serial_on'):
-    SerialThread().start('serial_a')
+    seriala = SerialThread()
+    seriala.start('serial_a')
 if config['serial_b'].as_bool('serial_on'):
-    SerialThread().start('serial_b')
+    serialb = SerialThread()
+    serialb.start('serial_b')
 if config['network'].as_bool('server_on'):
     NetworkServerThread().start()
 if config['network'].as_bool('client_on'):
     NetworkClientThread().start()
+
+# Function for getting statistics from the various threads
+def GetStats():
+    stats = {}
+    try:
+        stats['serial_a'] = seriala.ReturnStats()
+    except: pass
+    try:
+        stats['serial_b'] = serialb.ReturnStats()
+    except: pass
+    return stats
 
 # Start the GUI
 # Wait some time before initiating, to let the threads settle
