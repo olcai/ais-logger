@@ -1006,7 +1006,7 @@ class DetailWindow(wx.Dialog):
         if itemdata[27]:
             self.text_source.SetLabel(str(itemdata[27]))
         # Set remark text
-        if remarkdict.has_key(int(itemdata[0])): self.text_remark.SetLabel(str(remarkdict[int(itemdata[0])]))
+        if remarkdict.has_key(int(itemdata[0])): self.text_remark.SetLabel(unicode(remarkdict[int(itemdata[0])]))
 
     def OnClose(self, event):
         self.timer.Stop()
@@ -1201,15 +1201,18 @@ class StatsWindow(wx.Dialog):
             if input_stats.has_key('serial_a'):
                 if self.OldParseStats.has_key('serial_a'):
                     rate = round(((input_stats['serial_a']['parsed'] - self.OldParseStats['serial_a']) / timediff), 1)
-                data['serial_a'] = rate
+                    data['serial_a'] = rate
+                self.OldParseStats['serial_a'] = int(input_stats['serial_a']['parsed'])
             if input_stats.has_key('serial_b'):
                 if self.OldParseStats.has_key('serial_b'):
                     rate = round(((input_stats['serial_b']['parsed'] - self.OldParseStats['serial_b']) / timediff), 1)
-                data['serial_b'] = rate
+                    data['serial_b'] = rate
+                self.OldParseStats['serial_b'] = int(input_stats['serial_b']['parsed'])
             if input_stats.has_key('network'):
                 if self.OldParseStats.has_key('network'):
                     rate = round(((input_stats['network']['parsed'] - self.OldParseStats['network']) / timediff), 1)
-                data['network'] = rate
+                    data['network'] = rate
+                self.OldParseStats['network'] = int(input_stats['network']['parsed'])
         # Set current time to LastUpdateTime
         self.LastUpdateTime = time.time()
         return data
