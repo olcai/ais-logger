@@ -680,9 +680,14 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
         # See if the previous selected row exists after the list update
         # If the mmsi is found, set the new position as selected
+        # If not found, deselct all objects
         try:
-            new_position = self.FindItem(-1, unicode(selected_mmsi))
-            self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+            if self.itemDataMap.has_key(selected_mmsi):
+                new_position = self.FindItem(-1, unicode(selected_mmsi))
+                self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+            else:
+                for i in range(self.GetItemCount()):
+                    self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
         except: pass
 
     def LoopQuery(self, query_result, iddb_result):
