@@ -901,13 +901,13 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(transponderdata_panel,-1,_("Tamper: "),pos=(12,45),size=(150,16))
         wx.StaticText(transponderdata_panel,-1,_("Nav Status: "),pos=(12,65),size=(150,16))
         wx.StaticText(transponderdata_panel,-1,_("Accuracy: "),pos=(12,85),size=(150,16))
-        # Local information such as bearing and distance
+        # Object information such as bearing and distance
         wx.StaticText(objinfo_panel,-1,_("Bearing: "),pos=(12,25),size=(150,16))
         wx.StaticText(objinfo_panel,-1,_("Distance: "),pos=(12,45),size=(150,16))
-        wx.StaticText(objinfo_panel,-1,_("Created: "),pos=(12,65),size=(150,16))
-        wx.StaticText(objinfo_panel,-1,_("Updated: "),pos=(12,85),size=(150,16))
-        wx.StaticText(objinfo_panel,-1,_("Source: "),pos=(12,105),size=(150,16))
-        wx.StaticText(objinfo_panel,-1,_("Updates: "),pos=(12,125),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Updates: "),pos=(12,65),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Source: "),pos=(12,85),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Created: "),pos=(12,105),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Updated: "),pos=(12,125),size=(150,16))
 
         # Set ship data
         self.text_mmsi = wx.StaticText(shipdata_panel,-1,'',pos=(100,25),size=(300,16))
@@ -934,13 +934,13 @@ class DetailWindow(wx.Dialog):
         self.text_tamper = wx.StaticText(transponderdata_panel,-1,'',pos=(105,45),size=(185,16))
         self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(105,65),size=(185,16))
         self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(105,85),size=(185,16))
-        # Set local information
+        # Set object information
         self.text_bearing = wx.StaticText(objinfo_panel,-1,'',pos=(105,25),size=(185,16))
         self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(185,16))
-        self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(185,16))
-        self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,85),size=(185,16))
-        self.text_updates = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(185,16))
-        self.text_source = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(185,16))
+        self.text_updates = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(185,16))
+        self.text_source = wx.StaticText(objinfo_panel,-1,'',pos=(105,85),size=(185,16))
+        self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(185,16))
+        self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(185,16))
         # Set remark text
         self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(12,25),size=(370,35),style=wx.ST_NO_AUTORESIZE)
 
@@ -1060,9 +1060,9 @@ class DetailWindow(wx.Dialog):
             except: lasttime = ''
             self.text_time.SetLabel(lasttime)
         if itemdata[28]:
-            self.text_source.SetLabel(str(itemdata[28]))
+            self.text_updates.SetLabel(str(itemdata[28]))
         if itemdata[27]:
-            self.text_updates.SetLabel(str(itemdata[27]))
+            self.text_source.SetLabel(str(itemdata[27]))
         # Set remark text
         if remarkdict.has_key(int(itemdata[0])): self.text_remark.SetLabel(str(remarkdict[int(itemdata[0])]))
 
