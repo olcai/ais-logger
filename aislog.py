@@ -2660,8 +2660,10 @@ class SerialThread:
             lineinfo = indata.split(',')
             if lineinfo[0] == '!AIVDM':
                 nbr_of_lines = int(lineinfo[1])
-                line_nbr = int(lineinfo[2])
-                line_seq_id = int(lineinfo[3])
+                try:
+                    line_nbr = int(lineinfo[2])
+                    line_seq_id = int(lineinfo[3])
+                except: pass
                 # If message is split, check that they belong together
                 if nbr_of_lines > 1:
                     # If first message, set seq_temp to the sequential message ID
