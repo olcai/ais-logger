@@ -327,7 +327,7 @@ class MainWindow(wx.Frame):
         if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and owndata.has_key('owngeoref'):
             # Create a nice latitude string
             latitude = owndata['ownlatitude']
-            latitude =  latitude[1:3] + '° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
+            latitude = latitude[1:3] + '° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
             # Create a nice longitude string
             longitude = owndata['ownlongitude']
             longitude = longitude[1:4] + '° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
@@ -1183,12 +1183,12 @@ class StatsWindow(wx.Dialog):
             self.text_input_serial_b_received.SetLabel(str(input_stats['serial_b']['received'])+_(" msgs"))
             self.text_input_serial_b_parsed.SetLabel(str(input_stats['serial_b']['parsed'])+_(" msgs"))
             if rates.has_key('serial_b'):
-                self.text_input_serial_a_parserate.SetLabel(str(rates['serial_b'])+_(" msgs/sec"))
+                self.text_input_serial_b_parserate.SetLabel(str(rates['serial_b'])+_(" msgs/sec"))
         if input_stats.has_key('network'):
             self.text_input_network_received.SetLabel(str(input_stats['network']['received'])+_(" msgs"))
             self.text_input_network_parsed.SetLabel(str(input_stats['network']['parsed'])+_(" msgs"))
             if rates.has_key('network'):
-                self.text_input_serial_a_parserate.SetLabel(str(rates['network'])+_(" msgs"))
+                self.text_input_network_parserate.SetLabel(str(rates['network'])+_(" msgs"))
 
     def CalcParseRate(self, input_stats):
         # Compare data from last run with new data and calculate a parse rate
@@ -2150,13 +2150,60 @@ class SettingsWindow(wx.Dialog):
         if open_dlg.ShowModal() == wx.ID_OK:
             return(str(open_dlg.GetPath()))
 
+    def UpdateConfig(self):
+        # Update the config dictionary with data from the window
+        config['serial_a']['serial_on'] = self.porta_serialon.GetValue()
+        config['serial_a']['port'] = self.porta_port.GetValue()
+        config['serial_a']['baudrate'] = self.porta_speed.GetValue()
+        config['serial_a']['xonxoff'] = self.porta_xonxoff.GetValue()
+        config['serial_a']['rtscts'] = self.porta_rtscts.GetValue()
+        config['serial_b']['serial_on'] = self.portb_serialon.GetValue()
+        config['serial_b']['port'] = self.portb_port.GetValue()
+        config['serial_b']['baudrate'] = self.portb_speed.GetValue()
+        config['serial_b']['xonxoff'] = self.portb_xonxoff.GetValue()
+        config['serial_b']['rtscts'] = self.portb_rtscts.GetValue()
+        config['common']['listmakegreytime'] =  self.commonlist_greytime.GetValue()
+        config['common']['deleteitemtime'] =  self.commonlist_deletetime.GetValue()
+        config['common']['refreshlisttimer'] = self.commonlist_refreshtime.GetValue()
+        config['position']['override_on'] = self.manualpos_overridetoggle.GetValue()
+        latitude = str(self.manualpos_latdeg.GetValue()).zfill(2) + ";" + str(self.manualpos_latmin.GetValue()).zfill(2) + "." + str(self.manualpos_latdecmin.GetValue()).zfill(2) + ";" + self.manualpos_latquad.GetValue()
+        longitude = str(self.manualpos_longdeg.GetValue()).zfill(3) + ";" + str(self.manualpos_longmin.GetValue()).zfill(2) + "." + str(self.manualpos_longdecmin.GetValue()).zfill(2) + ";" + self.manualpos_longquad.GetValue()
+        config['position']['latitude'] = str(latitude)
+        config['position']['longitude'] = str(longitude)
+        config['common']['listcolumns'] = ', '.join(self.listcolumns_as_list)
+        config['common']['alertlistcolumns'] = ', '.join(self.alertlistcolumns_as_list)
+        config['logging']['logging_on'] = self.filelog_logtoggle.GetValue()
+        config['logging']['logtime'] = self.filelog_logtime.GetValue()
+        config['logging']['logfile'] = self.filelog_logfile.GetValue()
+        config['iddb_logging']['logging_on'] = self.iddblog_logtoggle.GetValue()
+        config['iddb_logging']['logtime'] = self.iddblog_logtime.GetValue()
+        config['iddb_logging']['logfile'] = self.iddblog_logfile.GetValue()
+        config['alert']['alertfile_on'] = self.alertfile_toggle.GetValue()
+        config['alert']['alertfile'] = self.alertfile_file.GetValue()
+        config['alert']['remarkfile_on'] = self.remarkfile_toggle.GetValue()
+        config['alert']['remarkfile'] = self.remarkfile_file.GetValue()
+        config['alert']['alertsound_on'] = self.alertsoundfile_toggle.GetValue()
+        config['alert']['alertsoundfile'] = self.alertsoundfile_file.GetValue()
+        config['network']['client_on'] = self.netrec_clienton.GetValue()
+        config['network']['client_address'] = self.netrec_clientaddress.GetValue()
+        config['network']['client_port'] = self.netrec_clientport.GetValue()
+        config['network']['server_on'] = self.netsend_serveron.GetValue()
+        config['network']['server_address'] = self.netsend_serveraddress.GetValue()
+        config['network']['server_port'] = self.netsend_serverport.GetValue()
+
     def OnSave(self, event):
-        dlg = wx.MessageDialog(self, _("This function is not implemented yet"), 'FIXME', wx.OK | wx.ICON_INFORMATION)
+        self.UpdateConfig()
+        config.filename = configfile
+        config.write()
+        dlg = wx.MessageDialog(self, _("Your settings have been saved, but the program can only make use of some changed settings when running.\n\nPlease restart the program to be able to use all the updated settings."), 'Please restart', wx.OK | wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
 
     def OnApply(self, event):
-        self.OnSave(0)
+        self.UpdateConfig()
+        dlg = wx.MessageDialog(self, _("The program can only make use of some changed settings when running.\n\nPlease save your changes and restart the program to be able to use all the updated settings."), 'WARNING', wx.OK | wx.ICON_WARNING)
+        dlg.ShowModal()
+        dlg.Destroy()
 
     def OnAbort(self, event):
         self.Destroy()
@@ -2773,10 +2820,13 @@ class NetworkServerThread:
 
 class NetworkClientThread:
     queue = Queue.Queue()
+    stats = {"received": 0, "parsed": 0}
 
     def client(self):
         queueitem = ''
         data = ''
+        temp = ''
+        seq_temp = 10
         message = {}
         maint = MainThread()
         client_address = config['network']['client_address']
@@ -2792,13 +2842,68 @@ class NetworkClientThread:
                 break
             try:
                 # Try to read data from socket and unpickle it
-                data = socketobj.recv(1024)
-                message = pickle.loads(data)
+                data = str(socketobj.recv(1024)).splitlines(True)
             except: continue
-            # Set source in parser as network
-            message['source'] = 'Network'
-            # Put message in MainThread's queue
-            maint.put(message)
+
+            for indata in data:
+                self.stats["received"] += 1
+                if indata[0] == '!':
+
+                    # Add the indata line to a list and pop when over 500 items in list
+                    rawdata.append(indata)
+                    while len(rawdata) > 500:
+                        rawdata.popleft()
+
+                    # Check if message is split on several lines
+                    lineinfo = indata.split(',')
+                    nbr_of_lines = 0
+                    line_nbr = 0
+                    line_seq_id = 10
+                    if lineinfo[0] == '!AIVDM':
+                        try:
+                            nbr_of_lines = int(lineinfo[1])
+                            line_nbr = int(lineinfo[2])
+                            line_seq_id = int(lineinfo[3])
+                        except: pass
+                        # If message is split, check that they belong together
+                        if nbr_of_lines > 1:
+                            # If first message, set seq_temp to the sequential message ID
+                            if line_nbr == 1:
+                                temp = ''
+                                seq_temp = line_seq_id
+                            # If not first message, check that the seq ID matches that in seq_temp
+                            # If not true, reset variables and continue
+                            elif line_seq_id != seq_temp:
+                                temp = ''
+                                seq_temp = 10
+                                continue
+                            # Add data to variable temp
+                            temp += indata
+                            # If the final message has been received, join messages and decode
+                            if len(temp.splitlines()) == nbr_of_lines:
+                                indata = decode.jointelegrams(temp)
+                                temp = ''
+                                seq_temp = 10
+                            else:
+                                continue
+
+                    # Set the telegramparser result in dict parser and queue it
+                    try:
+                        parser = dict(decode.telegramparser(indata))
+                        if len(parser) > 0:
+                            # Put in NetworkServer's queue
+                            if parser.has_key('mmsi'):
+                                networkdata.append(parser)
+                                while len(networkdata) > 500:
+                                    networkdata.popleft()
+                            # Set source in parser as serial
+                            parser['source'] = "Network " + str(client_address)
+                            maint.put(parser)
+                            self.stats["parsed"] += 1
+                    except: continue
+
+    def ReturnStats(self):
+        return self.stats
 
     def put(self, item):
         self.queue.put(item)
@@ -3042,7 +3147,8 @@ if config['serial_b'].as_bool('serial_on'):
 if config['network'].as_bool('server_on'):
     NetworkServerThread().start()
 if config['network'].as_bool('client_on'):
-    NetworkClientThread().start()
+    networkc = NetworkClientThread()
+    networkc.start()
 
 # Function for getting statistics from the various threads
 def GetStats():
@@ -3052,6 +3158,9 @@ def GetStats():
     except: pass
     try:
         stats['serial_b'] = serialb.ReturnStats()
+    except: pass
+    try:
+        stats['network'] = networkc.ReturnStats()
     except: pass
     return stats
 
