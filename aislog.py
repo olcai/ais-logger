@@ -504,7 +504,7 @@ class MainWindow(wx.Frame):
             try:
                 parser = dict(decode.telegramparser(line))
                 if len(parser) > 0:
-                    parser['source'] = 'file'
+                    parser['source'] = 'File'
                     maint.put(parser)
                 # Update the progress dialog for each 100 rows
                 cur_line += 1
@@ -871,11 +871,11 @@ class DetailWindow(wx.Dialog):
         objinfo_panel = wx.Panel(self, -1)
         remark_panel = wx.Panel(self, -1)
         # Create static boxes
-        wx.StaticBox(shipdata_panel,-1,_(" Ship data "),pos=(3,5),size=(400,210))
-        wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(290,210))
-        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,103))
-        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(290,102))
-        wx.StaticBox(remark_panel,-1,_(" Remark "), pos=(3,5),size=(700,70))
+        wx.StaticBox(shipdata_panel,-1,_(" Ship data "),pos=(3,5),size=(400,205))
+        wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(290,205))
+        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,105))
+        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(290,145))
+        wx.StaticBox(remark_panel,-1,_(" Remark "), pos=(3,5),size=(400,60))
         # Ship data
         wx.StaticText(shipdata_panel,-1,_("MMSI nbr: "),pos=(12,25),size=(150,16))
         wx.StaticText(shipdata_panel,-1,_("IMO nbr: "),pos=(12,45),size=(150,16))
@@ -906,8 +906,8 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(objinfo_panel,-1,_("Distance: "),pos=(12,45),size=(150,16))
         wx.StaticText(objinfo_panel,-1,_("Created: "),pos=(12,65),size=(150,16))
         wx.StaticText(objinfo_panel,-1,_("Updated: "),pos=(12,85),size=(150,16))
-        # Remark text
-        wx.StaticText(remark_panel,-1,_("Remark: "),pos=(12,25),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Source: "),pos=(12,105),size=(150,16))
+        wx.StaticText(objinfo_panel,-1,_("Updates: "),pos=(12,125),size=(150,16))
 
         # Set ship data
         self.text_mmsi = wx.StaticText(shipdata_panel,-1,'',pos=(100,25),size=(300,16))
@@ -939,8 +939,10 @@ class DetailWindow(wx.Dialog):
         self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(185,16))
         self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(185,16))
         self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,85),size=(185,16))
+        self.text_updates = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(185,16))
+        self.text_source = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(185,16))
         # Set remark text
-        self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(100,25),size=(500,40))
+        self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(12,25),size=(370,35),style=wx.ST_NO_AUTORESIZE)
 
         # Buttons & events
         closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
@@ -949,17 +951,21 @@ class DetailWindow(wx.Dialog):
 
         # Sizer setup
         mainsizer = wx.BoxSizer(wx.VERTICAL)
-        sizer = wx.FlexGridSizer(2,2)
-        sizer2 = wx.BoxSizer(wx.HORIZONTAL)
-        sizer.Add(shipdata_panel, 1, wx.EXPAND, 0)
-        sizer.Add(voyagedata_panel, 0)
-        sizer.Add(transponderdata_panel, 0)
-        sizer.Add(objinfo_panel, 0)
-        mainsizer.Add(sizer)
-        mainsizer.Add(remark_panel, 0)
+        sizer1 = wx.FlexGridSizer(2,2)
+        sizer2 = wx.BoxSizer(wx.VERTICAL)
+        sizer_button = wx.BoxSizer(wx.HORIZONTAL)
+        # Sizer1 is the sizer positioning the different panels (and static boxes)
+        # Sizer2 is an inner sizer for th transponder data panel and remark panel
+        sizer1.Add(shipdata_panel, 1, wx.EXPAND, 0)
+        sizer1.Add(voyagedata_panel, 0)
+        sizer2.Add(transponderdata_panel, 0)
+        sizer2.Add(remark_panel, 0)
+        sizer1.Add(sizer2)
+        sizer1.Add(objinfo_panel, 0)
+        mainsizer.Add(sizer1)
         mainsizer.AddSpacer((0,10))
-        sizer2.Add(closebutton, 0)
-        mainsizer.Add(sizer2, flag=wx.ALIGN_RIGHT)
+        sizer_button.Add(closebutton, 0)
+        mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
         self.SetSizerAndFit(mainsizer)
 
         # Set self.itemmmsi to itemmmsi
@@ -1053,6 +1059,10 @@ class DetailWindow(wx.Dialog):
             try: lasttime = itemdata[11].replace('T', _(" kl "))
             except: lasttime = ''
             self.text_time.SetLabel(lasttime)
+        if itemdata[28]:
+            self.text_source.SetLabel(str(itemdata[28]))
+        if itemdata[27]:
+            self.text_updates.SetLabel(str(itemdata[27]))
         # Set remark text
         if remarkdict.has_key(int(itemdata[0])): self.text_remark.SetLabel(str(remarkdict[int(itemdata[0])]))
 
@@ -2422,6 +2432,7 @@ class GUI(wx.App):
 
 class SerialThread:
     queue = Queue.Queue()
+    stats = {"received": 0, "parsed": 0}
 
     def reader(self, port, baudrate, rtscts, xonxoff, repr_mode):
         # Define serial port connection
@@ -2440,6 +2451,7 @@ class SerialThread:
 
             try:
                 indata = s.readline()
+                self.stats["received"] += stats["received"]
                 if repr_mode:
                     indata = repr(indata)[1:-1]
             except: continue
@@ -2469,9 +2481,13 @@ class SerialThread:
                         while len(networkdata) > 500:
                             networkdata.popleft()
                     # Set source in parser as serial
-                    parser['source'] = 'serial'
+                    parser['source'] = "Serial port " + port
                     maint.put(parser)
+                    self.stats["parsed"] += stats["parsed"]
             except: continue
+
+    def ReturnStatistics(self):
+        return self.stats
 
     def put(self, item):
         self.queue.put(item)
@@ -2565,7 +2581,7 @@ class NetworkClientThread:
                 message = pickle.loads(data)
             except: continue
             # Set source in parser as network
-            message['source'] = 'network'
+            message['source'] = 'Network'
             # Put message in MainThread's queue
             maint.put(message)
 
@@ -2592,7 +2608,7 @@ class MainThread:
     def updater(self):
         execSQL(DbCmd(ConnectCmd, ":memory:"))
         execSQL(DbCmd(SqlCmd, [
-            ("create table data (mmsi PRIMARY KEY, mid, imo, name, type, typename, callsign, latitude, longitude, georef, creationtime, time, sog, cog, heading, destination, eta, length, width, draught, rateofturn, bit, tamper, navstatus, posacc, distance, bearing, source, soundalerted);",()),
+            ("create table data (mmsi PRIMARY KEY, mid, imo, name, type, typename, callsign, latitude, longitude, georef, creationtime, time, sog, cog, heading, destination, eta, length, width, draught, rateofturn, bit, tamper, navstatus, posacc, distance, bearing, source, updates, soundalerted);",()),
             ("create table iddb (mmsi PRIMARY KEY, imo, name, callsign);",()),
             ("CREATE TRIGGER update_iddb AFTER UPDATE OF imo ON data BEGIN INSERT OR IGNORE INTO iddb (mmsi) VALUES (new.mmsi); UPDATE iddb SET imo=new.imo,name=new.name,callsign=new.callsign WHERE mmsi=new.mmsi; END;",())]))
         lastcleartime = time.time()
@@ -2663,12 +2679,13 @@ class MainThread:
                 if 'time' in parser: dbexp.append('time'); dbvalues.append(parser['time'])
                 if 'distance' in parser: dbexp.append('distance'); dbvalues.append(parser['distance'])
                 if 'bearing' in parser: dbexp.append('bearing'); dbvalues.append(parser['bearing'])
+                if 'source' in parser: dbexp.append('source'); dbvalues.append(parser['source'])
                 # Create an expression from the column=value pairs from aboce
                 dbexpression = ','.join(['''%s="%s"''' % (e, v) for e,v in zip(dbexp, dbvalues)])
                 # Create or ignore a row from the MMSI key and update this row with current values
                 execSQL(DbCmd(SqlCmd, [
-                    ("INSERT OR IGNORE INTO data (mmsi, creationtime) VALUES (%s,'%s')" % (int(parser['mmsi']), parser['time']),()),
-                    ("UPDATE data SET %s WHERE mmsi=%s" % (dbexpression, int(parser['mmsi'])),())]))
+                    ("INSERT OR IGNORE INTO data (mmsi, creationtime, updates) VALUES (%s,'%s', 0)" % (int(parser['mmsi']), parser['time']),()),
+                    ("UPDATE data SET %s,updates=updates+1 WHERE mmsi=%s" % (dbexpression, int(parser['mmsi'])),())]))
             elif parser.has_key('ownlatitude') and parser.has_key('ownlongitude') and len(parser['ownlatitude']) == 9 and len(parser['ownlongitude']) == 10 and not config['position'].as_bool('override_on'):
                 ownlatitude = parser['ownlatitude']
                 ownlongitude = parser['ownlongitude']
