@@ -24,11 +24,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+version = ''
+
 import sys, os, optparse, logging
 import time, datetime
 import threading, Queue, collections
 import socket, SocketServer
-import pickle
+import pickle, codecs
 import md5
 
 from pysqlite2 import dbapi2 as sqlite
@@ -139,10 +141,13 @@ owndata = {}
 alertlist = []
 alertstring = ''
 alertstringsound = ''
+remarkdict = {}
+# Define collections
 rawdata = collections.deque()
 networkdata = collections.deque()
-remarkdict = {}
+# Set start time to start_time
 start_time = datetime.datetime.now()
+
 
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
@@ -256,8 +261,8 @@ class MainWindow(wx.Frame):
         f.close()
 
     def readtype(self):
-        # Read a list with ship type codes from typkod.lst
-        f = open('typkod.lst', 'r')
+        # Read a list with ship type codes from typecode.lst
+        f = open('typecode.lst', 'r')
         for line in f:
             # For each line, strip any whitespace and then split the data using ','
             row = line.strip().split(',')
@@ -309,7 +314,11 @@ class MainWindow(wx.Frame):
                 for line in f:
                     # For each line, strip any whitespace and then split the data using ','
                     row = line.strip().split(',')
-                    data[int(row[0])] = str(row[1])
+                    # Try to read line as ASCII/UTF-8, if error, try cp1252 (workaround for Windows)
+                    try:
+                        data[int(row[0])] = unicode(row[1])
+                    except:
+                        data[int(row[0])] = unicode(row[1], 'cp1252')
                 f.close()
                 global remarkdict
                 remarkdict = data.copy()
@@ -329,10 +338,10 @@ class MainWindow(wx.Frame):
         if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and owndata.has_key('owngeoref'):
             # Create a nice latitude string
             latitude = owndata['ownlatitude']
-            latitude = latitude[1:3] + '° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
+            latitude = latitude[1:3] + u'° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
             # Create a nice longitude string
             longitude = owndata['ownlongitude']
-            longitude = longitude[1:4] + '° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
+            longitude = longitude[1:4] + u'° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
             self.SetStatusText(_("Own position: ") + latitude + '  ' + longitude + ' - ' + owndata['owngeoref'], 0)
         self.SetStatusText(_("Total nbr of objects / old: ") + str(nritems) + ' / ' + str(nrgreyitems), 1)
 
@@ -348,7 +357,7 @@ class MainWindow(wx.Frame):
         path = ''
         wcd = _("Snapshot files (*.pkl)|*.pkl|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a snapshot file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -377,7 +386,7 @@ class MainWindow(wx.Frame):
         path = ''
         wcd = _("Snapshot files (*.pkl)|*.pkl|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='datadump.pkl', wildcard=wcd, style=wx.SAVE|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a snapshot filename"), defaultDir=dir, defaultFile='datadump.pkl', wildcard=wcd, style=wx.SAVE)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -398,7 +407,7 @@ class MainWindow(wx.Frame):
         path = ''
         wcd = _('All files (*)|*|Text files (*.txt)|*.txt')
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a raw data file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -473,7 +482,7 @@ class MainWindow(wx.Frame):
         self.spalert.OnRefresh(event)
 
     def OnAbout(self, event):
-        aboutstring = 'AIS Logger\n(C) Erik I.J. Olsson 2006-2007\n\naislog.py\ndecode.py\nutil.py'
+        aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2007\n\naislog.py\ndecode.py\nutil.py'
         dlg = wx.MessageDialog(self, aboutstring, _("About"), wx.OK|wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
@@ -733,24 +742,24 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                 else: r[pos] = r[pos]
             if 'bit' in self.columnlist:
                 pos = self.columnlist.index('bit')
-                if r[pos] == '0': r[pos] = unicode('OK')
+                if r[pos] == '0': r[pos] = u'OK'
                 elif r[pos] == None: r[pos] = None
-                else: r[pos] = unicode('Fel')
+                else: r[pos] = u'Error'
             if 'tamper' in self.columnlist:
                 pos = self.columnlist.index('tamper')
-                if r[pos] == '0': r[pos] = unicode('No')
+                if r[pos] == '0': r[pos] = u'No'
                 elif r[pos] == None: r[pos] = None
-                else: r[pos] = unicode('YES')
+                else: r[pos] = u'YES'
             if 'posacc' in self.columnlist:
                 pos = self.columnlist.index('posacc')
-                if r[pos] == '0': r[pos] = unicode('Bad')
+                if r[pos] == '0': r[pos] = u'Bad'
                 elif r[pos] == None: r[pos] = None
-                else: r[pos] = unicode('DGPS')
+                else: r[pos] = u'DGPS'
             # Very special case, the remark column
             if 'remark' in self.columnlist:
                 pos = self.columnlist.index('remark')
                 if remarkdict.has_key(mmsi):
-                    r.insert(pos, str(remarkdict[mmsi]))
+                    r.insert(pos, unicode(remarkdict[mmsi]))
                 else:
                     r.insert(pos, None)
             # Populate the dictionary
@@ -962,25 +971,25 @@ class DetailWindow(wx.Dialog):
         if itemdata[16]:
             try:
                 etatime = 0,int(itemdata[16][0:2]),int(itemdata[16][2:4]),int(itemdata[16][4:6]),int(itemdata[16][6:8]),1,1,1,1
-                fulletatime = time.strftime(_("%d %B kl %H:%M"),etatime)
+                fulletatime = time.strftime(_("%d %B at %H:%M"),etatime)
             except: fulletatime = itemdata[16]
             if fulletatime == '00002460': fulletatime = ''
             self.text_etatime.SetLabel(fulletatime)
         if itemdata[7]:
             latitude = str(itemdata[7])
-            try: latitude =  latitude[1:3] + '° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
+            try: latitude =  latitude[1:3] + u'° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
             except: pass
             self.text_latitude.SetLabel(latitude)
         if itemdata[8]:
             longitude = str(itemdata[8])
-            try: longitude = longitude[1:4] + '° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
+            try: longitude = longitude[1:4] + u'° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
             except: pass
             self.text_longitude.SetLabel(longitude)
         if itemdata[9]: self.text_georef.SetLabel(itemdata[9])
         if itemdata[12]: self.text_sog.SetLabel(str(itemdata[12])+' kn')
-        if itemdata[13]: self.text_cog.SetLabel(str(itemdata[13])+'°')
-        if itemdata[14]: self.text_heading.SetLabel(str(itemdata[14])+'°')
-        if itemdata[20]: self.text_rateofturn.SetLabel(str(itemdata[20])+' °/m')
+        if itemdata[13]: self.text_cog.SetLabel(str(itemdata[13])+u'°')
+        if itemdata[14]: self.text_heading.SetLabel(str(itemdata[14])+u'°')
+        if itemdata[20]: self.text_rateofturn.SetLabel(str(itemdata[20])+u' °/m')
         # Set transponder data
         if itemdata[21]:
             if itemdata[21] == '0': bit = _("OK")
@@ -998,7 +1007,7 @@ class DetailWindow(wx.Dialog):
             self.text_posacc.SetLabel(posacc)
         # Set local info
         if itemdata[25] and itemdata[26]:
-            self.text_bearing.SetLabel(str(itemdata[26])+'°')
+            self.text_bearing.SetLabel(str(itemdata[26])+u'°')
             self.text_distance.SetLabel(str(itemdata[25])+' km')
         if itemdata[10]:
             try: creationtime = itemdata[10].replace('T', " "+_("at")+" ")
@@ -1073,7 +1082,7 @@ class StatsWindow(wx.Dialog):
 
         # Input panels, texts and sizers
         serial_a = self.MakeInputStatSizer(input_panel," "+_("Serial Port A")+" ("+config['serial_a']['port']+") ")
-        serial_b = self.MakeInputStatSizer(input_panel," "+_("Serial Port B")+" ("+config['serial_a']['port']+") ")
+        serial_b = self.MakeInputStatSizer(input_panel," "+_("Serial Port B")+" ("+config['serial_b']['port']+") ")
         network = self.MakeInputStatSizer(input_panel," "+_("Network client")+" ("+config['network']['client_address']+") ")
         self.text_input_serial_a_received = serial_a[1]
         self.text_input_serial_a_parsed = serial_a[2]
@@ -1171,10 +1180,10 @@ class StatsWindow(wx.Dialog):
         self.text_object_grey_nbr.SetLabel(str(horizon[1]))
         self.text_object_distance_nbr.SetLabel(str(horizon[2]))
         # Horizon text
-        self.text_horizon_min.SetLabel(str(horizon[3]) + " km")
-        self.text_horizon_max.SetLabel(str(horizon[4]) + " km")
-        self.text_horizon_mean.SetLabel(str(horizon[5]) + " km")
-        self.text_horizon_median.SetLabel(str(horizon[6]) + " km")
+        self.text_horizon_min.SetLabel(str(round(horizon[3],1)) + " km")
+        self.text_horizon_max.SetLabel(str(round(horizon[4],1)) + " km")
+        self.text_horizon_mean.SetLabel(str(round(horizon[5],1)) + " km")
+        self.text_horizon_median.SetLabel(str(round(horizon[6],1)) + " km")
         # Uptime text
         uptime = datetime.datetime.now() - start_time
         up_since = start_time.isoformat()[:19]
@@ -1301,11 +1310,7 @@ class SetAlertsWindow(wx.Dialog):
         self.current_filter = {"filter_query": "", "filter_alerts": False, "filter_remarks": False}
 
         # Create the list control
-        #innerlist_panel = wx.Panel(list_panel, -1, pos=(10,15), size=(670,250))
         self.lc = self.List(list_panel, self)
-        #listsizer = wx.StaticBoxSizer(list_staticbox, wx.VERTICAL)
-        #listsizer.Add(self.lc, 1, wx.EXPAND)
-        #innerlist_panel.SetSizer(listsizer)
 
         # Create the object information objects
         wx.StaticText(object_panel, -1, _("MMSI nbr:"), pos=(20,25))
@@ -1396,7 +1401,7 @@ class SetAlertsWindow(wx.Dialog):
         alert_oldstate = self.loaded_objectinfo[4]
         remark_oldstate = self.loaded_objectinfo[5]
         alert_newstate = self.radiobox_alert.GetSelection()
-        remark_newstate = self.textctrl_remark.GetValue()
+        remark_newstate = unicode(self.textctrl_remark.GetValue())
         # Check if the alert state has changed
         if alert_oldstate != alert_newstate:
             # Create counter variables
@@ -1470,24 +1475,28 @@ class SetAlertsWindow(wx.Dialog):
         radiobox = wx.RadioBox(dlg, -1, _(" Associate with "), pos=(20,110), choices=(_("&Alert"), _("&Remark")))
         buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
         buttonsizer.SetDimension(110, 165, 180, 40)
+        textbox.SetFocus()
         # If user press OK, check that the textbox only contains digits, check if the number already exists
         # and if not, update either the alertlist or the remarkdict
         if dlg.ShowModal() == wx.ID_OK:
-            if not textbox.GetValue().isdigit() or len(textbox.GetValue()) > 9:
+            new_mmsi = textbox.GetValue()
+            if not new_mmsi.isdigit() or len(new_mmsi) > 9:
                 dlg = wx.MessageDialog(self, _("Only nine digits are allowed in a MMSI number! Insert failed."), _("Error"), wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
-            elif self.lc.CheckForMmsi(int(textbox.GetValue())):
+            elif self.lc.CheckForMmsi(int(new_mmsi)):
                 dlg = wx.MessageDialog(self, _("The specified MMSI number already exists! Insert failed."), _("Error"), wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
             elif radiobox.GetSelection() == 0:
-                query = "mmsi LIKE '" + unicode(textbox.GetValue()) + "'"
+                query = "mmsi LIKE '" + unicode(new_mmsi) + "'"
                 alertlist.append((query, 0, 0))
             elif radiobox.GetSelection() == 1:
-                remarkdict[int(textbox.GetValue())] = ""
+                remarkdict[int(new_mmsi)] = "REMARK NOT SET"
+            # Update the alert queries
+            self.GenerateAlertQuery()
             # Update list ctrl
             self.lc.OnUpdate()
             # Set active item
-            self.lc.SetActiveItem(textbox.GetValue())
+            self.lc.SetActiveItem(int(new_mmsi))
 
     def OnAdvanced(self, event):
         # Call the advanced alert editor
@@ -1531,17 +1540,17 @@ class SetAlertsWindow(wx.Dialog):
         # Saves remarks to a supplied file
         if len(file) > 0:
             try:
-                output = open(file, 'w')
+                output = codecs.open(file, 'w', encoding='cp1252')
                 for entry in remarkdict.iteritems():
                     # For each entry split the data using ','
                     mmsi = str(entry[0])
                     remark = entry[1]
-                    output.write(mmsi + "," + remark + "\n")
+                    output.write(mmsi + "," + remark + "\r\n")
                 output.close()
             except IOError, error:
                 dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
-            except UnicodeDecodeError, error:
+            except error:
                 dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
 
@@ -1568,13 +1577,13 @@ class SetAlertsWindow(wx.Dialog):
         if len(file) > 0:
             # Save the data
             try:
-                output = open(file, 'w')
+                output = codecs.open(file, 'w', encoding='cp1252')
                 output.write(exportdata)
                 output.close()
             except IOError, error:
                 dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
-            except UnicodeDecodeError, error:
+            except error:
                 dlg = wx.MessageDialog(self, _("Cannot save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
 
@@ -1674,7 +1683,7 @@ class SetAlertsWindow(wx.Dialog):
                         alert = 1
                 # Extract data from remarkdict
                 if remarkdict.has_key(mmsi):
-                    remark = str(remarkdict[mmsi])
+                    remark = unicode(remarkdict[mmsi])
                 # If there are filters active and the conditions are met, skip adding entry to list_dict
                 filter = self.topparent.current_filter.copy()
                 filter_query = filter["filter_query"]
@@ -1690,7 +1699,7 @@ class SetAlertsWindow(wx.Dialog):
                     pass
                 else:
                     # For each mmsi in all_mmsi, write to list_dict and map the mmsi as key and add imo, name, callsign, alert and remark to it
-                    list_dict[mmsi] = [mmsi, imo, callsign, name, alert, remark]
+                    list_dict[mmsi] = [mmsi, imo, callsign, name, alert, unicode(remark)]
                 
             # Set new ItemCount for the list ctrl if different from the current number
             nrofobjects = len(list_dict)
@@ -1724,14 +1733,17 @@ class SetAlertsWindow(wx.Dialog):
 
         def SetActiveItem(self, mmsi):
             # Set the active row to the specified MMSI number
-            # See if the previous selected row exists after list update
-            new_position = self.FindItem(-1, str(mmsi))
             # If the mmsi is found, set the new position as selected and visible
-            if new_position != -1:
+            # If not found, deselect all objects
+            if self.itemDataMap.has_key(int(mmsi)):
+                new_position = self.itemIndexMap.index(int(mmsi))
                 self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
                 self.EnsureVisible(new_position)
                 return True
-            else: return False
+            else:
+                for i in range(self.GetItemCount()):
+                    self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
+                return False
 
         def CheckForMmsi(self, mmsi):
             # This function simply checks if the supplied MMSI number is currently in the list ctrl
@@ -1744,15 +1756,17 @@ class SetAlertsWindow(wx.Dialog):
             # Return the text in item, col
             mmsi = self.itemIndexMap[item]
             string = self.itemDataMap[mmsi][col]
+            # If column with alerts, map 0, 1 and 2 to text strings
             if col == 4:
                 if string == 0: string = _("No")
                 elif string == 1: string = _("Yes")
                 elif string == 2: string = _("Yes/Sound")
-            # If string is a Nonetype, replace with an empty string
-            if string == None:
-                string = unicode('')
+            # If string is an integer, make it to a unicode string
             if type(string) == int:
                 string = unicode(string)
+            # If string is a Nonetype, replace with an empty string
+            elif string == None:
+                string = unicode('')
             return string
 
         def SortItems(self,sorter=cmp):
@@ -2460,26 +2474,25 @@ class AdvancedAlertWindow(wx.Dialog):
         # If only one item is selected, edit
         if self.querylist.GetSelectedItemCount() == 1:
             # Step through items in list to find the selected one
-            for x in range(self.querylist.GetItemCount(), -1, -1):
-                if self.querylist.GetItemState(x, wx.LIST_STATE_SELECTED):
-                    # Retreive the string itself from queryitems
-                    querystring = str(self.queryitems[x][0])
-                    # Create a dialog with a textctrl, a checkbox and two buttons
-                    dlg = wx.Dialog(self, -1, _("Edit alert"), size=(400,130))
-                    textbox = wx.TextCtrl(dlg, -1, querystring, pos=(10,10), size=(380,70), style=wx.TE_MULTILINE)
-                    alertbox = wx.CheckBox(dlg, -1, _("A&ctivate sound alert"), pos=(30, 95))
-                    buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
-                    buttonsizer.SetDimension(210, 85, 180, 40)
-                    # Make the checkbox checked if the value is set in queryitems
-                    if self.queryitems[x][1] == 1: alertbox.SetValue(True)
-                    # If user press OK, update the queryitems list and update the AdvancedAlertWindow
-                    if dlg.ShowModal() == wx.ID_OK:
-                        if alertbox.GetValue():
-                            alertstate = 1
-                        else:
-                            alertstate = 0
-                        self.queryitems[x] = (textbox.GetValue(), alertstate, 0)
-                        self.UpdateValues()
+            item = self.querylist.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
+            # Retreive the string itself from queryitems
+            querystring = str(self.queryitems[item][0])
+            # Create a dialog with a textctrl, a checkbox and two buttons
+            dlg = wx.Dialog(self, -1, _("Edit alert"), size=(400,145))
+            textbox = wx.TextCtrl(dlg, -1, querystring, pos=(10,10), size=(380,70), style=wx.TE_MULTILINE)
+            alertbox = wx.CheckBox(dlg, -1, _("A&ctivate sound alert"), pos=(30, 95))
+            buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
+            buttonsizer.SetDimension(210, 85, 180, 40)
+            # Make the checkbox checked if the value is set in queryitems
+            if self.queryitems[item][1] == 1: alertbox.SetValue(True)
+            # If user press OK, update the queryitems list and update the AdvancedAlertWindow
+            if dlg.ShowModal() == wx.ID_OK:
+                if alertbox.GetValue():
+                    alertstate = 1
+                else:
+                    alertstate = 0
+                self.queryitems[item] = (textbox.GetValue(), alertstate, 0)
+                self.UpdateValues()
         # If more than one item selected, show error
         elif self.querylist.GetSelectedItemCount() > 1:
             dlg = wx.MessageDialog(self, _("You can only edit one query at a time!"), _("Error"), wx.OK|wx.ICON_ERROR)
@@ -2488,7 +2501,7 @@ class AdvancedAlertWindow(wx.Dialog):
     def OnRemove(self, event):
         # Remove the object that is selected in list
         # Step backwards in list and check if each object is selected
-        for x in range(self.querylist.GetItemCount(), -1, -1):
+        for x in range(self.querylist.GetItemCount()-1, -1, -1):
             if self.querylist.GetItemState(x, wx.LIST_STATE_SELECTED):
                 del self.queryitems[x]
         # Clear & update
@@ -2618,7 +2631,7 @@ class AdvancedAlertWindow(wx.Dialog):
         path = ''
         wcd = _("Alert files (*.alt)|*.alt|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -2649,7 +2662,7 @@ class AdvancedAlertWindow(wx.Dialog):
         path = ''
         wcd = _("Alert files (*.alt)|*.alt|All files (*)|*")
         dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='alert.alt', wildcard=wcd, style=wx.SAVE|wx.CHANGE_DIR)
+        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='alert.alt', wildcard=wcd, style=wx.SAVE)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
         if len(path) > 0:
@@ -2713,7 +2726,7 @@ class SerialThread:
             while len(rawdata) > 500:
                 rawdata.popleft()
 
-            # Put in NetworkServer's queue
+            # Put in NetworkFeeder's queue
             networkdata.append(indata)
             while len(networkdata) > 500:
                 networkdata.popleft()
@@ -2799,19 +2812,35 @@ class SerialThread:
 
 
 class NetworkServerThread:
+    comqueue = Queue.Queue()
+
     class NetworkClientHandler(SocketServer.BaseRequestHandler):
         def handle(self):
             message = ''
+            # Define an instance collection
+            self.indata = collections.deque()
+            # Notify the NetworkFeeder that we have liftoff...
+            NetworkServerThread().put(('started', self))
             while True:
                 try:
-                    # Pop message from queue
-                    message = networkdata.popleft()
-                except IndexError: continue
+                    # Try to pop message from the collection
+                    message = self.indata.popleft()
+                except IndexError:
+                    # If no data in collection, sleep (prevents 100% CPU drain)
+                    time.sleep(0.05)
+                    continue
                 except: pass
+                # If someone tells us to stop, stop.
                 if message == 'stop': break
                 # If message length is > 1, send message to socket
                 if len(message) > 1:
-                    self.request.send(str(message))
+                    try:
+                        self.request.send(str(message))
+                    except:
+                        break
+            # Stop, please.
+            NetworkServerThread().put(('stopped', self))
+            self.indata.clear()
             self.request.close()
 
 
@@ -2822,8 +2851,46 @@ class NetworkServerThread:
         server = SocketServer.ThreadingTCPServer((server_address, server_port), self.NetworkClientHandler)
         server.serve_forever()
 
+    def feeder(self):
+        # This function tracks each server thread and feeds them
+        # with data from networkdata
+        queueitem = ''
+        servers = []
+        while True:
+            try:
+                queueitem = self.comqueue.get_nowait()
+                # If a server started, add to servers
+                if queueitem[0] == 'started':
+                    servers.append(queueitem[1])
+                # If a server stopped, remove from servers
+                elif queueitem[0] == 'stopped':
+                    servers.remove(queueitem[1])
+            # If nothing in comqueue, pass along
+            except: pass
+            # If someone wants to stop us, send stop to servers
+            if queueitem == 'stop':
+                for server in servers:
+                    for i in range(0,100):
+                        server.indata.append('stop')
+                break
+            try:
+                # Pop message from collection
+                message = networkdata.popleft()
+            except IndexError:
+                # If no data in collection, sleep (prevents 100% CPU drain)
+                time.sleep(0.05)
+                continue
+            except: pass
+            # If message length is > 1, send message to socket
+            if len(message) > 1:
+                for server in servers:
+                    server.indata.append(message)
+
     def start(self):
         try:
+            r2 = threading.Thread(target=self.feeder, name='NetworkFeeder')
+            r2.setDaemon(1)
+            r2.start()
             r = threading.Thread(target=self.server, name='NetworkServer')
             r.setDaemon(1)
             r.start()
@@ -2833,7 +2900,10 @@ class NetworkServerThread:
 
     def stop(self):
         for i in range(0,100):
-            networkdata.append('stop')
+            self.comqueue.put('stop')
+
+    def put(self, item):
+        self.comqueue.put(item)
 
 
 class NetworkClientThread:
@@ -2876,10 +2946,6 @@ class NetworkClientThread:
                     rawdata.append(indata)
                     while len(rawdata) > 500:
                         rawdata.popleft()
-
-                    networkdata.append(indata)
-                    while len(networkdata) > 500:
-                        networkdata.popleft()
 
                     # Check if message is split on several lines
                     lineinfo = indata.split(',')
