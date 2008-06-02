@@ -4,7 +4,7 @@
 # aislog.py (part of "AIS Logger")
 # Simple AIS logging and display software
 #
-# Copyright (c) 2006-2007 Erik I.J. Olsson <olcai@users.sourceforge.net>
+# Copyright (c) 2006-2008 Erik I.J. Olsson <olcai@users.sourceforge.net>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -82,6 +82,7 @@ defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 
                  'position': {'override_on': False, 'latitude': '00;00.00;N', 'longitude': '000;00.00;E'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
+                 'serial_c': {'serial_on': False, 'port': '2', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_address': 'localhost', 'client_port': '23000'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
@@ -99,6 +100,7 @@ config.comments['alert'] = ['', 'Settings for alerts and remarks']
 config.comments['position'] = ['', 'Set manual position (overrides decoded own position)']
 config.comments['serial_a'] = ['', 'Settings for input from serial device A']
 config.comments['serial_b'] = ['', 'Settings for input from serial device B']
+config.comments['serial_c'] = ['', 'Settings for input from serial device C']
 config.comments['network'] = ['', 'Settings for sending/receiving data through a network connection']
 config['common'].comments['refreshlisttimer'] = ['Number of ms between refreshing the lists']
 config['common'].comments['listmakegreytime'] = ['Number of s between last update and greying out an item']
@@ -1083,6 +1085,7 @@ class StatsWindow(wx.Dialog):
         # Input panels, texts and sizers
         serial_a = self.MakeInputStatSizer(input_panel," "+_("Serial Port A")+" ("+config['serial_a']['port']+") ")
         serial_b = self.MakeInputStatSizer(input_panel," "+_("Serial Port B")+" ("+config['serial_b']['port']+") ")
+        serial_c = self.MakeInputStatSizer(input_panel," "+_("Serial Port C")+" ("+config['serial_c']['port']+") ")
         network = self.MakeInputStatSizer(input_panel," "+_("Network client")+" ("+config['network']['client_address']+") ")
         self.text_input_serial_a_received = serial_a[1]
         self.text_input_serial_a_parsed = serial_a[2]
@@ -1090,6 +1093,9 @@ class StatsWindow(wx.Dialog):
         self.text_input_serial_b_received = serial_b[1]
         self.text_input_serial_b_parsed = serial_b[2]
         self.text_input_serial_b_parserate = serial_b[3]
+        self.text_input_serial_c_received = serial_c[1]
+        self.text_input_serial_c_parsed = serial_c[2]
+        self.text_input_serial_c_parserate = serial_c[3]
         self.text_input_network_received = network[1]
         self.text_input_network_parsed = network[2]
         self.text_input_network_parserate = network[3]
@@ -1098,6 +1104,8 @@ class StatsWindow(wx.Dialog):
         input_sizer.Add(serial_a[0], 0, wx.EXPAND)
         input_sizer.AddSpacer(5)
         input_sizer.Add(serial_b[0], 0, wx.EXPAND)
+        input_sizer.AddSpacer(5)
+        input_sizer.Add(serial_c[0], 0, wx.EXPAND)
         input_sizer.AddSpacer(5)
         input_sizer.Add(network[0], 0, wx.EXPAND)
         input_panel.SetSizer(input_sizer)
@@ -1200,6 +1208,11 @@ class StatsWindow(wx.Dialog):
             self.text_input_serial_b_parsed.SetLabel(str(input_stats['serial_b']['parsed'])+_(" msgs"))
             if rates.has_key('serial_b'):
                 self.text_input_serial_b_parserate.SetLabel(str(rates['serial_b'])+_(" msgs/sec"))
+        if input_stats.has_key('serial_c'):
+            self.text_input_serial_c_received.SetLabel(str(input_stats['serial_c']['received'])+_(" msgs"))
+            self.text_input_serial_c_parsed.SetLabel(str(input_stats['serial_c']['parsed'])+_(" msgs"))
+            if rates.has_key('serial_c'):
+                self.text_input_serial_c_parserate.SetLabel(str(rates['serial_c'])+_(" msgs/sec"))
         if input_stats.has_key('network'):
             self.text_input_network_received.SetLabel(str(input_stats['network']['received'])+_(" msgs"))
             self.text_input_network_parsed.SetLabel(str(input_stats['network']['parsed'])+_(" msgs"))
@@ -1224,6 +1237,11 @@ class StatsWindow(wx.Dialog):
                     rate = round(((input_stats['serial_b']['parsed'] - self.OldParseStats['serial_b']) / timediff), 1)
                     data['serial_b'] = rate
                 self.OldParseStats['serial_b'] = int(input_stats['serial_b']['parsed'])
+            if input_stats.has_key('serial_c'):
+                if self.OldParseStats.has_key('serial_c'):
+                    rate = round(((input_stats['serial_c']['parsed'] - self.OldParseStats['serial_c']) / timediff), 1)
+                    data['serial_c'] = rate
+                self.OldParseStats['serial_c'] = int(input_stats['serial_c']['parsed'])
             if input_stats.has_key('network'):
                 if self.OldParseStats.has_key('network'):
                     rate = round(((input_stats['network']['parsed'] - self.OldParseStats['network']) / timediff), 1)
@@ -1842,28 +1860,39 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for serial input config
         # Port A config
         porta_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(porta_panel, -1, _(" Settings for a primary serial port "), pos=(10,5), size=(450,190))
+        wx.StaticBox(porta_panel, -1, _(" Settings for a primary serial port "), pos=(10,5), size=(450,125))
         self.porta_serialon = wx.CheckBox(porta_panel, -1, _("Activate reading from the primary serial port"), pos=(20,28))
         wx.StaticText(porta_panel, -1, _("Port: "), pos=(20,60))
-        self.porta_port = wx.ComboBox(porta_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2'))
+        self.porta_port = wx.ComboBox(porta_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
         wx.StaticText(porta_panel, -1, _("Speed: "), pos=(20,95))
         self.porta_speed = wx.ComboBox(porta_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
-        self.porta_xonxoff = wx.CheckBox(porta_panel, -1, _("Software flow control:"), pos=(20,130), style=wx.ALIGN_RIGHT)
-        self.porta_rtscts = wx.CheckBox(porta_panel, -1, _("RTS/CTS flow control:"), pos=(20,160), style=wx.ALIGN_RIGHT)
+        self.porta_xonxoff = wx.CheckBox(porta_panel, -1, _("Software flow control:"), pos=(240,60), style=wx.ALIGN_RIGHT)
+        self.porta_rtscts = wx.CheckBox(porta_panel, -1, _("RTS/CTS flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
         # Port B config
         portb_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(portb_panel, -1, _(" Settings for a secondary serial port "), pos=(10,-1), size=(450,190))
+        wx.StaticBox(portb_panel, -1, _(" Settings for a secondary serial port "), pos=(10,-1), size=(450,125))
         self.portb_serialon = wx.CheckBox(portb_panel, -1, _("Activate reading from the secondary serial port"), pos=(20,28))
         wx.StaticText(portb_panel, -1, _("Port: "), pos=(20,60))
-        self.portb_port = wx.ComboBox(portb_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2'))
+        self.portb_port = wx.ComboBox(portb_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
         wx.StaticText(portb_panel, -1, _("Speed: "), pos=(20,95))
         self.portb_speed = wx.ComboBox(portb_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
-        self.portb_xonxoff = wx.CheckBox(portb_panel, -1, _("Software flow control:"), pos=(20,130), style=wx.ALIGN_RIGHT)
-        self.portb_rtscts = wx.CheckBox(portb_panel, -1, _("RTS/CTS flow control:"), pos=(20,160), style=wx.ALIGN_RIGHT)
+        self.portb_xonxoff = wx.CheckBox(portb_panel, -1, _("Software flow control:"), pos=(240,60), style=wx.ALIGN_RIGHT)
+        self.portb_rtscts = wx.CheckBox(portb_panel, -1, _("RTS/CTS flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
+        # Port C config
+        portc_panel = wx.Panel(serial_panel, -1)
+        wx.StaticBox(portc_panel, -1, _(" Settings for a tertiary serial port "), pos=(10,-1), size=(450,125))
+        self.portc_serialon = wx.CheckBox(portc_panel, -1, _("Activate reading from the tertiary serial port"), pos=(20,28))
+        wx.StaticText(portc_panel, -1, _("Port: "), pos=(20,60))
+        self.portc_port = wx.ComboBox(portc_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
+        wx.StaticText(portc_panel, -1, _("Speed: "), pos=(20,95))
+        self.portc_speed = wx.ComboBox(portc_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
+        self.portc_xonxoff = wx.CheckBox(portc_panel, -1, _("Software flow control:"), pos=(240,60), style=wx.ALIGN_RIGHT)
+        self.portc_rtscts = wx.CheckBox(portc_panel, -1, _("RTS/CTS flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
         # Add panels to main sizer
         serial_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         serial_panel_sizer.Add(porta_panel, 0)
         serial_panel_sizer.Add(portb_panel, 0)
+        serial_panel_sizer.Add(portc_panel, 0)
         serial_panel.SetSizer(serial_panel_sizer)
 
         # Populate panel for network config
@@ -2038,6 +2067,12 @@ class SettingsWindow(wx.Dialog):
         self.portb_speed.SetValue(config['serial_b']['baudrate'])
         self.portb_xonxoff.SetValue(config['serial_b'].as_bool('xonxoff'))
         self.portb_rtscts.SetValue(config['serial_b'].as_bool('rtscts'))
+        # Settings for serial port C
+        self.portc_serialon.SetValue(config['serial_c'].as_bool('serial_on'))
+        self.portc_port.SetValue(config['serial_c']['port'])
+        self.portc_speed.SetValue(config['serial_c']['baudrate'])
+        self.portc_xonxoff.SetValue(config['serial_c'].as_bool('xonxoff'))
+        self.portc_rtscts.SetValue(config['serial_c'].as_bool('rtscts'))
         # Common list settings
         self.commonlist_greytime.SetValue(config['common'].as_int('listmakegreytime'))
         self.commonlist_deletetime.SetValue(config['common'].as_int('deleteitemtime'))
@@ -2183,6 +2218,11 @@ class SettingsWindow(wx.Dialog):
         config['serial_b']['baudrate'] = self.portb_speed.GetValue()
         config['serial_b']['xonxoff'] = self.portb_xonxoff.GetValue()
         config['serial_b']['rtscts'] = self.portb_rtscts.GetValue()
+        config['serial_c']['serial_on'] = self.portc_serialon.GetValue()
+        config['serial_c']['port'] = self.portc_port.GetValue()
+        config['serial_c']['baudrate'] = self.portc_speed.GetValue()
+        config['serial_c']['xonxoff'] = self.portc_xonxoff.GetValue()
+        config['serial_c']['rtscts'] = self.portc_rtscts.GetValue()
         config['common']['listmakegreytime'] =  self.commonlist_greytime.GetValue()
         config['common']['deleteitemtime'] =  self.commonlist_deletetime.GetValue()
         config['common']['refreshlisttimer'] = self.commonlist_refreshtime.GetValue()
@@ -2793,6 +2833,10 @@ class SerialThread:
             portconfig = config['serial_b']
             # Set internal port name to B
             portname = 'B'
+        elif openport == 'serial_c':
+            portconfig = config['serial_c']
+            # Set internal port name to C
+            portname = 'C'
         port = portconfig['port']
         baudrate = portconfig.as_int('baudrate')
         rtscts = portconfig.as_bool('rtscts')
@@ -3239,6 +3283,9 @@ if config['serial_a'].as_bool('serial_on'):
 if config['serial_b'].as_bool('serial_on'):
     serialb = SerialThread()
     serialb.start('serial_b')
+if config['serial_c'].as_bool('serial_on'):
+    serialc = SerialThread()
+    serialc.start('serial_c')
 if config['network'].as_bool('server_on'):
     NetworkServerThread().start()
 if config['network'].as_bool('client_on'):
@@ -3253,6 +3300,9 @@ def GetStats():
     except: pass
     try:
         stats['serial_b'] = serialb.ReturnStats()
+    except: pass
+    try:
+        stats['serial_c'] = serialc.ReturnStats()
     except: pass
     try:
         stats['network'] = networkc.ReturnStats()
