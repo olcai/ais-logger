@@ -32,6 +32,7 @@ import threading, Queue, collections
 import socket, SocketServer
 import pickle, codecs
 import md5
+import decimal
 
 from pysqlite2 import dbapi2 as sqlite
 import wx
@@ -3058,6 +3059,111 @@ class NetworkClientThread:
 
     def stop(self):
         self.put('stop')
+
+
+class CommHubThread:
+    incoming_queue = Queue.queue()
+
+    def runner(self):
+        # The routing matrix consists of a dict with key 'input'
+        # and value 'output list'
+        routing_matrix = {}
+        # The message parts dict has 'input' as key and
+        # and a list of previous messages as value
+        message_parts = {}
+        # Set statistics dict
+        self.statistics = {}
+        # Empty incoming queue
+        incoming_item = ''
+        while True:
+            # Let's try to get some data in the queue
+            try:
+                incoming_item = self.queue.get_nowait()
+            except: pass
+            if incoming_item == 'stop':
+                break
+            # Set some variables
+            source = incoming_item[0]
+            data = incoming_item[1]
+            outputs = routing_matrix[source]
+            # Route the raw data
+            for output in outputs:
+                print output
+                # Put data in output queue or something
+
+            # Parse data
+
+            # Check if message is split on several lines
+            lineinfo = indata.split(',')
+            if lineinfo[0] == '!AIVDM':
+                nbr_of_lines = int(lineinfo[1])
+                try:
+                    line_nbr = int(lineinfo[2])
+                    line_seq_id = int(lineinfo[3])
+                except: pass
+                # If message is split, check that they belong together
+                if nbr_of_lines > 1:
+                    # Get previous parts if they exist
+                    parts = message_parts.get(source)
+                    if parts:
+                        seq_id = parts[0]
+                        total_data = parts[1]
+                    else:
+                        seq_id = 10
+                        total_data = ''
+                    # If first message, set seq_id to the sequential message ID
+                    if line_nbr == 1:
+                        total_data = ''
+                        seq_id = line_seq_id
+                    # If not first message, check that the seq ID matches seq_id
+                    # If not true, reset variables and continue
+                    elif line_seq_id != seq_id:
+                        message_parts[source] = [10, '']
+                        continue
+                    # Add data to variable total_data
+                    total_data += indata
+                    # If the final message has been received, join messages and decode
+                    if len(total_data.splitlines()) == nbr_of_lines:
+                        indata = decode.jointelegrams(total_data)
+                        message_parts[source] = [10, '']
+                    else:
+                        message_parts[source] = [seq_id, total_data]
+                        continue
+            elif lineinfo[0] == '!GPGGA':
+                # Check if we should put this in own position
+                pass
+            
+
+            # Set the telegramparser result in dict parser and queue it
+            try:
+                parser = dict(decode.telegramparser(indata))
+                if len(parser) > 0:
+                    # Set source in parser
+                    parser['source'] = source
+                    # FIXME: Send to main thread
+                    # Add to stats variable
+                    self.stats[source]["parsed"] += 1
+                    # FIXME: Send to raw window
+            except: continue
+
+    def ReturnStats(self):
+        return self.stats
+
+    def put(self, item):
+        self.incoming_queue.put(item)
+
+    def start(self):
+        try:
+            r = threading.Thread(target=self.runner)
+            r.setDaemon(1)
+            r.start()
+            return True
+        except:
+            return False
+
+    def stop(self):
+        self.put('stop')
+
 
 
 class MainThread:
