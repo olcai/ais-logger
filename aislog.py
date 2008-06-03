@@ -35,6 +35,7 @@ import md5
 import decimal
 
 from pysqlite2 import dbapi2 as sqlite
+import pydblite
 import wx
 import wx.lib.mixins.listctrl as listmix
 import gettext
@@ -71,20 +72,20 @@ gettext.install('aislogger', ".", unicode=False)
 #self.presLan_en.install()
 #self.locale = wx.Locale(wx.LANGUAGE_ENGLISH)
 #locale.setlocale(locale.LC_ALL, 'EN')
-        
+
 ### Load or create configuration
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
-columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 50], 'callsign': [_("CS"), 60], 'latitude': [_("Latitude"), 85], 'longitude': [_("Longitude"), 90], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'bit': [_("BIT"), 35], 'tamper': [_("Tamper"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
+columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 50], 'callsign': [_("CS"), 60], 'latitude': [_("Latitude"), 85], 'longitude': [_("Longitude"), 90], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
 defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 'deleteitemtime': 3600, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': ''},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'alertfile_on': False, 'alertfile': '', 'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
-                 'position': {'override_on': False, 'latitude': '00;00.00;N', 'longitude': '000;00.00;E'},
+                 'position': {'override_on': False, 'latitude': '0', 'longitude': '0'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_c': {'serial_on': False, 'port': '2', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
-                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_address': 'localhost', 'client_port': '23000'}}
+                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000']}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -121,19 +122,23 @@ config['alert'].comments['remarkfile'] = ['Filename of remark file']
 config['alert'].comments['alertsound_on'] = ['Enable audio alert']
 config['alert'].comments['alertsoundfile'] = ['Filename of wave sound file for audio alert']
 config['position'].comments['override_on'] = ['Enable manual position override']
-config['position'].comments['latitude'] = ['Latitude in deg and min']
-config['position'].comments['longitude'] = ['Longitude in deg and min']
+config['position'].comments['latitude'] = ['Latitude in decimal degrees (DD)']
+config['position'].comments['longitude'] = ['Longitude in decimal degrees (DD)']
 config['network'].comments['server_on'] = ['Enable network server']
 config['network'].comments['server_address'] = ['Server hostname or IP (server side)']
 config['network'].comments['server_port'] = ['Server port (server side)']
 config['network'].comments['client_on'] = ['Enable network client']
-config['network'].comments['client_address'] = ['Server hostname or IP']
-config['network'].comments['client_port'] = ['Server port (client)']
+config['network'].comments['client_addresses'] =['List of server:port to connect and use data from']
 
 # Log exceptions to file
-except_file = open('except.log', 'a')
-logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
-sys.stderr = except_file
+#except_file = open('except.log', 'a')
+#logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
+#sys.stderr = except_file
+#sys.stderr = sys.stdout()
+
+# Fire off databases
+db_main = pydblite.Base('dummy')
+db_iddb = pydblite.Base('dummy2')
 
 # Define global variables
 mid = {}
@@ -192,14 +197,14 @@ class MainWindow(wx.Frame):
 
         showrawdata = wx.MenuItem(view, 203, _("Show raw &data window..."), _("Shows a window containing the incoming raw (unparsed) data"))
         view.AppendItem(showrawdata)
-        
+
         calchorizon = wx.MenuItem(view, 204, _("Show s&tatistics..."), _("Shows a window containing various statistics"))
         view.AppendItem(calchorizon)
 
         tools = wx.Menu()
         setalerts = wx.MenuItem(tools, 301, _("Set &alerts and remarks...\tCtrl+A"), _("Shows a window where one can set alerts and remarks"))
         tools.AppendItem(setalerts)
-        
+
         settings = wx.MenuItem(tools, 302, _("&Settings...\tCtrl+S"), ("Opens the settings window"))
         tools.AppendItem(settings)
 
@@ -232,7 +237,7 @@ class MainWindow(wx.Frame):
         # Try to read an alert file and a remark file
         self.readalertfile()
         self.readremarkfile()
-        
+
         # Create and split two windows, a list window and an alert window
         self.split = wx.SplitterWindow(self, -1, style=wx.SP_3D)
         self.splist = ListWindow(self.split, -1)
@@ -241,9 +246,9 @@ class MainWindow(wx.Frame):
         self.splitwindows()
 
         # Timer for updating the status row
-        self.timer = wx.Timer(self, -1)
-        self.timer.Start(5000)
-        wx.EVT_TIMER(self, -1, self.OnRefreshStatus)
+        #self.timer = wx.Timer(self, -1)
+        #self.timer.Start(5000)
+        #wx.EVT_TIMER(self, -1, self.OnRefreshStatus)
 
     def splitwindows(self, window=None):
         if self.split.IsSplit(): self.split.Unsplit(window)
@@ -503,7 +508,7 @@ class ListWindow(wx.Panel):
     def __init__(self, parent, id):
         wx.Panel.__init__(self, parent, id)
 
-        # Read config and extract columns 
+        # Read config and extract columns
         # Create a list from the comma-separated string in config (removing all whitespace)
         alertlistcolumns_as_list = config['common']['listcolumns'].replace(' ', '').split(',')
         # A really complicated list comprehension... ;-)
@@ -515,7 +520,7 @@ class ListWindow(wx.Panel):
 
         # Create a small panel on top
         panel2 = wx.Panel(self, -1, size=(1,1))
-        
+
         # Set the layout
         box = wx.BoxSizer(wx.VERTICAL)
         box.Add(panel2, 0, wx.EXPAND)
@@ -528,9 +533,9 @@ class ListWindow(wx.Panel):
         self.timer = wx.Timer(self, -1)
         self.timer.Start(config['common'].as_int('refreshlisttimer'))
         wx.EVT_TIMER(self, -1, self.OnRefresh)
-    
+
     def OnRefresh(self, event):
-        # Update the listctrl 
+        # Update the listctrl
         self.list.OnUpdate()
 
 
@@ -538,7 +543,7 @@ class AlertWindow(wx.Panel):
     def __init__(self, parent, id):
         wx.Panel.__init__(self, parent, id)
 
-        # Read config and extract columns 
+        # Read config and extract columns
         # Create a list from the comma-separated string in config (removing all whitespace)
         alertlistcolumns_as_list = config['common']['alertlistcolumns'].replace(' ', '').split(',')
         # A really complicated list comprehension... ;-)
@@ -550,7 +555,7 @@ class AlertWindow(wx.Panel):
 
         # Create a small panel on top
         panel2 = wx.Panel(self, -1, size=(4,4))
-        
+
         # Set the layout
         box = wx.BoxSizer(wx.VERTICAL)
         box.Add(panel2, 0, wx.EXPAND)
@@ -562,7 +567,7 @@ class AlertWindow(wx.Panel):
         self.timer = wx.Timer(self, -1)
         self.timer.Start(config['common'].as_int('refreshlisttimer'))
         wx.EVT_TIMER(self, -1, self.OnRefresh)
-    
+
     def OnRefresh(self, event):
         # Define a default query (gives empty result)
         query = "mmsi='0'"
@@ -572,7 +577,7 @@ class AlertWindow(wx.Panel):
         self.list.OnUpdate(query)
         # Sound an alert for selected objects
         self.soundalert()
-    
+
     def soundalert(self):
         # This function checks for new objects that matches the alertstringsound SQL-query and plays a sound if a new one appear. It will then mark the object with soundalerted = 1
         # If alertstringsound is larger than 3, run the query
@@ -586,36 +591,6 @@ class AlertWindow(wx.Panel):
                     sound.Play(wx.SOUND_ASYNC)
             # Update the object and set soundalerted = 1
             execSQL(DbCmd(SqlCmd, [("UPDATE data SET soundalerted='1' WHERE %s AND (soundalerted IS Null)" % alertstringsound, ())]))
-
-
-class Distance:
-    def distance(self, latitude, longitude):
-        # Calculate lat/long in whole degrees from DM-format
-        def floatlatitude(latitude):
-            # Latitude
-            wholedegree = float(latitude[1:3])
-            decimaldegree = float((latitude[3:5] + '.' + latitude[5:])) * (1/60.)
-            if latitude[0] == 'S':
-                latitude = -(wholedegree + decimaldegree)
-            elif latitude[0] == 'N':
-                latitude = +(wholedegree + decimaldegree)
-            return latitude
-        def floatlongitude(longitude):
-            # Longitude
-            wholedegree = float(longitude[1:4])
-            decimaldegree = float((longitude[4:6] + '.' + longitude[6:])) * (1/60.)
-            if longitude[0] == 'W':
-                longitude = -(wholedegree + decimaldegree)
-            elif longitude[0] == 'E':
-                longitude = +(wholedegree + decimaldegree)
-            return longitude
-        try:
-            latitude = floatlatitude(latitude)
-            longitude = floatlongitude(longitude)
-            ownlatitude = floatlatitude(owndata['ownlatitude'])
-            ownlongitude = floatlongitude(owndata['ownlongitude'])
-            return VincentyDistance((ownlatitude, ownlongitude), (latitude, longitude)).all
-        except: return
 
 
 class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSorterMixin):
@@ -666,14 +641,16 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             columnlistcopy.remove('remark')
         columnlist_string = ','.join([v for v in columnlistcopy])
         # Run the main SQL-query
-        query_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi,time,%s FROM data WHERE %s" % (columnlist_string, query), ())]))
+        #query_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi,time,%s FROM data WHERE %s" % (columnlist_string, query), ())]))
+        query_result = []
         # Run the IDDB query
-        iddb_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE (SELECT mmsi FROM data)",())]))
+        #iddb_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE (SELECT mmsi FROM data)",())]))
+        iddb_result = []
         # If alertstring has content, run the alert query and create a list from the result
         self.alertitems = []
-        if len(alertstring) > 3:
-            alertquery_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE %s" % alertstring, ())]))
-            self.alertitems = [v[0] for v in alertquery_result]
+        #if len(alertstring) > 3:
+        #    alertquery_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE %s" % alertstring, ())]))
+        #    self.alertitems = [v[0] for v in alertquery_result]
         # Put the number of objects in a variable
         nrofobjects = len(query_result)
         # If the number of objects returned from the SQL-query doesn't match number currently in the listctrl, set new ItemCount.
@@ -713,7 +690,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # Create a dictionary, data, and populate it with data from the SQL-query. Use MMSI numbers as keys.
         data = {}
         for v in query_result:
-            # Create a temporary list, r, to assign new values to 
+            # Create a temporary list, r, to assign new values to
             mmsi = v[0]
             r = list(v[2:])
             # Check for some special cases and edit r as needed
@@ -743,16 +720,6 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                 pos = self.columnlist.index('eta')
                 if r[pos] == '00002460': r[pos] = None
                 else: r[pos] = r[pos]
-            if 'bit' in self.columnlist:
-                pos = self.columnlist.index('bit')
-                if r[pos] == '0': r[pos] = u'OK'
-                elif r[pos] == None: r[pos] = None
-                else: r[pos] = u'Error'
-            if 'tamper' in self.columnlist:
-                pos = self.columnlist.index('tamper')
-                if r[pos] == '0': r[pos] = u'No'
-                elif r[pos] == None: r[pos] = None
-                else: r[pos] = u'YES'
             if 'posacc' in self.columnlist:
                 pos = self.columnlist.index('posacc')
                 if r[pos] == '0': r[pos] = u'Bad'
@@ -808,7 +775,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         items = list(self.itemDataMap.keys())
         items.sort(sorter)
         self.itemIndexMap = items
-        
+
         # Redraw the list
         self.Refresh()
 
@@ -858,8 +825,6 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(voyagedata_panel,-1,_("Heading: "),pos=(12,165),size=(150,16))
         wx.StaticText(voyagedata_panel,-1,_("Rate of turn: "),pos=(12,185),size=(150,16))
         # Transponder data
-        wx.StaticText(transponderdata_panel,-1,_("BIT: "),pos=(12,25),size=(150,16))
-        wx.StaticText(transponderdata_panel,-1,_("Tamper: "),pos=(12,45),size=(150,16))
         wx.StaticText(transponderdata_panel,-1,_("Nav Status: "),pos=(12,65),size=(150,16))
         wx.StaticText(transponderdata_panel,-1,_("Accuracy: "),pos=(12,85),size=(150,16))
         # Object information such as bearing and distance
@@ -891,8 +856,6 @@ class DetailWindow(wx.Dialog):
         self.text_heading = wx.StaticText(voyagedata_panel,-1,'',pos=(100,165),size=(185,16))
         self.text_rateofturn = wx.StaticText(voyagedata_panel,-1,'',pos=(100,185),size=(185,16))
         # Set transponderdata
-        self.text_bit = wx.StaticText(transponderdata_panel,-1,'',pos=(105,25),size=(185,16))
-        self.text_tamper = wx.StaticText(transponderdata_panel,-1,'',pos=(105,45),size=(185,16))
         self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(105,65),size=(185,16))
         self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(105,85),size=(185,16))
         # Set object information
@@ -994,14 +957,6 @@ class DetailWindow(wx.Dialog):
         if itemdata[14]: self.text_heading.SetLabel(str(itemdata[14])+u'°')
         if itemdata[20]: self.text_rateofturn.SetLabel(str(itemdata[20])+u' °/m')
         # Set transponder data
-        if itemdata[21]:
-            if itemdata[21] == '0': bit = _("OK")
-            else: bit = _("Error")
-            self.text_bit.SetLabel(bit)
-        if itemdata[22]:
-            if itemdata[22] == '0': tamper = _("No")
-            else: tamper = _("YES")
-            self.text_tamper.SetLabel(tamper)
         if itemdata[23]:
             self.text_navstatus.SetLabel(itemdata[23])
         if itemdata[24]:
@@ -1030,7 +985,7 @@ class DetailWindow(wx.Dialog):
     def OnClose(self, event):
         self.timer.Stop()
         self.Destroy()
-        
+
 
 class StatsWindow(wx.Dialog):
     def __init__(self, parent, id):
@@ -1048,7 +1003,7 @@ class StatsWindow(wx.Dialog):
         box_horizon = wx.StaticBox(horizon_panel,-1,_(" Radio Horizon (calculated) "))
         box_input = wx.StaticBox(input_panel,-1,_(" Input "))
         box_uptime = wx.StaticBox(uptime_panel,-1,_(" Uptime "))
-        
+
         # Object panels, texts and sizers
         obj_panel_left = wx.Panel(objects_panel)
         obj_panel_right = wx.Panel(objects_panel)
@@ -1294,7 +1249,7 @@ class StatsWindow(wx.Dialog):
         except: pass
         # Return strings
         return nritems, nrgreyitems, nrhorizonitems, minimum, maximum, mean, median
-    
+
     def OnClose(self, event):
         self.timer.Stop()
         self.Destroy()
@@ -1466,7 +1421,7 @@ class SetAlertsWindow(wx.Dialog):
         else:
             # Set the new remark
             remarkdict[mmsi] = remark_newstate.replace(",", ";")
-        # Update the listctrl 
+        # Update the listctrl
         self.lc.OnUpdate()
         # Update the objectinfo
         self.lc.UpdateActiveItem()
@@ -1489,7 +1444,7 @@ class SetAlertsWindow(wx.Dialog):
     def OnInsertNew(self, event):
         # Create a dialog with a textctrl, a checkbox and two buttons
         dlg = wx.Dialog(self, -1, _("Insert new MMSI number"), size=(300,225))
-        wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert and choose the data to associate it with."), pos=(20,10), size=(260,60)) 
+        wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert and choose the data to associate it with."), pos=(20,10), size=(260,60))
         textbox = wx.TextCtrl(dlg, -1, pos=(20,70), size=(150,-1))
         radiobox = wx.RadioBox(dlg, -1, _(" Associate with "), pos=(20,110), choices=(_("&Alert"), _("&Remark")))
         buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
@@ -1554,7 +1509,7 @@ class SetAlertsWindow(wx.Dialog):
             except UnicodeDecodeError, error:
                 dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
-   
+
     def SaveRemarkFile(self, file):
         # Saves remarks to a supplied file
         if len(file) > 0:
@@ -1611,7 +1566,7 @@ class SetAlertsWindow(wx.Dialog):
         def __init__(self, parent, topparent):
             wx.ListCtrl.__init__(self, parent, -1, style=wx.LC_REPORT|wx.LC_VIRTUAL|wx.LC_SINGLE_SEL, size=(650,230), pos=(20,30))
 
-            self.topparent = topparent 
+            self.topparent = topparent
 
             # Define and retreive two arrows, one upwards, the other downwards
             self.imagelist = wx.ImageList(16, 16)
@@ -1719,7 +1674,7 @@ class SetAlertsWindow(wx.Dialog):
                 else:
                     # For each mmsi in all_mmsi, write to list_dict and map the mmsi as key and add imo, name, callsign, alert and remark to it
                     list_dict[mmsi] = [mmsi, imo, callsign, name, alert, unicode(remark)]
-                
+
             # Set new ItemCount for the list ctrl if different from the current number
             nrofobjects = len(list_dict)
             if self.GetItemCount() != nrofobjects:
@@ -1770,7 +1725,7 @@ class SetAlertsWindow(wx.Dialog):
                 return True
             else:
                 return False
-        
+
         def OnGetItemText(self, item, col):
             # Return the text in item, col
             mmsi = self.itemIndexMap[item]
@@ -1792,7 +1747,7 @@ class SetAlertsWindow(wx.Dialog):
             items = list(self.itemDataMap.keys())
             items.sort(sorter)
             self.itemIndexMap = items
-            
+
             # Redraw the list
             self.Refresh()
 
@@ -2125,7 +2080,7 @@ class SettingsWindow(wx.Dialog):
         possible = list(allcolumns.difference(self.listcolumns_as_list))
         # Update list boxes
         self.listcolumn_active.Set(self.listcolumns_as_list)
-        self.listcolumn_notactive.Set(possible)      
+        self.listcolumn_notactive.Set(possible)
 
     def UpdateAlertListColumns(self):
         # Take all possible columns from columnsetup
@@ -2134,7 +2089,7 @@ class SettingsWindow(wx.Dialog):
         possible = list(allcolumns.difference(self.alertlistcolumns_as_list))
         # Update list boxes
         self.alertlistcolumn_active.Set(self.alertlistcolumns_as_list)
-        self.alertlistcolumn_notactive.Set(possible)      
+        self.alertlistcolumn_notactive.Set(possible)
 
     def OnColumnChange(self, event):
         # Map objects depending on pressed button
@@ -2275,9 +2230,9 @@ class RawDataWindow(wx.Dialog):
     def __init__(self, parent, id):
         wx.Dialog.__init__(self, parent, id, title=_("Raw data"))#, size=(618,395))
         panel = wx.Panel(self, -1)
-        wx.StaticBox(panel,-1,_(" Incoming raw data "),pos=(3,5),size=(615,340))
+        wx.StaticBox(panel,-1,_(" Incoming raw data "),pos=(3,5),size=(915,390))
         # Create the textbox
-        self.textbox = wx.TextCtrl(panel,-1,pos=(15,25),size=(595,305),style=(wx.TE_MULTILINE | wx.TE_READONLY))
+        self.textbox = wx.TextCtrl(panel,-1,pos=(15,25),size=(895,355),style=(wx.TE_MULTILINE | wx.TE_READONLY))
         # Buttons
         self.pausebutton = wx.ToggleButton(self,1,_("&Pause"), size=(-1,35))
         self.closebutton = wx.Button(self,2,_("&Close"), size=(-1,35))
@@ -2308,14 +2263,16 @@ class RawDataWindow(wx.Dialog):
         # Loop if objects in queue
         while len(rawdata) > 0:
             # Pop from queue and add string to updatetext (make sure it's ascii)
-            updatetext += unicode(rawdata.popleft(), 'ascii' , 'replace')
+            line = rawdata.popleft()
+            sentence = unicode(line[3], 'ascii', 'replace').rstrip('\r\n')
+            updatetext += sentence + '  => message ' + str(line[1]) + ', mmsi ' + str(line[2]) + ', source ' + str(line[0]) + '\n'
         # Write updatetext from the top of the box
         self.textbox.SetInsertionPoint(0)
         self.textbox.WriteText(updatetext)
-        # Get total number of charchters in box
+        # Get total number of characters in box
         numberofchars = self.textbox.GetLastPosition()
         # Remove all characters over the limit (at the bottom)
-        if numberofchars > 20000: 
+        if numberofchars > 20000:
             self.textbox.Remove(20000, numberofchars)
             self.textbox.ShowPosition(0)
 
@@ -2406,7 +2363,7 @@ class AdvancedAlertWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnImport, id=04)
         self.Bind(wx.EVT_BUTTON, self.OnAdd, id=05)
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnEdit, self.querylist)
-        self.Bind(wx.EVT_KEY_UP, self.OnKey) 
+        self.Bind(wx.EVT_KEY_UP, self.OnKey)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
         # Update the temporary list from alertlist
@@ -2490,9 +2447,9 @@ class AdvancedAlertWindow(wx.Dialog):
             self.queryitems.append((' AND '.join(sqlargs),alert,0))
         # Update the list ctrl and clear input
         self.UpdateValues()
-	# Make sure that the added query is visible in list
-	nritems = self.querylist.GetItemCount()
-	self.querylist.EnsureVisible(nritems-1)
+        # Make sure that the added query is visible in list
+        nritems = self.querylist.GetItemCount()
+        self.querylist.EnsureVisible(nritems-1)
 
     def ExtractInputData(self, panels):
         # This function extracts input data from the names in the list panels
@@ -2955,95 +2912,65 @@ class NetworkClientThread:
     queue = Queue.Queue()
 
     def client(self):
-        # Define instance variables
-        maint = MainThread()
-        self.stats = {"received": 0, "parsed": 0}
-        # Set queueitem, data and temp to empty, and seq_temp to "illegal" value,
-        # set nbr_several_parsed to null
+        # Define thread to send data to
+        commt = CommHubThread()
+        # Set empty queueitem
         queueitem = ''
-        data = ''
-        temp = ''
-        seq_temp = 10
-        nbr_several_parsed = 0
-        message = {}
-        # Get config data and open socket
-        client_address = config['network']['client_address']
-        client_port = config['network'].as_int('client_port')
-        socketobj = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        socketobj.connect((client_address, client_port))
+        # Get config data and set empty dicts
+        connection_params = config['network']['client_addresses']
+        connections = {}
+        remainder = {}
+        # See if we only will have one connection
+        if not type(connection_params) == list:
+            connection_params = [connection_params]
+        # Open all connections
+        for c in connection_params:
+            # Split and put address in params[0] and port in params[1]
+            params = c.split(':')
+            # Connect
+            connections[c] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # A connection has 30 seconds before it times out
+            connections[c].settimeout(30)
+            try:
+                connections[c].connect((params[0], int(params[1])))
+            except socket.timeout:
+                # Oops, we timed out... Close and continue
+                connections[c].close()
+                del connections[c]
+                continue
+
         while True:
             try:
                 queueitem = self.queue.get_nowait()
             except: pass
             if queueitem == 'stop':
-                socketobj.close()
+                for con in connections.itervalues():
+                    con.close()
                 break
-            try:
-                # Try to read data from socket and unpickle it
-                data = str(socketobj.recv(1024)).splitlines(True)
-            except: continue
 
-            for indata in data:
-                self.stats["received"] += 1
-                if indata[0] == '!':
+            # Now iterate over the connetions
+            for (name, con) in connections.iteritems():
+                try:
+                    # Try to read data from socket
+                    data = str(con.recv(2048)).splitlines(True)
+                except: continue
 
-                    # Add the indata line to a list and pop when over 500 items in list
-                    rawdata.append(indata)
-                    while len(rawdata) > 500:
-                        rawdata.popleft()
+                # See if we have data left since last read
+                # If so, concat it with the first new data
+                if name in remainder:
+                    data[0] = remainder.pop(name) + data[0]
 
-                    # Check if message is split on several lines
-                    lineinfo = indata.split(',')
-                    nbr_of_lines = 0
-                    line_nbr = 0
-                    line_seq_id = 10
-                    if lineinfo[0] == '!AIVDM':
-                        try:
-                            nbr_of_lines = int(lineinfo[1])
-                            line_nbr = int(lineinfo[2])
-                            line_seq_id = int(lineinfo[3])
-                        except: pass
-                        # If message is split, check that they belong together
-                        if nbr_of_lines > 1:
-                            # If first message, set seq_temp to the sequential message ID
-                            if line_nbr == 1:
-                                temp = ''
-                                seq_temp = line_seq_id
-                            # If not first message, check that the seq ID matches that in seq_temp
-                            # If not true, reset variables and continue
-                            elif line_seq_id != seq_temp:
-                                temp = ''
-                                seq_temp = 10
-                                continue
-                            # Add data to variable temp
-                            temp += indata
-                            # If the final message has been received, join messages and decode
-                            if len(temp.splitlines()) == nbr_of_lines:
-                                indata = decode.jointelegrams(temp)
-                                temp = ''
-                                seq_temp = 10
-                                nbr_several_parsed = nbr_of_lines
-                            else:
-                                continue
+                # See if the last data has a line break in it
+                # If not, pop it for use at next read
+                listlength = len(data)
+                if not data[listlength-1].endswith('\n'):
+                    remainder[name] = data.pop(listlength-1)
 
-                    # Set the telegramparser result in dict parser and queue it
-                    try:
-                        parser = dict(decode.telegramparser(indata))
-                        if len(parser) > 0:
-                            # Set source in parser as network
-                            parser['source'] = "Network " + str(client_address)
-                            maint.put(parser)
-                            # Add to stats variable. If the message was more than one
-                            # line, add that number to stats.
-                            if nbr_several_parsed > 0:
-                                self.stats["parsed"] += nbr_several_parsed
-                                nbr_several_parsed = 0
-                            else:
-                                self.stats["parsed"] += 1
-                    except: continue
-
-    def ReturnStats(self):
-        return self.stats
+                for indata in data:
+                    # If indata contains raw data, pass it along
+                    if indata[0] == '!':
+                        # Put it in CommHubThread's queue
+                        commt.put([name,indata])
 
     def put(self, item):
         self.queue.put(item)
@@ -3062,9 +2989,11 @@ class NetworkClientThread:
 
 
 class CommHubThread:
-    incoming_queue = Queue.queue()
+    incoming_queue = Queue.Queue()
 
     def runner(self):
+        # Define thread to send data to
+        maint = MainThread()
         # The routing matrix consists of a dict with key 'input'
         # and value 'output list'
         routing_matrix = {}
@@ -3078,23 +3007,30 @@ class CommHubThread:
         while True:
             # Let's try to get some data in the queue
             try:
-                incoming_item = self.queue.get_nowait()
-            except: pass
+                incoming_item = self.incoming_queue.get_nowait()
+            except:
+                # Prevent CPU drain if nothing to do
+                time.sleep(0.05)
+                continue
             if incoming_item == 'stop':
                 break
             # Set some variables
             source = incoming_item[0]
             data = incoming_item[1]
-            outputs = routing_matrix[source]
-            # Route the raw data
-            for output in outputs:
-                print output
-                # Put data in output queue or something
+            try:
+                outputs = routing_matrix[source]
+                # Route the raw data
+                for output in outputs:
+                    print "outputting to:", output
+                    # Put data in output queue or something
+            except:
+                 routing_matrix[source] = []
+
 
             # Parse data
 
             # Check if message is split on several lines
-            lineinfo = indata.split(',')
+            lineinfo = data.split(',')
             if lineinfo[0] == '!AIVDM':
                 nbr_of_lines = int(lineinfo[1])
                 try:
@@ -3121,29 +3057,44 @@ class CommHubThread:
                         message_parts[source] = [10, '']
                         continue
                     # Add data to variable total_data
-                    total_data += indata
+                    total_data += data
                     # If the final message has been received, join messages and decode
                     if len(total_data.splitlines()) == nbr_of_lines:
-                        indata = decode.jointelegrams(total_data)
+                        data = decode.jointelegrams(total_data)
                         message_parts[source] = [10, '']
                     else:
                         message_parts[source] = [seq_id, total_data]
                         continue
-            elif lineinfo[0] == '!GPGGA':
-                # Check if we should put this in own position
-                pass
-            
 
             # Set the telegramparser result in dict parser and queue it
             try:
-                parser = dict(decode.telegramparser(indata))
-                if len(parser) > 0:
+                parser = dict(decode.telegramparser(data))
+                if 'mmsi' in parser:
                     # Set source in parser
                     parser['source'] = source
-                    # FIXME: Send to main thread
+                    # Send data to main thread
+                    maint.put(parser)
                     # Add to stats variable
-                    self.stats[source]["parsed"] += 1
-                    # FIXME: Send to raw window
+                    #self.stats[source]["parsed"] += 1
+                elif 'ownlatitude' and 'ownlongitude' in parser:
+                    # FIXME: See if we shold set own lat/long
+                    pass
+
+                # Send raw data to the Raw Window queue
+                if 'mmsi' in parser:
+                    raw_mmsi = parser['mmsi']
+                else:
+                    raw_mmsi = 'N/A'
+                if 'message' in parser:
+                    raw_message = parser['message']
+                else:
+                    raw_message = 'N/A'
+                # Append source, message number, mmsi and data to rawdata
+                raw = [source, raw_message, raw_mmsi, data]
+                # Add the raw line to a list and pop when over 500 items in list
+                rawdata.append(raw)
+                while len(rawdata) > 500:
+                    rawdata.popleft()
             except: continue
 
     def ReturnStats(self):
@@ -3165,125 +3116,134 @@ class CommHubThread:
         self.put('stop')
 
 
-
 class MainThread:
     queue = Queue.Queue()
     hashdict = {}
 
     def updater(self):
-        execSQL(DbCmd(ConnectCmd, ":memory:"))
-        execSQL(DbCmd(SqlCmd, [
-            ("create table data (mmsi PRIMARY KEY, mid, imo, name, type, typename, callsign, latitude, longitude, georef, creationtime, time, sog, cog, heading, destination, eta, length, width, draught, rateofturn, bit, tamper, navstatus, posacc, distance, bearing, source, updates, soundalerted);",()),
-            ("create table iddb (mmsi PRIMARY KEY, imo, name, callsign);",()),
-            ("CREATE TRIGGER update_iddb AFTER UPDATE OF imo ON data BEGIN INSERT OR IGNORE INTO iddb (mmsi) VALUES (new.mmsi); UPDATE iddb SET imo=new.imo,name=new.name,callsign=new.callsign WHERE mmsi=new.mmsi; END;",())]))
+        # Create main db fields
+        db_main.create('mmsi', 'mid', 'imo',
+                       'name', 'type', 'typename',
+                       'callsign', 'latitude', 'longitude',
+                       'georef', 'creationtime', 'time',
+                       'sog', 'cog', 'heading',
+                       'destination', 'eta', 'length',
+                       'width', 'draught', 'rot',
+                       'navstatus', 'posacc', 'distance',
+                       'bearing', 'source', 'updates',
+                       'soundalerted')
+        # Create IDDB fields
+        db_iddb.create('mmsi', 'imo', 'name', 'callsign')
+        db_main.create_index('mmsi')
+        db_iddb.create_index('mmsi')
         lastcleartime = time.time()
         lastlogtime = time.time()
         lastiddblogtime = time.time()
         parser = {}
-        self.loadiddb()
+        #self.loadiddb()
         while True:
-            # Store the result from telegramparser in dict parser
+            # Store the incoming messages in dict parser
             try:
                 parser = self.queue.get()
             except: pass
             if parser == 'stop': break
+            # FIXME: Just ignores message type 4 (base station)
+            if 'message' in parser and parser['message'] == 4:
+                continue
             # Check that parser contains a MMSI number
-            if parser.has_key('mmsi') and len(parser['mmsi']) > 1:
+            if 'mmsi' in parser and parser['mmsi'] > 1:
                 # Calculate position in GEOREF
-                if parser.has_key('latitude') and parser.has_key('longitude') and len(parser['latitude']) == 9 and len(parser['longitude']) == 10:
+                if 'latitude' in parser and 'longitude' in parser:
                     try:
                         parser['georef'] = georef(parser['latitude'],parser['longitude'])
                     except: pass
-                # Map MMSI nbr to nation from MID list
-                if 'mmsi' in parser and mid.has_key(parser['mmsi'][0:3]):
-                    parser['mid'] = mid[parser['mmsi'][0:3]]
-                # Map type nbr to type name from list
-                if 'type' in parser and len(parser['type']) > 0 and typecode.has_key(parser['type']):
-                    parser['typename'] = typecode[parser['type']]
+                # Map MMSI nbr to nation from MID dict
+                if 'mmsi' in parser and str(parser['mmsi'])[0:3] in mid:
+                    parser['mid'] = mid[str(parser['mmsi'])[0:3]]
+                # Map type nbr to type name from dict
+                if 'type' in parser and parser['type'] > 0 and str(parser['type']) in typecode:
+                    parser['typename'] = typecode[str(parser['type'])]
                 # Check if user has set a fixed manual position, and if so, use it...
                 if config['position'].as_bool('override_on'):
-                    config_lat = config['position']['latitude'].split(';')
-                    config_long = config['position']['longitude'].split(';')                   
-                    ownlatitude = config_lat[2] + (config_lat[0] + config_lat[1].split('.')[0] + config_lat[1].split('.')[1]).ljust(8, '0')
-                    ownlongitude = config_long[2] + (config_long[0] + config_long[1].split('.')[0] + config_long[1].split('.')[1]).ljust(9, '0')
+                    ownlatitude = decimal.Decimal(config['position']['latitude'])
+                    ownlongitude = decimal.Decimal(config['position']['longitude'])
                     try:
                         owngeoref = georef(ownlatitude,ownlongitude)
                     except:
                         owngeoref = ""
-                    v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
-                    owndata.update(v)
+                    owndata.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
                 # Calculate bearing and distance to object
-                if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and 'latitude' in parser and 'longitude' in parser:
+                if 'ownlatitude' in owndata and 'ownlongitude' in owndata and 'latitude' in parser and 'longitude' in parser:
                     try:
-                        dist = Distance().distance(parser['latitude'],parser['longitude'])
-                        parser['distance'] = str(round(dist['km'], 1)).zfill(5)
-                        parser['bearing'] = str(round(dist['bearing'], 1)).zfill(5)
+                        dist = VincentyDistance((owndata['ownlongitude'], owndata['ownlongitude']), (parser['latitude'], parser['longitude'])).all
+                        parser['distance'] = decimal.Decimal(str(dist['km'])).quantize(decimal.Decimal('0.1'))
+                        parser['bearing'] = decimal.Decimal(str(dist['bearing'])).quantize(decimal.Decimal('0.1'))
                     except: pass
-                # Append data to dbexp and dbvalues
-                dbexp = []
-                dbvalues = []
-                if 'mid' in parser: dbexp.append('mid'); dbvalues.append(parser['mid'])
-                if 'imo' in parser: dbexp.append('imo'); dbvalues.append(parser['imo'])
-                if 'name' in parser: dbexp.append('name'); dbvalues.append(parser['name'])
-                if 'type' in parser: dbexp.append('type'); dbvalues.append(parser['type'])
-                if 'typename' in parser: dbexp.append('typename'); dbvalues.append(parser['typename'])
-                if 'callsign' in parser: dbexp.append('callsign'); dbvalues.append(parser['callsign'])
-                if 'latitude' in parser: dbexp.append('latitude'); dbvalues.append(parser['latitude'])
-                if 'longitude' in parser: dbexp.append('longitude'); dbvalues.append(parser['longitude'])
-                if 'georef' in parser: dbexp.append('georef'); dbvalues.append(parser['georef'])
-                if 'sog' in parser: dbexp.append('sog'); dbvalues.append(parser['sog'])
-                if 'cog' in parser: dbexp.append('cog'); dbvalues.append(parser['cog'])
-                if 'heading' in parser: dbexp.append('heading'); dbvalues.append(parser['heading'])
-                if 'destination' in parser: dbexp.append('destination'); dbvalues.append(parser['destination'])
-                if 'eta' in parser: dbexp.append('eta'); dbvalues.append(parser['eta'])
-                if 'length' in parser: dbexp.append('length'); dbvalues.append(parser['length'])
-                if 'width' in parser: dbexp.append('width'); dbvalues.append(parser['width'])
-                if 'draught' in parser: dbexp.append('draught'); dbvalues.append(parser['draught'])
-                if 'rateofturn' in parser: dbexp.append('rateofturn'); dbvalues.append(parser['rateofturn'])
-                if 'bit' in parser: dbexp.append('bit'); dbvalues.append(parser['bit'])
-                if 'tamper' in parser: dbexp.append('tamper'); dbvalues.append(parser['tamper'])
-                if 'navstatus' in parser: dbexp.append('navstatus'); dbvalues.append(parser['navstatus'])
-                if 'posacc' in parser: dbexp.append('posacc'); dbvalues.append(parser['posacc'])
-                if 'time' in parser: dbexp.append('time'); dbvalues.append(parser['time'])
-                if 'distance' in parser: dbexp.append('distance'); dbvalues.append(parser['distance'])
-                if 'bearing' in parser: dbexp.append('bearing'); dbvalues.append(parser['bearing'])
-                if 'source' in parser: dbexp.append('source'); dbvalues.append(parser['source'])
-                # Create an expression from the column=value pairs from aboce
-                dbexpression = ','.join(['''%s="%s"''' % (e, v) for e,v in zip(dbexp, dbvalues)])
-                # Create or ignore a row from the MMSI key and update this row with current values
-                execSQL(DbCmd(SqlCmd, [
-                    ("INSERT OR IGNORE INTO data (mmsi, creationtime, updates) VALUES (%s,'%s', 0)" % (int(parser['mmsi']), parser['time']),()),
-                    ("UPDATE data SET %s,updates=updates+1 WHERE mmsi=%s" % (dbexpression, int(parser['mmsi'])),())]))
-            elif parser.has_key('ownlatitude') and parser.has_key('ownlongitude') and len(parser['ownlatitude']) == 9 and len(parser['ownlongitude']) == 10 and not config['position'].as_bool('override_on'):
+                # Define a dictionary to hold temp data
+                db_dict = {}
+                # Define the field names that we want to use from parser
+                db_fields = ('mmsi', 'mid', 'imo',
+                             'name', 'type', 'typename',
+                             'callsign', 'latitude', 'longitude',
+                             'georef', 'sog', 'cog',
+                             'heading', 'destination', 'eta',
+                             'length', 'width', 'draught',
+                             'rot', 'navstatus', 'posacc',
+                             'time', 'distance', 'bearing',
+                             'source')
+                # Iterate over parser and copy matching fields to db_dict
+                for key, value in parser.iteritems():
+                    if key in db_fields:
+                        if value == None: # Set incoming None to 'N/A'
+                            db_dict[key] = 'N/A'
+                        else:
+                            db_dict[key] = value
+                # Check for the MMSI in db_main from parser
+                dbreturn = db_main._mmsi[parser['mmsi']]
+                # If dbreturn is an empty list, insert the object in the db,
+                # of it exists, simply update it
+                if len(dbreturn) == 0:
+                    # Insert new object in db
+                    db_dict['creationtime'] = db_dict['time']
+                    db_main.insert(**db_dict)
+                elif len(dbreturn) == 1:
+                    # Find out record if in db and update it
+                    record = db_main[dbreturn[0]['__id__']]
+                    db_main.update(record,**db_dict)
+                # Refetch the new data from db_main
+                updated_data = db_main._mmsi[parser['mmsi']]
+                # FIXME: how to send data?
+            # If parser got own data, use it
+            elif 'ownlatitude' in parser and 'ownlongitude' in parser and not config['position'].as_bool('override_on'):
                 ownlatitude = parser['ownlatitude']
                 ownlongitude = parser['ownlongitude']
                 try:
                     owngeoref = georef(ownlatitude,ownlongitude)
                 except:
                     owngeoref = ""
-                v = {'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref}
-                owndata.update(v)
+                owndata.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
 
             # Remove object if last update time is above threshold
             if lastcleartime + 10 < time.time():
-                execSQL(DbCmd(SqlCmd, [("DELETE FROM data WHERE datetime(time, '+%s seconds') < datetime('now', 'localtime')" % config['common'].as_int('deleteitemtime'),())]))
+                #execSQL(DbCmd(SqlCmd, [("DELETE FROM data WHERE datetime(time, '+%s seconds') < datetime('now', 'localtime')" % config['common'].as_int('deleteitemtime'),())]))
                 lastcleartime = time.time()
-                        
+
             # Initiate logging to disk of log time is above threshold
             if config['logging'].as_bool('logging_on'):
                 if config['logging'].as_int('logtime') == 0: continue
                 elif lastlogtime + config['logging'].as_int('logtime') < time.time():
-                    self.dblog()
+                    #self.dblog()
                     lastlogtime = time.time()
 
             # Initiate iddb logging if current time is > (lastlogtime + logtime)
             if config['iddb_logging'].as_bool('logging_on'):
                 if config['iddb_logging'].as_int('logtime') == 0: continue
                 elif lastiddblogtime + config['iddb_logging'].as_int('logtime') < time.time():
-                    self.iddblog()
+                    #self.iddblog()
                     lastiddblogtime = time.time()
 
-        execSQL(DbCmd(StopCmd))
+        #execSQL(DbCmd(StopCmd))
+
 
     def dblog(self):
         # Make a query for the metadata, but return only rows where imo has a value
@@ -3383,6 +3343,7 @@ class MainThread:
 
 # Start threads
 MainThread().start()
+CommHubThread().start()
 if config['serial_a'].as_bool('serial_on'):
     seriala = SerialThread()
     seriala.start('serial_a')
@@ -3425,6 +3386,7 @@ app.MainLoop()
 SerialThread().stop()
 NetworkServerThread().stop()
 NetworkClientThread().stop()
+CommHubThread().stop()
 MainThread().stop()
 
 # Exit program when only one thread remains
