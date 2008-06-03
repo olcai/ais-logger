@@ -63,7 +63,7 @@ def telegramparser(inputstring):
     # PAIS messages to these values
 
     # For each value where we have a N/A-state None is returned
-    
+
     # Convert the raw input string to a list of separated values
     telegram = inputstring.split(',')
 
@@ -510,7 +510,7 @@ def bintoascii(binstring):
             if symbol < 32: symbol = symbol + 64
             # Add the ASCII character to the string totalascii
             totalascii = totalascii + chr(symbol)
-            inc = '' 
+            inc = ''
     return totalascii
 
 def calclatitude(binary_latitude):
@@ -541,7 +541,7 @@ def saab_calclatitude(latitude):
         return decimal.Decimal("91") # N/A
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
-        
+
 def calclongitude(binary_longitude):
     # Calculates longitude
     # First look at the signed bit
@@ -562,7 +562,7 @@ def calclongitude(binary_longitude):
 def saab_calclongitude(longitude):
     # Special calculations for SAAB longitude
     if longitude >=0 and longitude <=2147483647: # East
-        degree = decimal.Decimal(longitude) / 600000 # 10000 * 60       
+        degree = decimal.Decimal(longitude) / 600000 # 10000 * 60
     elif longitude >=2147483648 and longitude <=4294967295: # West
         longitude = 4294967296 - longitude
         degree = -decimal.Decimal(longitude) / 600000 # 10000 * 60
@@ -570,8 +570,8 @@ def saab_calclongitude(longitude):
         return decimal.Decimal("181") # N/A
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
-        
-        
+
+
 
 
 class TestDecode(unittest.TestCase):
