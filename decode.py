@@ -211,8 +211,11 @@ def telegramparser(inputstring):
         # message type
         bindata = sixtobin(telegram[5])
 
-        # If the sentence contains message 1, 2 or 3 - Position report:
-        if int(bindata[0:6],2) == 1 or int(bindata[0:6],2) == 2 or int(bindata[0:6],2) == 3:
+        # Extract the message type number
+        message = int(bindata[0:6],2)
+
+        # If the sentence contains message 1, 2 or 3 - Position Report:
+        if message == 1 or message == 2 or message == 3:
             # Check the checksum
             if not checksum(inputstring):
                 return
@@ -278,11 +281,47 @@ def telegramparser(inputstring):
                     'cog': cog,
                     'heading': heading,
                     'posacc': posacc,
-                    'time': timestamp}
-        
+                    'time': timestamp,
+                    'message': message}
+
+
+        # If the sentence contains message 4 - Base Station Report:
+        if message == 4:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Bits 38-78 contains current station time in UTC
+            try:
+                station_time = datetime.datetime(int(bindata[38:52],2),
+                                                 int(bindata[52:56],2),
+                                                 int(bindata[56:61],2),
+                                                 int(bindata[61:66],2),
+                                                 int(bindata[66:72],2),
+                                                 int(bindata[72:78],2))
+            except ValueError:
+                station_time = None # N/A
+            # Position accuracy where 0=bad and 1=good/DGPS
+            posacc = int(bindata[78],2)
+            # Longitude in decimal degrees (DD)
+            longitude = calclongitude(bindata[79:107])
+            # Latitude in decimal degrees (DD)
+            latitude = calclatitude(bindata[107:134])
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'station_time': station_time,
+                    'posacc': posacc,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'time': timestamp,
+                    'message': message}
+
         # If the sentence contains message 5 - Ship Static and Voyage
-        #  related data:
-        if int(bindata[0:6],2) == 5 and int(bindata[38:40],2) == 0:
+        # Related Data:
+        if message == 5 and int(bindata[38:40],2) == 0:
             # Check the checksum
             if not checksum(inputstring):
                 return
@@ -329,10 +368,50 @@ def telegramparser(inputstring):
                     'eta': eta,
                     'destination': destination,
                     'draught': draught,
-                    'time': timestamp}
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 9 - Special Position Report:
+        if message == 9:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Altitude in meters, 4095=N/A, 4094=>4094
+            altitude = int(bindata[38:50],2)
+            if altitude == 4095:
+                altitude = None # N/A
+            # Speed over ground in knots, 1023=N/A, 1022=>1022
+            sog = int(bindata[50:60],2)
+            if sog == 1023:
+                sog = None # N/A
+            # Position accuracy where 0=bad and 1=good/DGPS
+            posacc = int(bindata[60],2)
+            # Longitude in decimal degrees (DD)
+            longitude = calclongitude(bindata[61:89])
+            # Latitude in decimal degrees (DD)
+            latitude = calclatitude(bindata[89:116])
+            # Course over ground in 1/10 degrees between 0-359
+            cog = decimal.Decimal(int(bindata[116:128],2)) / 10
+            if cog > 360: # 360 and above means 360=N/A
+                cog = None
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'altitude': altitude,
+                    'sog': sog,
+                    'posacc': posacc,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'cog': cog,
+                    'time': timestamp,
+                    'message': message}
 
         else:
-            return ''
+            # If we don't decode the message, at least return message type
+            return {'message': message}
 
 
     # If the sentence contains NMEA-compliant position data (from own GPS):
