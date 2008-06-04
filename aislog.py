@@ -58,13 +58,13 @@ cmdlineparser.add_option("-c", "--config", dest="configfile", help="Specify a co
 (cmdlineoptions, cmdlineargs) = cmdlineparser.parse_args()
 if cmdlineoptions.configfile:
     # Try to open the supplied config file
-        try:
-            testopen = open(cmdlineoptions.configfile, 'r')
-            testopen.close()
-            configfile = cmdlineoptions.configfile
-        except (IOError, IndexError):
-            # Could not read the file, aborting program
-            sys.exit("Unable to open config file. Aborting.")
+    try:
+        testopen = open(cmdlineoptions.configfile, 'r')
+        testopen.close()
+        configfile = cmdlineoptions.configfile
+    except (IOError, IndexError):
+        # Could not read the file, aborting program
+        sys.exit("Unable to open config file. Aborting.")
 
 ### Gettext call
 gettext.install('aislogger', ".", unicode=False)
@@ -2933,6 +2933,8 @@ class NetworkClientThread:
             connections[c].settimeout(30)
             try:
                 connections[c].connect((params[0], int(params[1])))
+                # Ok we succeded... Go to non-blocking mode
+                connections[c].setblocking(False)
             except socket.timeout:
                 # Oops, we timed out... Close and continue
                 connections[c].close()
@@ -2953,7 +2955,10 @@ class NetworkClientThread:
                 try:
                     # Try to read data from socket
                     data = str(con.recv(2048)).splitlines(True)
-                except: continue
+                except:
+                    # Prevent CPU drain if nothing to do
+                    time.sleep(0.05)
+                    continue
 
                 # See if we have data left since last read
                 # If so, concat it with the first new data
@@ -2963,7 +2968,7 @@ class NetworkClientThread:
                 # See if the last data has a line break in it
                 # If not, pop it for use at next read
                 listlength = len(data)
-                if not data[listlength-1].endswith('\n'):
+                if listlength > 0 and not data[listlength-1].endswith('\n'):
                     remainder[name] = data.pop(listlength-1)
 
                 for indata in data:
@@ -3130,28 +3135,37 @@ class MainThread:
                        'destination', 'eta', 'length',
                        'width', 'draught', 'rot',
                        'navstatus', 'posacc', 'distance',
-                       'bearing', 'source', 'updates',
+                       'bearing', 'source', 'base_station',
                        'soundalerted')
         # Create IDDB fields
         db_iddb.create('mmsi', 'imo', 'name', 'callsign')
+        # Set indexes for faster searching
         db_main.create_index('mmsi')
         db_iddb.create_index('mmsi')
+        # Set some timers
         lastcleartime = time.time()
         lastlogtime = time.time()
         lastiddblogtime = time.time()
         parser = {}
-        #self.loadiddb()
+        # Ok, see if we can load the IDDB
+        self.loadiddb()
+        # Start looping
         while True:
             # Store the incoming messages in dict parser
             try:
                 parser = self.queue.get()
             except: pass
             if parser == 'stop': break
-            # FIXME: Just ignores message type 4 (base station)
-            if 'message' in parser and parser['message'] == 4:
-                continue
             # Check that parser contains a MMSI number
             if 'mmsi' in parser and parser['mmsi'] > 1:
+                # Some special checking for message types
+                if 'message' in parser:
+                    # If message type 4 (Base Station Report), set property to True
+                    if parser['message'] == 4:
+                        parser['base_station'] = True
+                    # Ignore message type 9 (Special Position Report)
+                    elif parser['message'] == 9:
+                        continue
                 # Calculate position in GEOREF
                 if 'latitude' in parser and 'longitude' in parser:
                     try:
@@ -3190,7 +3204,7 @@ class MainThread:
                              'length', 'width', 'draught',
                              'rot', 'navstatus', 'posacc',
                              'time', 'distance', 'bearing',
-                             'source')
+                             'source', 'base_station')
                 # Iterate over parser and copy matching fields to db_dict
                 for key, value in parser.iteritems():
                     if key in db_fields:
@@ -3212,7 +3226,13 @@ class MainThread:
                     db_main.update(record,**db_dict)
                 # Refetch the new data from db_main
                 updated_data = db_main._mmsi[parser['mmsi']]
+                # Fetch ship data from IDDB
+                #if iddb_data:
+                #    print iddb_data
                 # FIXME: how to send data?
+                # Special for base_station?
+                # Check for alerts too
+
             # If parser got own data, use it
             elif 'ownlatitude' in parser and 'ownlongitude' in parser and not config['position'].as_bool('override_on'):
                 ownlatitude = parser['ownlatitude']
@@ -3223,53 +3243,105 @@ class MainThread:
                     owngeoref = ""
                 owndata.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
 
-            # Remove object if last update time is above threshold
+            # See if we should delete objects or make them grey
             if lastcleartime + 10 < time.time():
-                #execSQL(DbCmd(SqlCmd, [("DELETE FROM data WHERE datetime(time, '+%s seconds') < datetime('now', 'localtime')" % config['common'].as_int('deleteitemtime'),())]))
+                # Remove object if last update time is above threshold
+                delete_treshold = datetime.datetime.now() - datetime.timedelta(seconds=config['common'].as_int('deleteitemtime'))
+                recs = [ r['__id__'] for r in db_main if delete_treshold > r['time'] ]
+                for r in recs:
+                    # FIXME: send delete message
+                    del db_main[r]
+                # Send grey message if last update time is above threshold
+                grey_treshold = datetime.datetime.now() - datetime.timedelta(seconds=config['common'].as_int('listmakegreytime'))
+                recs = [ r for r in db_main if grey_treshold > r['time'] ]
+                for r in recs:
+                    # FIXME: send grey message
+                    pass
+                # Set new last clear time
                 lastcleartime = time.time()
 
             # Initiate logging to disk of log time is above threshold
             if config['logging'].as_bool('logging_on'):
-                if config['logging'].as_int('logtime') == 0: continue
+                if config['logging'].as_int('logtime') == 0: pass
                 elif lastlogtime + config['logging'].as_int('logtime') < time.time():
-                    #self.dblog()
+                    self.dblog()
                     lastlogtime = time.time()
 
             # Initiate iddb logging if current time is > (lastlogtime + logtime)
             if config['iddb_logging'].as_bool('logging_on'):
-                if config['iddb_logging'].as_int('logtime') == 0: continue
+                if config['iddb_logging'].as_int('logtime') == 0: pass
                 elif lastiddblogtime + config['iddb_logging'].as_int('logtime') < time.time():
-                    #self.iddblog()
+                    self.iddblog()
                     lastiddblogtime = time.time()
-
-        #execSQL(DbCmd(StopCmd))
 
 
     def dblog(self):
-        # Make a query for the metadata, but return only rows where imo has a value
-        metainfoquery = execSQL(DbCmd(SqlCmd, [("SELECT mmsi, imo, name, type, callsign, destination, eta, length, width FROM data WHERE imo NOTNULL",())]))
+        # Make a query for the metadata, but return only rows where IMO
+        # has a value, and make a MD5 hash out of the data
         newhashdict = {}
-        updatemmsilist = []
-        updatemmsiquery = "mmsi == NULL"
-        for i in metainfoquery:
-            mmsi = i[0]
-            infostring = str(i[1:]) # Take everything in list except mmsi and make a string of it
-            newhashdict[mmsi] = md5.new(infostring).digest() # Make a dict like {mmsi: MD5-hash}
-        for i in newhashdict:
-            if self.hashdict.has_key(i): # Check if the mmsi was around at last update
-                if cmp(newhashdict[i], self.hashdict[i]) != 0: # Compare the hash, if different: add to update list
-                    updatemmsilist.append(i)
-            else: # New mmsi, add to update list
-                updatemmsilist.append(i)
+        for r in db_main:
+            if r['imo']:
+                # If base station, don't log it
+                if r['base_station']: continue
+                # Make of string of these fields
+                infostring = str((r['imo'], r['name'], r['type'],
+                                  r['callsign'], r['destination'],
+                                  r['eta'], r['length'], r['width']))
+                # Add info in dict as {mmsi: MD5-hash}
+                newhashdict[r['mmsi']] = md5.new(infostring).digest()
+        # Check what objects we should update in the metadata table
+        update_mmsi = []
+        for (key, value) in newhashdict.iteritems():
+            # Check if we have logged this MMSI number before
+            if key in self.hashdict:
+                # Compare the hashes, if different: add to update list
+                if cmp(value, self.hashdict[key]):
+                    update_mmsi.append(key)
+            else:
+                # The MMSI was new, add to update list
+                update_mmsi.append(key)
         # Set self.hashdict to the new hash dict
         self.hashdict = newhashdict
-        # Create a querystring for metadataquery
-        if len(updatemmsilist) > 0: updatemmsiquery = 'mmsi == ' + str(updatemmsilist[0])
-        if len(updatemmsilist) > 1:
-            for i in updatemmsilist[1:]: updatemmsiquery += ' OR mmsi == ' + str(i)
-        # Query the memory db
-        positionquery = execSQL(DbCmd(SqlCmd, [("SELECT time, mmsi, latitude, longitude, georef, sog, cog FROM data WHERE datetime(time, '+%s seconds') > datetime('now', 'localtime') ORDER BY time" % config['logging'].as_int('logtime'),())]))
-        metadataquery = execSQL(DbCmd(SqlCmd, [("SELECT time, mmsi, imo, name, type, callsign, destination, eta, length, width FROM data WHERE %s ORDER BY time" % updatemmsiquery,())]))
+        # Query the memory DB
+        positionquery = []
+        # Calculate the oldest time we allow an object to have
+        threshold = datetime.datetime.now() - datetime.timedelta(seconds=config['logging'].as_int('logtime'))
+        # Iterate over all objects in db_main
+        for r in db_main:
+            # If base station, don't log it
+            if r['base_station']: continue
+            # If object is newer than threshold, get data
+            if r['time'] > threshold:
+                data = [r['time'], r['mmsi'], r['latitude'],
+                        r['longitude'], r['georef'], r['sog'],
+                        r['cog']]
+                # Set all fields contaning value 'N/A' to Nonetype
+                # (it's ugly, I know...)
+                # Also convert decimal type to float
+                for (i, v) in enumerate(data):
+                    if v == 'N/A':
+                        data[i] = None
+                    elif type(v) == decimal.Decimal:
+                        data[i] = float(v)
+                positionquery.append(data)
+        # Sort in chronological order (by time)
+        positionquery.sort()
+        metadataquery = []
+        # Iterate over the objects we should update in metadata
+        for mmsi in update_mmsi:
+            # Get only the first list (should be only one anyway)
+            r = db_main._mmsi[mmsi][0]
+            data = [r['time'], r['mmsi'], r['imo'],
+                    r['name'], r['type'], r['callsign'],
+                    r['destination'], r['eta'], r['length'],
+                    r['width']]
+            # Remove any 'N/A' with Nonetype (ugly, I know...)
+            for (i, v) in enumerate(data):
+                if v == 'N/A':
+                    data[i] = None
+            metadataquery.append(data)
+        # Sort in chronological order (by time)
+        metadataquery.sort()
         # Open the file and log
         try:
             # Open file with filename in config['logging']['logfile']
@@ -3289,7 +3361,9 @@ class MainThread:
 
     def iddblog(self):
         # Query the memory iddb
-        iddbquery = execSQL(DbCmd(SqlCmd, [("SELECT mmsi, imo, name, callsign FROM iddb",())]))
+        iddbquery = []
+        for r in db_iddb:
+            iddbquery.append((r['mmsi'], r['imo'], r['name'], r['callsign']))
         # Open the file and log
         try:
             # Open file with filename in config['iddb_logging']['logfile']
@@ -3321,7 +3395,8 @@ class MainThread:
             # Close connection
             connection.close()
             # Put iddb_data in the memory db
-            execSQL(DbCmd(SqlManyCmd, [("INSERT INTO iddb (mmsi, imo, name, callsign) VALUES (?, ?, ?, ?);", (iddb_data))]))
+            for ship in iddb_data:
+                db_iddb.insert(mmsi=int(ship[0]), imo=int(ship[1]), name=ship[2], callsign=ship[3])
         except:
             logging.warning("Reading from IDDB file failed", exc_info=True)
 
