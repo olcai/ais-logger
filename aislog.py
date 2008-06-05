@@ -136,10 +136,6 @@ config['network'].comments['client_addresses'] =['List of server:port to connect
 #sys.stderr = except_file
 #sys.stderr = sys.stdout()
 
-# Fire off databases
-db_main = pydblite.Base('dummy')
-db_iddb = pydblite.Base('dummy2')
-
 # Define global variables
 mid = {}
 midfull = {}
@@ -3123,142 +3119,236 @@ class CommHubThread:
 
 class MainThread:
     queue = Queue.Queue()
-    hashdict = {}
 
-    def updater(self):
-        # Create main db fields
-        db_main.create('mmsi', 'mid', 'imo',
-                       'name', 'type', 'typename',
-                       'callsign', 'latitude', 'longitude',
-                       'georef', 'creationtime', 'time',
-                       'sog', 'cog', 'heading',
-                       'destination', 'eta', 'length',
-                       'width', 'draught', 'rot',
-                       'navstatus', 'posacc', 'distance',
-                       'bearing', 'source', 'base_station',
-                       'soundalerted')
-        # Create IDDB fields
-        db_iddb.create('mmsi', 'imo', 'name', 'callsign')
-        # Set indexes for faster searching
-        db_main.create_index('mmsi')
-        db_iddb.create_index('mmsi')
+    def __init__(self):
+        # Set an empty incoming dict
+        self.incoming_packet = {}
+
+        # Define consumers
+        self.consumers = []
+
+        # Define a dict to store the metadata hashes
+        self.hashdict = {}
+
+        # Define a dict to store own position data in
+        self.ownposition = {}
+        # See if we should set a fixed manual position
+        if config['position'].as_bool('override_on'):
+            ownlatitude = decimal.Decimal(config['position']['latitude'])
+            ownlongitude = decimal.Decimal(config['position']['longitude'])
+            try:
+                owngeoref = georef(ownlatitude,ownlongitude)
+            except:
+                owngeoref = None
+            self.ownposition.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
+
+        # Create main database
+        self.db_main = pydblite.Base('dummy')
+        self.dbfields = ('mmsi', 'mid', 'imo',
+                         'name', 'type', 'typename',
+                         'callsign', 'latitude', 'longitude',
+                         'georef', 'creationtime', 'time',
+                         'sog', 'cog', 'heading',
+                         'destination', 'eta', 'length',
+                         'width', 'draught', 'rot',
+                         'navstatus', 'posacc', 'distance',
+                         'bearing', 'source', 'base_station',
+                         'old', 'soundalerted')
+        self.db_main.create(*self.dbfields)
+        self.db_main.create_index('mmsi')
+
+        # Create ID database
+        self.db_iddb = pydblite.Base('dummy2')
+        self.db_iddb.create('mmsi', 'imo', 'name', 'callsign')
+        self.db_iddb.create_index('mmsi')
+
+        # Try to load ID database
+        self.loadiddb()
+
+    def DbUpdate(self, incoming_packet):
+        self.incoming_packet = incoming_packet
+        incoming_mmsi = self.incoming_packet['mmsi']
+
+        # Fetch the current data in DB for MMSI (if exists)
+        currentdata = self.db_main._mmsi[incoming_mmsi]
+
+        # If not currently in DB, add the mmsi number, creation time and MID code
+        if len(currentdata) == 0:
+            # Map MMSI nbr to nation from MID list
+            if 'mmsi' in self.incoming_packet and str(self.incoming_packet['mmsi'])[0:3] in mid:
+                mid_code = mid[str(self.incoming_packet['mmsi'])[0:3]]
+            else:
+                mid_code = None
+            self.db_main.insert(mmsi=incoming_mmsi,mid=mid_code,creationtime=self.incoming_packet['time'])
+            currentdata = self.db_main._mmsi[incoming_mmsi]
+
+        # Get the record so that we can address it
+        main_record = currentdata[0]
+
+        # Fetch current data in IDDB
+        iddb = self.db_iddb._mmsi[incoming_mmsi]
+
+        # Can we update the IDDB (is IMO in the incoming packet?)
+        if 'imo' in self.incoming_packet:
+            # See if we have to insert first
+            if len(iddb) == 0:
+                self.db_iddb.insert(mmsi=incoming_mmsi)
+                # Fetch the newly inserted entry
+                iddb = self.db_iddb._mmsi[incoming_mmsi]
+            # Get the record so that we can address it
+            iddb_record = iddb[0]
+            # Check if we have callsign or name in incoming_packet
+            iddb_update = {}
+            if 'callsign' in self.incoming_packet:
+                iddb_update['callsign'] = self.incoming_packet['callsign']
+            if 'name' in self.incoming_packet:
+                iddb_update['name'] = self.incoming_packet['name']
+            # Make the update
+            # We know that we already have IMO, don't check for it
+            self.db_iddb.update(iddb_record,imo=self.incoming_packet['imo'],**iddb_update)
+            # We don't update iddb och iddb_record because there is no need, the info
+            # will not be used later anyway
+
+        # Define a dictionary to hold update data
+        update_dict = {}
+        # Iterate over incoming and copy matching fields to update_dict
+        for key, value in self.incoming_packet.iteritems():
+            if key in self.dbfields:
+                # Replace any Nonetypes with string N/A
+                if value == None:
+                    update_dict[key] = 'N/A'
+                else:
+                    update_dict[key] = value
+
+        # -- TYPENAME, GEOREF, DISTANCE, BEARING
+        # Map type nbr to type name from list
+        if 'type' in self.incoming_packet and self.incoming_packet['type'] > 0 and str(self.incoming_packet['type']) in typecode:
+            update_dict['typename'] = typecode[str(self.incoming_packet['type'])]
+
+        # Calculate position in GEOREF
+        if 'latitude' in self.incoming_packet and 'longitude' in self.incoming_packet:
+            try:
+                update_dict['georef'] = georef(self.incoming_packet['latitude'],self.incoming_packet['longitude'])
+            except: pass
+
+        # Calculate bearing and distance to object
+        if 'ownlatitude' in self.ownposition and 'ownlongitude' in self.ownposition and 'latitude' in self.incoming_packet and 'longitude' in self.incoming_packet:
+            try:
+                dist = VincentyDistance((self.ownposition['ownlatitude'],self.ownposition['ownlongitude']), (self.incoming_packet['latitude'],self.incoming_packet['longitude'])).all
+                update_dict['distance'] = decimal.Decimal(str(dist['km'])).quantize(decimal.Decimal('0.1'))
+                update_dict['bearing'] = decimal.Decimal(str(dist['bearing'])).quantize(decimal.Decimal('0.1'))
+            except: pass
+
+        # Check if report is from a base station or a SAR station
+        if 'message' in self.incoming_packet:
+            # If message type 4 (Base Station Report), set property to True
+            if self.incoming_packet['message'] == 4:
+                update_dict['base_station'] = True
+            # Abort insertion if message type 9 (Special Position Report)
+            elif self.incoming_packet['message'] == 9:
+                return None
+
+        # Update the DB with new data
+        self.db_main.update(main_record,old=False,**update_dict)
+
+        # Return a dictionary of iddb
+        if len(iddb) == 0:
+            iddb = {}
+        elif len(iddb) > 0:
+            iddb = iddb[0]
+
+        # Return the updated object and the iddb entry
+        return self.db_main[main_record['__id__']], iddb
+
+    def UpdateMsg(self, object_info, iddb):
+        # See if we need to use data from iddb
+        if object_info['imo'] == None and 'imo' in iddb:
+            object_info['imo'] = "* " + str(iddb['imo']) + " *"
+        if object_info['callsign'] == None and 'callsign' in iddb:
+            object_info['callsign'] = "* " + iddb['callsign'] + " *"
+        if object_info['name'] == None and 'name' in iddb:
+            object_info['name'] = "* " + iddb['name'] + " *"
+
+        # Match against the set alerts
+        # FIXME: Check for alerts!
+        object_info['alert'] = False
+
+        # See if we need to sound the alert
+        soundalert = False
+
+        # Send the update
+        self.SendMsg({'update': object_info})
+
+    def CheckDBForOld(self):
+        # Go through the DB and see if we can create 'remove' or
+        # 'old' messages
+
+        # Calculate datetime objects to compare with
+        old_limit = datetime.datetime.now()-datetime.timedelta(seconds=config['common'].as_int('listmakegreytime'))
+        remove_limit = datetime.datetime.now()-datetime.timedelta(seconds=config['common'].as_int('deleteitemtime'))
+
+        # Compare objects in db against old_limit and remove_limit
+        old_objects = [ r for r in self.db_main
+                        if r['time'] < old_limit ]
+        remove_objects = [ r for r in self.db_main
+                           if r['time'] < remove_limit ]
+
+        # Mark old as old in the DB and send messages
+        for object in old_objects:
+            self.db_main[object['__id__']]['old'] = True
+            self.SendMsg({'old': object['mmsi']})
+        # Delete removable objects in db
+        self.db_main.delete(remove_objects)
+        # Send removal messages
+        for object in remove_objects:
+            self.SendMsg({'remove': object['mmsi']})
+
+    def SendMsg(self, message):
+        # Sends message to all consumers
+        print message
+        for consumer in self.consumers:
+            consumer.put(message)
+
+    def Main(self):
         # Set some timers
-        lastcleartime = time.time()
+        lastchecktime = time.time()
         lastlogtime = time.time()
         lastiddblogtime = time.time()
-        parser = {}
-        # Ok, see if we can load the IDDB
-        self.loadiddb()
-        # Start looping
+        incoming = {}
         while True:
-            # Store the incoming messages in dict parser
+            # Try to get the next item in queue
             try:
-                parser = self.queue.get()
+                incoming = self.queue.get()
             except: pass
-            if parser == 'stop': break
-            # Check that parser contains a MMSI number
-            if 'mmsi' in parser and parser['mmsi'] > 1:
-                # Some special checking for message types
-                if 'message' in parser:
-                    # If message type 4 (Base Station Report), set property to True
-                    if parser['message'] == 4:
-                        parser['base_station'] = True
-                    # Ignore message type 9 (Special Position Report)
-                    elif parser['message'] == 9:
-                        continue
-                # Calculate position in GEOREF
-                if 'latitude' in parser and 'longitude' in parser:
-                    try:
-                        parser['georef'] = georef(parser['latitude'],parser['longitude'])
-                    except: pass
-                # Map MMSI nbr to nation from MID dict
-                if 'mmsi' in parser and str(parser['mmsi'])[0:3] in mid:
-                    parser['mid'] = mid[str(parser['mmsi'])[0:3]]
-                # Map type nbr to type name from dict
-                if 'type' in parser and parser['type'] > 0 and str(parser['type']) in typecode:
-                    parser['typename'] = typecode[str(parser['type'])]
-                # Check if user has set a fixed manual position, and if so, use it...
-                if config['position'].as_bool('override_on'):
-                    ownlatitude = decimal.Decimal(config['position']['latitude'])
-                    ownlongitude = decimal.Decimal(config['position']['longitude'])
-                    try:
-                        owngeoref = georef(ownlatitude,ownlongitude)
-                    except:
-                        owngeoref = ""
-                    owndata.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
-                # Calculate bearing and distance to object
-                if 'ownlatitude' in owndata and 'ownlongitude' in owndata and 'latitude' in parser and 'longitude' in parser:
-                    try:
-                        dist = VincentyDistance((owndata['ownlongitude'], owndata['ownlongitude']), (parser['latitude'], parser['longitude'])).all
-                        parser['distance'] = decimal.Decimal(str(dist['km'])).quantize(decimal.Decimal('0.1'))
-                        parser['bearing'] = decimal.Decimal(str(dist['bearing'])).quantize(decimal.Decimal('0.1'))
-                    except: pass
-                # Define a dictionary to hold temp data
-                db_dict = {}
-                # Define the field names that we want to use from parser
-                db_fields = ('mmsi', 'mid', 'imo',
-                             'name', 'type', 'typename',
-                             'callsign', 'latitude', 'longitude',
-                             'georef', 'sog', 'cog',
-                             'heading', 'destination', 'eta',
-                             'length', 'width', 'draught',
-                             'rot', 'navstatus', 'posacc',
-                             'time', 'distance', 'bearing',
-                             'source', 'base_station')
-                # Iterate over parser and copy matching fields to db_dict
-                for key, value in parser.iteritems():
-                    if key in db_fields:
-                        if value == None: # Set incoming None to 'N/A'
-                            db_dict[key] = 'N/A'
-                        else:
-                            db_dict[key] = value
-                # Check for the MMSI in db_main from parser
-                dbreturn = db_main._mmsi[parser['mmsi']]
-                # If dbreturn is an empty list, insert the object in the db,
-                # of it exists, simply update it
-                if len(dbreturn) == 0:
-                    # Insert new object in db
-                    db_dict['creationtime'] = db_dict['time']
-                    db_main.insert(**db_dict)
-                elif len(dbreturn) == 1:
-                    # Find out record if in db and update it
-                    record = db_main[dbreturn[0]['__id__']]
-                    db_main.update(record,**db_dict)
-                # Refetch the new data from db_main
-                updated_data = db_main._mmsi[parser['mmsi']]
-                # Fetch ship data from IDDB
-                #if iddb_data:
-                #    print iddb_data
-                # FIXME: how to send data?
-                # Special for base_station?
-                # Check for alerts too
-
-            # If parser got own data, use it
-            elif 'ownlatitude' in parser and 'ownlongitude' in parser and not config['position'].as_bool('override_on'):
-                ownlatitude = parser['ownlatitude']
-                ownlongitude = parser['ownlongitude']
+            if incoming == 'stop': break
+            # Check if incoming contains a MMSI number
+            if 'mmsi' in incoming and incoming['mmsi'] > 1:
+                update = self.DbUpdate(incoming)
+                if update:
+                    self.UpdateMsg(*update)
+            # If incoming got own position data, use it
+            elif 'ownlatitude' in incoming and 'ownlongitude' in incoming and not config['position'].as_bool('override_on'):
+                ownlatitude = incoming['ownlatitude']
+                ownlongitude = incoming['ownlongitude']
                 try:
                     owngeoref = georef(ownlatitude,ownlongitude)
                 except:
-                    owngeoref = ""
-                owndata.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
+                    owngeoref = None
+                self.ownposition.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
+                # Send a position update
+                self.SendMsg({'own_position': self.ownposition})
+            # If incoming has special attributes
+            elif 'add_consumer' in incoming:
+                self.consumers.append(incoming['add_consumer'])
+            elif 'consumer_delete' in incoming and incoming['consumer_delete'] in self.consumers:
+                self.consumers.delete(incoming['consumer_delete'])
+            elif 'query' in incoming:
+                print "--> Write query code, stupid!"
 
-            # See if we should delete objects or make them grey
-            if lastcleartime + 10 < time.time():
-                # Remove object if last update time is above threshold
-                delete_treshold = datetime.datetime.now() - datetime.timedelta(seconds=config['common'].as_int('deleteitemtime'))
-                recs = [ r['__id__'] for r in db_main if delete_treshold > r['time'] ]
-                for r in recs:
-                    # FIXME: send delete message
-                    del db_main[r]
-                # Send grey message if last update time is above threshold
-                grey_treshold = datetime.datetime.now() - datetime.timedelta(seconds=config['common'].as_int('listmakegreytime'))
-                recs = [ r for r in db_main if grey_treshold > r['time'] ]
-                for r in recs:
-                    # FIXME: send grey message
-                    pass
-                # Set new last clear time
-                lastcleartime = time.time()
+            # Remove or mark objects as old if last update time is above threshold
+            if lastchecktime + 10 < time.time():
+                self.CheckDBForOld()
+                lastchecktime = time.time()
 
             # Initiate logging to disk of log time is above threshold
             if config['logging'].as_bool('logging_on'):
@@ -3274,12 +3364,11 @@ class MainThread:
                     self.iddblog()
                     lastiddblogtime = time.time()
 
-
     def dblog(self):
         # Make a query for the metadata, but return only rows where IMO
         # has a value, and make a MD5 hash out of the data
         newhashdict = {}
-        for r in db_main:
+        for r in self.db_main:
             if r['imo']:
                 # If base station, don't log it
                 if r['base_station']: continue
@@ -3307,7 +3396,7 @@ class MainThread:
         # Calculate the oldest time we allow an object to have
         threshold = datetime.datetime.now() - datetime.timedelta(seconds=config['logging'].as_int('logtime'))
         # Iterate over all objects in db_main
-        for r in db_main:
+        for r in self.db_main:
             # If base station, don't log it
             if r['base_station']: continue
             # If object is newer than threshold, get data
@@ -3330,7 +3419,7 @@ class MainThread:
         # Iterate over the objects we should update in metadata
         for mmsi in update_mmsi:
             # Get only the first list (should be only one anyway)
-            r = db_main._mmsi[mmsi][0]
+            r = self.db_main._mmsi[mmsi][0]
             data = [r['time'], r['mmsi'], r['imo'],
                     r['name'], r['type'], r['callsign'],
                     r['destination'], r['eta'], r['length'],
@@ -3362,7 +3451,7 @@ class MainThread:
     def iddblog(self):
         # Query the memory iddb
         iddbquery = []
-        for r in db_iddb:
+        for r in self.db_iddb:
             iddbquery.append((r['mmsi'], r['imo'], r['name'], r['callsign']))
         # Open the file and log
         try:
@@ -3396,7 +3485,7 @@ class MainThread:
             connection.close()
             # Put iddb_data in the memory db
             for ship in iddb_data:
-                db_iddb.insert(mmsi=int(ship[0]), imo=int(ship[1]), name=ship[2], callsign=ship[3])
+                self.db_iddb.insert(mmsi=int(ship[0]), imo=int(ship[1]), name=ship[2], callsign=ship[3])
         except:
             logging.warning("Reading from IDDB file failed", exc_info=True)
 
@@ -3405,7 +3494,7 @@ class MainThread:
 
     def start(self):
         try:
-            r = threading.Thread(target=self.updater)
+            r = threading.Thread(target=self.Main)
             r.setDaemon(1)
             r.start()
             return True
