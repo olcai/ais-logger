@@ -174,13 +174,6 @@ class MainWindow(wx.Frame):
         menubar = wx.MenuBar()
         file = wx.Menu()
 
-        load = wx.MenuItem(file, 101, _("&Load snapshot file..."), _("Loads a snapshot file"))
-        file.AppendItem(load)
-
-        save = wx.MenuItem(file, 102, _("&Save snapshot file..."), _("Saves the data in memory to a snapshot file"))
-        file.AppendItem(save)
-        file.AppendSeparator()
-
         load_raw = wx.MenuItem(file, 103, _("Load &raw data...\tCtrl+R"), _("Loads a file containing raw (unparsed) messages"))
         file.AppendItem(load_raw)
         file.AppendSeparator()
@@ -217,8 +210,6 @@ class MainWindow(wx.Frame):
 
         self.SetMenuBar(menubar)
 
-        self.Bind(wx.EVT_MENU, self.OnLoadFile, id=101)
-        self.Bind(wx.EVT_MENU, self.OnSaveFile, id=102)
         self.Bind(wx.EVT_MENU, self.OnLoadRawFile, id=103)
         self.Bind(wx.EVT_MENU, self.Quit, id=104)
         self.Bind(wx.EVT_MENU, self.OnShowSplit, id=201)
@@ -409,56 +400,6 @@ class MainWindow(wx.Frame):
         dlg = StatsWindow(None, -1)
         dlg.Show()
 
-    def OnLoadFile(self, event):
-        path = ''
-        wcd = _("Snapshot files (*.pkl)|*.pkl|All files (*)|*")
-        dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a snapshot file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN)
-        if open_dlg.ShowModal() == wx.ID_OK:
-            path = open_dlg.GetPath()
-        if len(path) > 0:
-            try:
-                file = open(path, 'rb')
-                data = pickle.load(file)
-                execSQL(DbCmd(SqlManyCmd, [
-                    ("INSERT OR IGNORE INTO data (mmsi, mid, imo, name, type, typename, callsign, latitude, longitude, georef, creationtime, time, sog, cog, heading, destination, eta, length, width, draught, rateofturn, bit, tamper, navstatus, posacc, distance, bearing, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",(data))]))
-                file.close()
-                self.OnRefresh(event)
-            except IOError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except KeyError, error:
-                dlg = wx.MessageDialog(self, _("File contains illegal values") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-                open_dlg.Destroy()
-            except:
-                dlg = wx.MessageDialog(self, _("Unknown error") + "\n" + str(sys.exc_info()[0]), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-
-    def OnSaveFile(self, event):
-        path = ''
-        wcd = _("Snapshot files (*.pkl)|*.pkl|All files (*)|*")
-        dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a snapshot filename"), defaultDir=dir, defaultFile='datadump.pkl', wildcard=wcd, style=wx.SAVE)
-        if open_dlg.ShowModal() == wx.ID_OK:
-            path = open_dlg.GetPath()
-        if len(path) > 0:
-            try:
-                output = open(path, 'wb')
-                query = execSQL(DbCmd(SqlCmd, [("SELECT * FROM data", ())]))
-                pickle.dump(query,output)
-                output.close()
-            except IOError, error:
-                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-                open_dlg.Destroy()
-
     def OnLoadRawFile(self, event):
         path = ''
         wcd = _('All files (*)|*|Text files (*.txt)|*.txt')
@@ -469,7 +410,6 @@ class MainWindow(wx.Frame):
         if len(path) > 0:
             try:
                 self.rawfileloader(path)
-                self.OnRefresh(event)
             except IOError, error:
                 dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
@@ -479,11 +419,12 @@ class MainWindow(wx.Frame):
                 open_dlg.Destroy()
 
     def rawfileloader(self, filename):
-        # Load raw data from file and queue it to the MainThread
+        # Load raw data from file and queue it to the CommHubThread
 
         # Open file
         f=open(filename, 'r')
 
+        # Get total number of lines in file
         num_lines = 0
         for line in f:
             num_lines += 1
@@ -493,36 +434,21 @@ class MainWindow(wx.Frame):
         progress = wx.ProgressDialog(_("Loading file..."), _("Loading file..."), num_lines)
 
         # Step through each row in the file
-        temp = ''
-        cur_line = 0
+        commt = CommHubThread()
+        name = 'File'
         lastupdate_line = 0
-        maint = MainThread()
-        for line in f:
+        for linenumber, line in enumerate(f):
 
-            # Check if message is split on several rows
-            lineinfo = line.split(',')
-            if lineinfo[0] == '!AIVDM' and int(lineinfo[1]) > 1:
-                temp += line
-                if len(temp.splitlines()) == int(lineinfo[1]):
-                    line = decode.jointelegrams(temp)
-                    temp = ''
-                else:
-                    continue
+            # If indata contains raw data, pass it along
+            if line[0] == '!' or line[0] == '$':
+                # Put it in CommHubThread's queue
+                commt.put([name,line])
 
-            # Use the result from telegramparser and put it in MainThread's queue
-            try:
-                parser = dict(decode.telegramparser(line))
-                if len(parser) > 0:
-                    parser['source'] = 'File'
-                    maint.put(parser)
-                # Update the progress dialog for each 100 rows
-                cur_line += 1
-                if lastupdate_line + 100 < cur_line:
-                    progress.Update(cur_line)
-                    lastupdate_line = cur_line
-            except:
-                cur_line += 1
-                continue
+            # Update the progress dialog for each 100 rows
+            if lastupdate_line + 100 < linenumber:
+                progress.Update(linenumber)
+                lastupdate_line = linenumber
+
         # Close file
         f.close()
         progress.Destroy()
@@ -2984,7 +2910,7 @@ class NetworkClientThread:
 
                 for indata in data:
                     # If indata contains raw data, pass it along
-                    if indata[0] == '!':
+                    if indata[0] == '!' or indata[0] == '$':
                         # Put it in CommHubThread's queue
                         commt.put([name,indata])
 
