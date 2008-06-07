@@ -154,6 +154,11 @@ start_time = datetime.datetime.now()
 
 
 class MainWindow(wx.Frame):
+    # Intialize two sets, active_set for the MMSI numers who are active,
+    # grey_set for grey-outed MMSI numbers
+    active_set = set()
+    grey_set = set()
+
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, size=(800,500))
 
@@ -241,10 +246,52 @@ class MainWindow(wx.Frame):
         self.split.SetSashGravity(0.5)
         self.splitwindows()
 
-        # Timer for updating the status row
-        #self.timer = wx.Timer(self, -1)
-        #self.timer.Start(5000)
-        #wx.EVT_TIMER(self, -1, self.OnRefreshStatus)
+        # Start a timer to get new messages at a fixed interval
+        self.timer = wx.Timer(self, -1)
+        self.Bind(wx.EVT_TIMER, self.GetMessages, self.timer)
+        self.timer.Start(2000)
+
+    def GetMessages(self, event):
+        # Get messages from main thread
+        messages = MainThread().ReturnOutgoing()
+        # See what to do with them
+        for message in messages:
+            if 'update' in message:
+                # "Move" from grey_set to active_set
+                self.grey_set.discard(message['update']['mmsi'])
+                self.active_set.add(message['update']['mmsi'])
+                # Update lists
+                self.splist.Refresh(message)
+                self.spalert.Refresh(message)
+            elif 'insert' in message:
+                # Insert to active_set
+                self.active_set.add(message['insert']['mmsi'])
+                # Refresh status row
+                self.OnRefreshStatus()
+                # Update lists
+                self.splist.Refresh(message)
+                self.spalert.Refresh(message)
+            elif 'old' in message:
+                # "Move" from active_set to grey_set
+                self.active_set.discard(message['old'])
+                self.grey_set.add(message['old'])
+                # Refresh status row
+                self.OnRefreshStatus()
+                # Update lists
+                self.splist.Refresh(message)
+                self.spalert.Refresh(message)
+            elif 'remove' in message:
+                # Remove from grey set (and active_set to be sure)
+                self.active_set.discard(message['remove'])
+                self.grey_set.discard(message['remove'])
+                # Refresh status row
+                self.OnRefreshStatus()
+                # Update lists
+                self.splist.Refresh(message)
+                self.spalert.Refresh(message)
+            elif 'own_position' in message:
+                # Refresh status row with own_position
+                self.OnRefreshStatus(message['own_position'])
 
     def splitwindows(self, window=None):
         if self.split.IsSplit(): self.split.Unsplit(window)
@@ -330,24 +377,30 @@ class MainWindow(wx.Frame):
                 dlg = wx.MessageDialog(self, _("Error, could not load the remark file!") + "\n\n" + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
                 dlg.ShowModal()
 
-    def OnRefreshStatus(self, event):
+    def OnRefreshStatus(self, own_pos=False):
         # Update the status row
-        # Fetch the total number of rows in the db
-        query1 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data", ())]))
-        nritems = len(query1)
-        # Fetch the greyed out rows in the db
-        query2 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE datetime(time) < datetime('now', 'localtime', '-%s seconds')" % config['common'].as_int('listmakegreytime'), ())]))
-        nrgreyitems = len(query2)
-        # Print strings
-        if owndata.has_key('ownlatitude') and owndata.has_key('ownlongitude') and owndata.has_key('owngeoref'):
-            # Create a nice latitude string
-            latitude = owndata['ownlatitude']
-            latitude = latitude[1:3] + u'° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
-            # Create a nice longitude string
-            longitude = owndata['ownlongitude']
-            longitude = longitude[1:4] + u'° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
-            self.SetStatusText(_("Own position: ") + latitude + '  ' + longitude + ' - ' + owndata['owngeoref'], 0)
-        self.SetStatusText(_("Total nbr of objects / old: ") + str(nritems) + ' / ' + str(nrgreyitems), 1)
+
+        # Get total number of items by taking the length of the union
+        # between active_set and grey_set
+        nbritems = len(self.active_set.union(self.grey_set))
+        nbrgreyitems = len(self.grey_set)
+        # See if we should update the position row
+        if own_pos:
+            latitude = own_pos['ownlatitude']
+            longitude = own_pos['ownlongitude']
+            # Make the position more human-readable
+            if latitude > 0:
+                lat = 'lat ' + str(abs(latitude)) + u'° N'
+            elif latitude < 0:
+                lat = 'lat ' + str(abs(latitude)) + u'° S'
+            if longitude > 0:
+                long = 'long ' + str(abs(longitude)) + u'° E'
+            elif longitude < 0:
+                long = 'long ' + str(abs(longitude)) + u'° W'
+            # Print own position
+            self.SetStatusText(_("Own position: ") + lat + '  ' + long + '  (' + own_pos['owngeoref'] + ')', 0)
+        # Print number of objects-string
+        self.SetStatusText(_("Total nbr of objects / old: ") + str(nbritems) + ' / ' + str(nbrgreyitems), 1)
 
     def OnShowRawdata(self, event):
         dlg = RawDataWindow(None, -1)
@@ -525,14 +578,9 @@ class ListWindow(wx.Panel):
         self.SetSizer(box)
         self.Layout()
 
-        # Define and start the timer that update the list at a defined interval
-        self.timer = wx.Timer(self, -1)
-        self.timer.Start(config['common'].as_int('refreshlisttimer'))
-        wx.EVT_TIMER(self, -1, self.OnRefresh)
-
-    def OnRefresh(self, event):
-        # Update the listctrl
-        self.list.OnUpdate()
+    def Refresh(self, message):
+        # Update the listctrl with message
+        self.list.OnUpdate(message)
 
 
 class AlertWindow(wx.Panel):
@@ -559,34 +607,20 @@ class AlertWindow(wx.Panel):
         self.SetSizer(box)
         self.Layout()
 
-        # Define and start the timer that update the list at a defined interval
-        self.timer = wx.Timer(self, -1)
-        self.timer.Start(config['common'].as_int('refreshlisttimer'))
-        wx.EVT_TIMER(self, -1, self.OnRefresh)
-
-    def OnRefresh(self, event):
-        # Define a default query (gives empty result)
-        query = "mmsi='0'"
-        # Check if alertstring has content, if so set query to it
-        if len(alertstring) > 3: query = alertstring
-        # Update the listctrl with the query
-        self.list.OnUpdate(query)
+    def Refresh(self, message):
+        # See if we should update
+        if 'alert' in message and message['alert']:
+            # Update the listctrl with message
+            self.list.OnUpdate(message)
         # Sound an alert for selected objects
-        self.soundalert()
+        if 'soundalert' in message and message['soundalert']:
+            self.soundalert()
 
     def soundalert(self):
-        # This function checks for new objects that matches the alertstringsound SQL-query and plays a sound if a new one appear. It will then mark the object with soundalerted = 1
-        # If alertstringsound is larger than 3, run the query
-        if len(alertstringsound) > 3:
-            # Run a SELECT
-            newitems = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE (%s) AND (soundalerted IS null)" % alertstringsound, ())]))
-            # If the query returns one or more objects, play sound
-            if len(newitems) > 0:
-                sound = wx.Sound()
-                if config['alert'].as_bool('alertsound_on') and len(config['alert']['alertsoundfile']) > 0 and sound.Create(config['alert']['alertsoundfile']):
-                    sound.Play(wx.SOUND_ASYNC)
-            # Update the object and set soundalerted = 1
-            execSQL(DbCmd(SqlCmd, [("UPDATE data SET soundalerted='1' WHERE %s AND (soundalerted IS Null)" % alertstringsound, ())]))
+        # Play sound if config is set
+        sound = wx.Sound()
+        if config['alert'].as_bool('alertsound_on') and len(config['alert']['alertsoundfile']) > 0 and sound.Create(config['alert']['alertsoundfile']):
+            sound.Play(wx.SOUND_ASYNC)
 
 
 class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSorterMixin):
@@ -604,16 +638,20 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         for i, k in enumerate(columns):
             self.InsertColumn(i, k[1]) # Insert the column
             self.SetColumnWidth(i, k[2]) # Set the width
-            self.columnlist.append(k[0]) # Append each SQL column name to a list
+            self.columnlist.append(k[0]) # Append each column name to a list
 
         # Use the mixins
         listmix.ListCtrlAutoWidthMixin.__init__(self)
         listmix.ColumnSorterMixin.__init__(self, len(self.columnlist))
 
-        # Do inital update
-        self.OnUpdate(query="mmsi LIKE ''")
+        # Set object-wide data holders
+        self.itemDataMap = {}
+        self.itemIndexMap = []
         # Do initial sorting on column 0, ascending order (1)
         self.SortListItems(0, 1)
+        # Define one set for alert items and one for grey items
+        self.alertitems = set()
+        self.greyitems = set()
 
         # Define events
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnItemActivated)
@@ -625,49 +663,59 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         dlg = DetailWindow(None, -1, itemmmsi)
         dlg.Show()
 
-    def OnUpdate(self, query="mmsi LIKE '%'"):
+    def OnUpdate(self, message):
         # Check if a row is selected, if true, extract the mmsi
         selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
         if selected_row != -1:
             selected_mmsi = self.itemIndexMap[selected_row]
-        # Create a comma separated string from self.columnlist
-        # If the remark column is in list, don't use it in
-        columnlistcopy = self.columnlist[:]
-        if 'remark' in self.columnlist:
-            columnlistcopy.remove('remark')
-        columnlist_string = ','.join([v for v in columnlistcopy])
-        # Run the main SQL-query
-        #query_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi,time,%s FROM data WHERE %s" % (columnlist_string, query), ())]))
-        query_result = []
-        # Run the IDDB query
-        #iddb_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE (SELECT mmsi FROM data)",())]))
-        iddb_result = []
-        # If alertstring has content, run the alert query and create a list from the result
-        self.alertitems = []
-        #if len(alertstring) > 3:
-        #    alertquery_result = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data WHERE %s" % alertstring, ())]))
-        #    self.alertitems = [v[0] for v in alertquery_result]
-        # Put the number of objects in a variable
-        nrofobjects = len(query_result)
-        # If the number of objects returned from the SQL-query doesn't match number currently in the listctrl, set new ItemCount.
-        if self.GetItemCount() != nrofobjects:
-            self.SetItemCount(nrofobjects)
-        # Loop over query_result using function LoopQuery and put the result into data
-        data = self.LoopQuery(query_result, iddb_result)
-        # Create another dictionary and a list of keys from data
-        self.itemDataMap = data
-        self.itemIndexMap = data.keys()
+
+        # See what message we should work with
+        if 'update' in message:
+            data = message['update']
+            # Remove object from grey item set
+            self.greyitems.discard(data['mmsi'])
+            # If alert, put it in alert item set
+            if 'alert' in message and message['alert']:
+                self.alertitems.add(data['mmsi'])
+            # Get the data formatted
+            self.itemDataMap[data['mmsi']] = self.FormatData(data)
+        elif 'insert' in message:
+            # Set a new item count in the listctrl
+            self.SetItemCount(self.GetItemCount()+1)
+            data = message['insert']
+            # If alert, put it in alert item set
+            if 'alert' in message and message['alert']:
+                self.alertitems.add(data['mmsi'])
+            # Get the data formatted
+            self.itemDataMap[data['mmsi']] = self.FormatData(data)
+        elif 'remove' in message:
+            # Get the MMSI number
+            mmsi = message['remove']
+            # Set a new item count in the listctrl
+            self.SetItemCount(self.GetItemCount()-1)
+            # Remove object from sets
+            self.greyitems.discard(mmsi)
+            self.alertitems.discard(mmsi)
+            # Remove object from list dict
+            del self.itemDataMap[message[mmsi]]
+        elif 'old' in message:
+            # Simply add object to set
+            self.greyitems.add(message['old'])
+
+        # Extract the MMSI numbers as keys for the data
+        self.itemIndexMap = self.itemDataMap.keys()
+
         # Create a dictionary from query_result with mmsi as key and time as value
-        self.itemOldMap = {}
-        for v in query_result:
-            self.itemOldMap[v[0]] = v[1]
+        #self.itemOldMap = {}
+        #for v in query_result:
+        #    self.itemOldMap[v[0]] = v[1]
 
         # Sort the data (including a refresh of the listctrl)
         self.SortListItems()
 
         # See if the previous selected row exists after the list update
-        # If the mmsi is found, set the new position as selected
-        # If not found, deselct all objects
+        # If the MMSI number is found, set the new position as selected
+        # If not found, deselect all objects
         try:
             if self.itemDataMap.has_key(selected_mmsi):
                 new_position = self.FindItem(-1, unicode(selected_mmsi))
@@ -677,73 +725,42 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                     self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
         except: pass
 
-    def LoopQuery(self, query_result, iddb_result):
-        # Create an IDDB dictionary and map the result from iddb_result to it
-        iddb_dict = {}
-        for v in iddb_result:
-            # For each list v in iddb_result, map the mmsi as key for iddb_dict and add imo, name and callsign
-            iddb_dict[v[0]] = (v[1], v[2], v[3])
-        # Create a dictionary, data, and populate it with data from the SQL-query. Use MMSI numbers as keys.
-        data = {}
-        for v in query_result:
-            # Create a temporary list, r, to assign new values to
-            mmsi = v[0]
-            r = list(v[2:])
-            # Check for some special cases and edit r as needed
-            # If imo, name or callsign is None, try to use data from iddb_dict
-            if 'imo' in self.columnlist:
-                pos = self.columnlist.index('imo')
-                if r[pos] == None and mmsi in iddb_dict:
-                    r[pos] = unicode(iddb_dict[mmsi][0]) + "'"
-            if 'name' in self.columnlist:
-                pos = self.columnlist.index('name')
-                if r[pos] == None and mmsi in iddb_dict:
-                    r[pos] = unicode(iddb_dict[mmsi][1]) + "'"
-            if 'callsign' in self.columnlist:
-                pos = self.columnlist.index('callsign')
-                if r[pos] == None and mmsi in iddb_dict:
-                    r[pos] = unicode(iddb_dict[mmsi][2]) + "'"
-            # Other special cases
-            if 'creationtime' in self.columnlist:
-                pos = self.columnlist.index('creationtime')
-                try: r[pos] = r[pos][11:]
-                except: r[pos] = None
-            if 'time' in self.columnlist:
-                pos = self.columnlist.index('time')
-                try: r[pos] = r[pos][11:]
-                except: r[pos] = None
-            if 'eta' in self.columnlist:
-                pos = self.columnlist.index('eta')
-                if r[pos] == '00002460': r[pos] = None
-                else: r[pos] = r[pos]
-            if 'posacc' in self.columnlist:
-                pos = self.columnlist.index('posacc')
-                if r[pos] == '0': r[pos] = u'Bad'
-                elif r[pos] == None: r[pos] = None
-                else: r[pos] = u'DGPS'
-            # Very special case, the remark column
-            if 'remark' in self.columnlist:
-                pos = self.columnlist.index('remark')
-                if remarkdict.has_key(mmsi):
-                    r.insert(pos, unicode(remarkdict[mmsi]))
+    def FormatData(self, data):
+        # Create a temporary dict to hold data in the order of
+        # self.columnlist so that the virtual listctrl can use it
+        new = []
+        # Loop over the columns we will show
+        for i, col in enumerate(self.columnlist):
+            # Append the list
+            new.append(None)
+            # If we have the data, fine!
+            if col in data:
+                # Set new[position] to the info in data
+                # If Nonetype, set an empty string (for sorting reasons)
+                if not data[col] == None:
+                    new[i] = data[col]
                 else:
-                    r.insert(pos, None)
-            # Populate the dictionary
-            data[mmsi] = r
-        return data
+                    new[i] = u''
+                # Some special formatting cases
+                if col == 'creationtime':
+                    try: new[i] = data[col].isoformat()[11:19]
+                    except: new[i] = ''
+                if col == 'time':
+                    try: new[i] = data[col].isoformat()[11:19]
+                    except: new[i] = ''
+                if col == 'posacc':
+                    if data[col] == 0: new[i] = u'Bad'
+                    elif data[col] == 1: new[i] = u'DGPS'
+                    else: new[i] = ''
+        return new
 
     def OnGetItemText(self, item, col):
         # Return the text in item, col
         mmsi = self.itemIndexMap[item]
         string = self.itemDataMap[mmsi][col]
-        # Workaround: the mmsi is an integer for sorting reasons, convert to unicode before displaying
-        if 'mmsi' in self.columnlist:
-            pos = self.columnlist.index('mmsi')
-            if col == pos:
-                string = unicode(string)
         # If string is a Nonetype, replace with an empty string
         if string == None:
-            string = unicode('')
+            string = u''
         return string
 
     def OnGetItemAttr(self, item):
@@ -759,21 +776,14 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             self.attr.SetBackgroundColour("TAN")
 
         # If item is old enough, make the text grey
-        try:
-            # Create a datetime object from the time string
-            lasttime = datetime.datetime(*time.strptime(self.itemOldMap[mmsi], "%Y-%m-%dT%H:%M:%S")[0:6])
-            if lasttime + datetime.timedelta(0,config['common'].as_int('listmakegreytime')) < datetime.datetime.now():
-                self.attr.SetTextColour("LIGHT GREY")
-        except: pass
+        if mmsi in self.greyitems:
+            self.attr.SetTextColour("LIGHT GREY")
         return self.attr
 
     def SortItems(self,sorter=cmp):
         items = list(self.itemDataMap.keys())
         items.sort(sorter)
         self.itemIndexMap = items
-
-        # Redraw the list
-        self.Refresh()
 
     # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
     def GetListCtrl(self):
@@ -3118,7 +3128,10 @@ class CommHubThread:
 
 
 class MainThread:
+    # Create an incoming and an outgoing queue
+    # Set a limit on how large the outgoing queue can get
     queue = Queue.Queue()
+    outgoing = Queue.Queue(1000)
 
     def __init__(self):
         # Set an empty incoming dict
@@ -3168,12 +3181,15 @@ class MainThread:
     def DbUpdate(self, incoming_packet):
         self.incoming_packet = incoming_packet
         incoming_mmsi = self.incoming_packet['mmsi']
+        new = False
 
         # Fetch the current data in DB for MMSI (if exists)
         currentdata = self.db_main._mmsi[incoming_mmsi]
 
         # If not currently in DB, add the mmsi number, creation time and MID code
         if len(currentdata) == 0:
+            # Set variable to indicate a new object
+            new = True
             # Map MMSI nbr to nation from MID list
             if 'mmsi' in self.incoming_packet and str(self.incoming_packet['mmsi'])[0:3] in mid:
                 mid_code = mid[str(self.incoming_packet['mmsi'])[0:3]]
@@ -3258,26 +3274,36 @@ class MainThread:
             iddb = iddb[0]
 
         # Return the updated object and the iddb entry
-        return self.db_main[main_record['__id__']], iddb
+        return self.db_main[main_record['__id__']], iddb, new
 
-    def UpdateMsg(self, object_info, iddb):
+    def UpdateMsg(self, object_info, iddb, new=False):
+        # Define the dict we're going to send
+        message = {}
+
         # See if we need to use data from iddb
         if object_info['imo'] == None and 'imo' in iddb:
-            object_info['imo'] = "* " + str(iddb['imo']) + " *"
+            object_info['imo'] = str(iddb['imo']) + "'"
         if object_info['callsign'] == None and 'callsign' in iddb:
-            object_info['callsign'] = "* " + iddb['callsign'] + " *"
+            object_info['callsign'] = iddb['callsign'] + "'"
         if object_info['name'] == None and 'name' in iddb:
-            object_info['name'] = "* " + iddb['name'] + " *"
+            object_info['name'] = iddb['name'] + "'"
 
         # Match against the set alerts
         # FIXME: Check for alerts!
-        object_info['alert'] = False
+        # If alert: set 'alert' = True
+        message['alert'] = False
 
         # See if we need to sound the alert
-        soundalert = False
+        message['soundalert'] = False
+        # If, so DB should be updated...
 
-        # Send the update
-        self.SendMsg({'update': object_info})
+        # Make update or insert message
+        if new:
+            message['insert'] = object_info
+        else:
+            message['update'] = object_info
+        # Call function to send message
+        self.SendMsg(message)
 
     def CheckDBForOld(self):
         # Go through the DB and see if we can create 'remove' or
@@ -3304,10 +3330,20 @@ class MainThread:
             self.SendMsg({'remove': object['mmsi']})
 
     def SendMsg(self, message):
-        # Sends message to all consumers
-        print message
-        for consumer in self.consumers:
-            consumer.put(message)
+        # Puts message in queue for consumers to get
+        try:
+            self.outgoing.put(message)
+        except Queue.Full:
+            pass
+
+    def ReturnOutgoing(self):
+        # Return all messages in the outgoing queue
+        templist = []
+        try:
+            while True:
+                templist.append(self.outgoing.get_nowait())
+        except Queue.Empty:
+            return templist
 
     def Main(self):
         # Set some timers
@@ -3315,6 +3351,9 @@ class MainThread:
         lastlogtime = time.time()
         lastiddblogtime = time.time()
         incoming = {}
+        # See if we should send a own position before looping
+        if self.ownposition:
+            self.SendMsg({'own_position': self.ownposition})
         while True:
             # Try to get the next item in queue
             try:
