@@ -191,9 +191,6 @@ class MainWindow(wx.Frame):
         view = wx.Menu()
         showsplit = wx.MenuItem(view, 201, _("Show &alert view\tF8"), _("Shows or hides the alert view"))
         view.AppendItem(showsplit)
-
-        refresh = wx.MenuItem(view, 202, _("&Refresh views\tF5"), _("Do a forced refresh of list views"))
-        view.AppendItem(refresh)
         view.AppendSeparator()
 
         showrawdata = wx.MenuItem(view, 203, _("Show raw &data window..."), _("Shows a window containing the incoming raw (unparsed) data"))
@@ -225,7 +222,6 @@ class MainWindow(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnLoadRawFile, id=103)
         self.Bind(wx.EVT_MENU, self.Quit, id=104)
         self.Bind(wx.EVT_MENU, self.OnShowSplit, id=201)
-        self.Bind(wx.EVT_MENU, self.OnRefresh, id=202)
         self.Bind(wx.EVT_MENU, self.OnShowRawdata, id=203)
         self.Bind(wx.EVT_MENU, self.OnStatistics, id=204)
         self.Bind(wx.EVT_MENU, self.OnSetAlerts, id=301)
@@ -261,16 +257,16 @@ class MainWindow(wx.Frame):
                 self.grey_set.discard(message['update']['mmsi'])
                 self.active_set.add(message['update']['mmsi'])
                 # Update lists
-                self.splist.Refresh(message)
-                self.spalert.Refresh(message)
+                self.splist.Update(message)
+                self.spalert.Update(message)
             elif 'insert' in message:
                 # Insert to active_set
                 self.active_set.add(message['insert']['mmsi'])
                 # Refresh status row
                 self.OnRefreshStatus()
                 # Update lists
-                self.splist.Refresh(message)
-                self.spalert.Refresh(message)
+                self.splist.Update(message)
+                self.spalert.Update(message)
             elif 'old' in message:
                 # "Move" from active_set to grey_set
                 self.active_set.discard(message['old'])
@@ -278,8 +274,8 @@ class MainWindow(wx.Frame):
                 # Refresh status row
                 self.OnRefreshStatus()
                 # Update lists
-                self.splist.Refresh(message)
-                self.spalert.Refresh(message)
+                self.splist.Update(message)
+                self.spalert.Update(message)
             elif 'remove' in message:
                 # Remove from grey set (and active_set to be sure)
                 self.active_set.discard(message['remove'])
@@ -287,11 +283,14 @@ class MainWindow(wx.Frame):
                 # Refresh status row
                 self.OnRefreshStatus()
                 # Update lists
-                self.splist.Refresh(message)
-                self.spalert.Refresh(message)
+                self.splist.Update(message)
+                self.spalert.Update(message)
             elif 'own_position' in message:
                 # Refresh status row with own_position
                 self.OnRefreshStatus(message['own_position'])
+        # Refresh the listctrls (by sorting)
+        self.splist.Refresh()
+        self.spalert.Refresh()
 
     def splitwindows(self, window=None):
         if self.split.IsSplit(): self.split.Unsplit(window)
@@ -534,12 +533,8 @@ class MainWindow(wx.Frame):
     def OnShowSplit(self, event):
         self.splitwindows(self.spalert)
 
-    def OnRefresh(self, event):
-        self.splist.OnRefresh(event)
-        self.spalert.OnRefresh(event)
-
     def OnAbout(self, event):
-        aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2007\n\naislog.py\ndecode.py\nutil.py'
+        aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2008\n\naislog.py\ndecode.py\nutil.py'
         dlg = wx.MessageDialog(self, aboutstring, _("About"), wx.OK|wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
@@ -578,9 +573,13 @@ class ListWindow(wx.Panel):
         self.SetSizer(box)
         self.Layout()
 
-    def Refresh(self, message):
-        # Update the listctrl with message
+    def Update(self, message):
+        # Update the underlying listctrl data with message
         self.list.OnUpdate(message)
+
+    def Refresh(self):
+        # Refresh the listctrl by sorting
+        self.list.SortListItems()
 
 
 class AlertWindow(wx.Panel):
@@ -607,14 +606,18 @@ class AlertWindow(wx.Panel):
         self.SetSizer(box)
         self.Layout()
 
-    def Refresh(self, message):
+    def Update(self, message):
         # See if we should update
         if 'alert' in message and message['alert']:
-            # Update the listctrl with message
+            # Update the underlying listctrl data with message
             self.list.OnUpdate(message)
         # Sound an alert for selected objects
         if 'soundalert' in message and message['soundalert']:
             self.soundalert()
+
+    def Refresh(self):
+        # Refresh the listctrl by sorting
+        self.list.SortListItems()
 
     def soundalert(self):
         # Play sound if config is set
@@ -647,6 +650,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # Set object-wide data holders
         self.itemDataMap = {}
         self.itemIndexMap = []
+        self.selected = -1
         # Do initial sorting on column 0, ascending order (1)
         self.SortListItems(0, 1)
         # Define one set for alert items and one for grey items
@@ -655,6 +659,8 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
         # Define events
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnItemActivated)
+        self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnItemSelected)
+        self.Bind(wx.EVT_LIST_ITEM_DESELECTED, self.OnItemDeselected)
 
     def OnItemActivated(self, event):
         # Get the MMSI number associated with the row activated
@@ -663,12 +669,15 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         dlg = DetailWindow(None, -1, itemmmsi)
         dlg.Show()
 
-    def OnUpdate(self, message):
-        # Check if a row is selected, if true, extract the mmsi
-        selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
-        if selected_row != -1:
-            selected_mmsi = self.itemIndexMap[selected_row]
+    def OnItemSelected(self, event):
+        # When an object is selected, extract the MMSI number and
+        # put it in self.selected
+        self.selected = self.itemIndexMap[event.m_itemIndex]
 
+    def OnItemDeselected(self, event):
+        self.selected = -1
+
+    def OnUpdate(self, message):
         # See what message we should work with
         if 'update' in message:
             data = message['update']
@@ -704,26 +713,6 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
         # Extract the MMSI numbers as keys for the data
         self.itemIndexMap = self.itemDataMap.keys()
-
-        # Create a dictionary from query_result with mmsi as key and time as value
-        #self.itemOldMap = {}
-        #for v in query_result:
-        #    self.itemOldMap[v[0]] = v[1]
-
-        # Sort the data (including a refresh of the listctrl)
-        self.SortListItems()
-
-        # See if the previous selected row exists after the list update
-        # If the MMSI number is found, set the new position as selected
-        # If not found, deselect all objects
-        try:
-            if self.itemDataMap.has_key(selected_mmsi):
-                new_position = self.FindItem(-1, unicode(selected_mmsi))
-                self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
-            else:
-                for i in range(self.GetItemCount()):
-                    self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
-        except: pass
 
     def FormatData(self, data):
         # Create a temporary dict to hold data in the order of
@@ -765,7 +754,6 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
     def OnGetItemAttr(self, item):
         # Return an attribute
-
         # Get the mmsi of the item
         mmsi = self.itemIndexMap[item]
         # Create the attribute
@@ -781,9 +769,26 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         return self.attr
 
     def SortItems(self,sorter=cmp):
+        # Do the sort
         items = list(self.itemDataMap.keys())
         items.sort(sorter)
         self.itemIndexMap = items
+
+        # See if the previous selected row exists after the sort
+        # If the MMSI number is found, set the new position as
+        # selected and ensure that it is visible
+        # If not found, deselect all objects
+        try:
+            if self.selected in self.itemDataMap:
+                new_position = self.FindItem(-1, unicode(self.selected))
+                self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+                self.EnsureVisible(new_position)
+            else:
+                for i in range(self.GetItemCount()):
+                    self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
+                self.selected = -1
+        except: pass
+
 
     # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
     def GetListCtrl(self):
