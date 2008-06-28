@@ -75,13 +75,13 @@ gettext.install('aislogger', ".", unicode=False)
 
 ### Load or create configuration
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
-columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 50], 'callsign': [_("CS"), 60], 'latitude': [_("Latitude"), 85], 'longitude': [_("Longitude"), 90], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
+columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 50], 'callsign': [_("CS"), 60], 'latitude': [_("Latitude"), 105], 'longitude': [_("Longitude"), 110], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
 defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 'deleteitemtime': 3600, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': ''},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'alertfile_on': False, 'alertfile': '', 'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
-                 'position': {'override_on': False, 'latitude': '0', 'longitude': '0'},
+                 'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_c': {'serial_on': False, 'port': '2', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
@@ -122,6 +122,7 @@ config['alert'].comments['remarkfile'] = ['Filename of remark file']
 config['alert'].comments['alertsound_on'] = ['Enable audio alert']
 config['alert'].comments['alertsoundfile'] = ['Filename of wave sound file for audio alert']
 config['position'].comments['override_on'] = ['Enable manual position override']
+config['position'].comments['position_format'] = ['Define the position presentation format in DD, DM or DMS']
 config['position'].comments['latitude'] = ['Latitude in decimal degrees (DD)']
 config['position'].comments['longitude'] = ['Longitude in decimal degrees (DD)']
 config['network'].comments['server_on'] = ['Enable network server']
@@ -376,19 +377,10 @@ class MainWindow(wx.Frame):
         nbrgreyitems = len(self.grey_set)
         # See if we should update the position row
         if own_pos:
-            latitude = own_pos['ownlatitude']
-            longitude = own_pos['ownlongitude']
-            # Make the position more human-readable
-            if latitude > 0:
-                lat = 'lat ' + str(abs(latitude)) + u'° N'
-            elif latitude < 0:
-                lat = 'lat ' + str(abs(latitude)) + u'° S'
-            if longitude > 0:
-                long = 'long ' + str(abs(longitude)) + u'° E'
-            elif longitude < 0:
-                long = 'long ' + str(abs(longitude)) + u'° W'
+            # Get human-readable position
+            pos = PositionConversion(own_pos['ownlatitude'],own_pos['ownlongitude']).default
             # Print own position
-            self.SetStatusText(_("Own position: ") + lat + '  ' + long + '  (' + own_pos['owngeoref'] + ')', 0)
+            self.SetStatusText(_("Own position: ") + pos[0] + '  ' + pos[1] + '  (' + own_pos['owngeoref'] + ')', 0)
         # Print number of objects-string
         self.SetStatusText(_("Total nbr of objects / old: ") + str(nbritems) + ' / ' + str(nbrgreyitems), 1)
 
@@ -472,6 +464,76 @@ class MainWindow(wx.Frame):
     def OnSettings(self, event):
         dlg = SettingsWindow(None, -1)
         dlg.Show()
+
+
+class PositionConversion(object):
+    # Makes position conversions from position in a DD format
+    # to human-readable strings in DD, DM or DMS format
+    # Input must be of type decimal.Decimal
+    def __init__(self, lat, long):
+        self.latitude = lat
+        self.longitude = long
+
+    @property
+    def default(self):
+        # Extract the format we should use from configuration, and
+        # return the right function
+        format = config['position']['position_format'].lower()
+        if format == 'dms':
+            return self.dms
+        elif format == 'dm':
+            return self.dm
+        elif format == 'dd':
+            return self.dd
+
+    @property
+    def dd(self):
+        # Return a human-readable DD position
+        if self.latitude > 0:
+            lat = str(abs(self.latitude)) + u'°N'
+        elif self.latitude < 0:
+            lat = str(abs(self.latitude)) + u'°S'
+        if self.longitude > 0:
+            long = str(abs(self.longitude)) + u'°E'
+        elif self.longitude < 0:
+            long = str(abs(self.longitude)) + u'°W'
+        return lat, long
+
+    @property
+    def dm(self):
+        # Return a human-readable DM position
+        latdegree = int(self.latitude)
+        longdegree = int(self.longitude)
+        latmin = ((self.latitude - latdegree) * 60).quantize(decimal.Decimal('0.0001')).normalize()
+        longmin = ((self.longitude - longdegree) * 60).quantize(decimal.Decimal('0.0001')).normalize()
+        if self.latitude > 0:
+            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(abs(latmin)) + "'N"
+        elif self.latitude < 0:
+            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(abs(latmin)) + "'S"
+        if self.longitude > 0:
+            long = str(abs(longdegree)).zfill(3) + u'°'+ str(abs(longmin)) + "'E"
+        elif self.longitude < 0:
+            long = str(abs(longdegree)).zfill(3) + u'°' + str(abs(longmin)) + "'W"
+        return lat, long
+
+    @property
+    def dms(self):
+        # Return a human-readable DMS position
+        latdegree = int(self.latitude)
+        longdegree = int(self.longitude)
+        latmin = (self.latitude - latdegree) * 60
+        longmin = (self.longitude - longdegree) * 60
+        latsec = ((latmin - int(latmin)) * 60).quantize(decimal.Decimal('0.01')).normalize()
+        longsec = ((longmin - int(longmin)) * 60).quantize(decimal.Decimal('0.01')).normalize()
+        if self.latitude > 0:
+            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(int(abs(latmin))).zfill(2) + "'" + str(abs(latsec)) + "''N"
+        elif self.latitude < 0:
+            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(int(abs(latmin))).zfill(2) + "'" + str(abs(latsec)) + "''S"
+        if self.longitude > 0:
+            long = str(abs(longdegree)).zfill(3) + u'°'+ str(int(abs(longmin))).zfill(2) + "'" + str(abs(longsec)) + "''E"
+        elif self.longitude < 0:
+            long = str(abs(longdegree)).zfill(3) + u'°' + str(int(abs(longmin))).zfill(2) + "'" + str(abs(longsec)) + "''W"
+        return lat, long
 
 
 class ListWindow(wx.Panel):
@@ -644,6 +706,8 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # Create a temporary dict to hold data in the order of
         # self.columnlist so that the virtual listctrl can use it
         new = []
+        latpos = None
+        longpos = None
         # Loop over the columns we will show
         for i, col in enumerate(self.columnlist):
             # Append the list
@@ -663,10 +727,21 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                 if col == 'time':
                     try: new[i] = data[col].isoformat()[11:19]
                     except: new[i] = ''
+                if col == 'latitude':
+                    latpos = i
+                if col == 'longitude':
+                    longpos = i
                 if col == 'posacc':
                     if data[col] == 0: new[i] = u'Bad'
                     elif data[col] == 1: new[i] = u'DGPS'
                     else: new[i] = ''
+        # Get position in a more human-readable format
+        if data.get('latitude',False) and data.get('longitude',False):
+            pos = PositionConversion(data['latitude'],data['longitude']).default
+            if latpos:
+                new[latpos] = pos[0]
+            if longpos:
+                new[longpos] = pos[1]
         return new
 
     def OnGetItemText(self, item, col):
