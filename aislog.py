@@ -736,7 +736,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                     elif data[col] == 1: new[i] = u'DGPS'
                     else: new[i] = ''
         # Get position in a more human-readable format
-        if data.get('latitude',False) and data.get('longitude',False):
+        if data.get('latitude',False) and data.get('longitude',False) and data['latitude'] != 'N/A' and data['longitude'] != 'N/A':
             pos = PositionConversion(data['latitude'],data['longitude']).default
             if latpos:
                 new[latpos] = pos[0]

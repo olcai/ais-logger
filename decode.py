@@ -520,7 +520,7 @@ def calclatitude(binary_latitude):
     latitude = int(binary_latitude[1:],2)
     # See if the latitude are undefined
     if latitude == 54600000:
-        return decimal.Decimal("91") # N/A
+        return None # N/A
     # Else, calculate the latitude
     if sign: # Negative == South
         latitude = 67108864 - latitude
@@ -538,7 +538,7 @@ def saab_calclatitude(latitude):
         latitude = 4294967296 - latitude
         degree = -decimal.Decimal(latitude) / 600000 # 10000 * 60
     else:
-        return decimal.Decimal("91") # N/A
+        return None # N/A
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
 
@@ -549,7 +549,7 @@ def calclongitude(binary_longitude):
     longitude = int(binary_longitude[1:],2)
     # See if the longitude are undefined
     if longitude == 108600000:
-        return decimal.Decimal("181") # N/A
+        return None # N/A
     # Else, calculate the longitude
     if sign: # Negative == West
         longitude = 134217728 - longitude
@@ -567,7 +567,7 @@ def saab_calclongitude(longitude):
         longitude = 4294967296 - longitude
         degree = -decimal.Decimal(longitude) / 600000 # 10000 * 60
     else:
-        return decimal.Decimal("181") # N/A
+        return None # N/A
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
 
