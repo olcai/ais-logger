@@ -155,10 +155,13 @@ start_time = datetime.datetime.now()
 
 
 class MainWindow(wx.Frame):
-    # Intialize two sets, active_set for the MMSI numers who are active,
-    # grey_set for grey-outed MMSI numbers
+    # Intialize some sets and dictionaries,
+    # active_set for the MMSI numers who are active,
+    # grey_set for grey-outed MMSI numbers,
+    # detailwindow_dict for keeping track of open Detail Windows
     active_set = set()
     grey_set = set()
+    detailwindow_dict = {}
 
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, size=(800,500))
@@ -241,7 +244,7 @@ class MainWindow(wx.Frame):
 
     def GetMessages(self, event):
         # Get messages from main thread
-        messages = MainThread().ReturnOutgoing()
+        messages = main_thread.ReturnOutgoing()
         # See what to do with them
         for message in messages:
             if 'update' in message:
@@ -251,6 +254,9 @@ class MainWindow(wx.Frame):
                 # Update lists
                 self.splist.Update(message)
                 self.spalert.Update(message)
+                # See if we should send to a detail window
+                if message['update']['mmsi'] in self.detailwindow_dict:
+                    self.detailwindow_dict[message['update']['mmsi']].DoUpdate(message['update'])
             elif 'insert' in message:
                 # Insert to active_set
                 self.active_set.add(message['insert']['mmsi'])
@@ -280,6 +286,10 @@ class MainWindow(wx.Frame):
             elif 'own_position' in message:
                 # Refresh status row with own_position
                 self.OnRefreshStatus(message['own_position'])
+            elif 'query' in message:
+                # See if we should send to a detail window
+                if message['query']['mmsi'] in self.detailwindow_dict:
+                    self.detailwindow_dict[message['query']['mmsi']].DoUpdate(message['query'])
         # Refresh the listctrls (by sorting)
         self.splist.Refresh()
         self.spalert.Refresh()
@@ -287,6 +297,18 @@ class MainWindow(wx.Frame):
     def splitwindows(self, window=None):
         if self.split.IsSplit(): self.split.Unsplit(window)
         else: self.split.SplitHorizontally(self.splist, self.spalert, 0)
+
+    def AddDetailWindow(self, window, mmsi):
+        # If there already is a window open with the same MMSI number,
+        # destroy the new window. Else add window dict
+        if mmsi in self.detailwindow_dict:
+            window.Destroy()
+        else:
+            self.detailwindow_dict[mmsi] = window
+
+    def RemoveDetailWindow(self, mmsi):
+        # Remove window from the dict
+        del self.detailwindow_dict[mmsi]
 
     def readmid(self):
         # Read a list from MID to nation from file mid.lst
@@ -426,7 +448,6 @@ class MainWindow(wx.Frame):
         progress = wx.ProgressDialog(_("Loading file..."), _("Loading file..."), num_lines)
 
         # Step through each row in the file
-        commt = CommHubThread()
         name = 'File'
         lastupdate_line = 0
         for linenumber, line in enumerate(f):
@@ -434,7 +455,7 @@ class MainWindow(wx.Frame):
             # If indata contains raw data, pass it along
             if line[0] == '!' or line[0] == '$':
                 # Put it in CommHubThread's queue
-                commt.put([name,line])
+                comm_hub_thread.put([name,line])
 
             # Update the progress dialog for each 100 rows
             if lastupdate_line + 100 < linenumber:
@@ -777,13 +798,11 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
         # See if the previous selected row exists after the sort
         # If the MMSI number is found, set the new position as
-        # selected and ensure that it is visible
-        # If not found, deselect all objects
+        # selected. If not found, deselect all objects
         try:
             if self.selected in self.itemDataMap:
                 new_position = self.FindItem(-1, unicode(self.selected))
                 self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
-                self.EnsureVisible(new_position)
             else:
                 for i in range(self.GetItemCount()):
                     self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
@@ -802,8 +821,11 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
 class DetailWindow(wx.Dialog):
     def __init__(self, parent, id, itemmmsi):
+        # Set self.itemmmsi to itemmmsi
+        self.itemmmsi = itemmmsi
+
         # Define the dialog
-        wx.Dialog.__init__(self, parent, id, title=_("Detail window"))
+        wx.Dialog.__init__(self, parent, id, title=str(itemmmsi)+' - '+_("Detail window"))
         # Create panels
         shipdata_panel = wx.Panel(self, -1)
         voyagedata_panel = wx.Panel(self, -1)
@@ -812,10 +834,10 @@ class DetailWindow(wx.Dialog):
         remark_panel = wx.Panel(self, -1)
         # Create static boxes
         wx.StaticBox(shipdata_panel,-1,_(" Ship data "),pos=(3,5),size=(400,205))
-        wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(290,205))
-        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,105))
-        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(290,145))
-        wx.StaticBox(remark_panel,-1,_(" Remark "), pos=(3,5),size=(400,60))
+        wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(350,205))
+        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,65))
+        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(350,145))
+        wx.StaticBox(remark_panel,-1,_(" Remark "), pos=(3,5),size=(400,75))
         # Ship data
         wx.StaticText(shipdata_panel,-1,_("MMSI nbr: "),pos=(12,25),size=(150,16))
         wx.StaticText(shipdata_panel,-1,_("IMO nbr: "),pos=(12,45),size=(150,16))
@@ -837,8 +859,8 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(voyagedata_panel,-1,_("Heading: "),pos=(12,165),size=(150,16))
         wx.StaticText(voyagedata_panel,-1,_("Rate of turn: "),pos=(12,185),size=(150,16))
         # Transponder data
-        wx.StaticText(transponderdata_panel,-1,_("Nav Status: "),pos=(12,65),size=(150,16))
-        wx.StaticText(transponderdata_panel,-1,_("Accuracy: "),pos=(12,85),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Nav Status: "),pos=(12,25),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Pos Accuracy: "),pos=(12,45),size=(150,16))
         # Object information such as bearing and distance
         wx.StaticText(objinfo_panel,-1,_("Bearing: "),pos=(12,25),size=(150,16))
         wx.StaticText(objinfo_panel,-1,_("Distance: "),pos=(12,45),size=(150,16))
@@ -858,31 +880,39 @@ class DetailWindow(wx.Dialog):
         self.text_width = wx.StaticText(shipdata_panel,-1,'',pos=(100,165),size=(300,16))
         self.text_draught = wx.StaticText(shipdata_panel,-1,'',pos=(100,185),size=(300,16))
         # Set voyage data
-        self.text_destination = wx.StaticText(voyagedata_panel,-1,'',pos=(100,25),size=(185,16))
-        self.text_etatime = wx.StaticText(voyagedata_panel,-1,'',pos=(100,45),size=(185,16))
-        self.text_latitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,65),size=(185,16))
-        self.text_longitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,85),size=(185,16))
-        self.text_georef = wx.StaticText(voyagedata_panel,-1,'',pos=(100,105),size=(185,16))
-        self.text_sog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,125),size=(185,16))
-        self.text_cog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,145),size=(185,16))
-        self.text_heading = wx.StaticText(voyagedata_panel,-1,'',pos=(100,165),size=(185,16))
-        self.text_rateofturn = wx.StaticText(voyagedata_panel,-1,'',pos=(100,185),size=(185,16))
+        self.text_destination = wx.StaticText(voyagedata_panel,-1,'',pos=(100,25),size=(245,16))
+        self.text_etatime = wx.StaticText(voyagedata_panel,-1,'',pos=(100,45),size=(245,16))
+        self.text_latitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,65),size=(245,16))
+        self.text_longitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,85),size=(245,16))
+        self.text_georef = wx.StaticText(voyagedata_panel,-1,'',pos=(100,105),size=(245,16))
+        self.text_sog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,125),size=(245,16))
+        self.text_cog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,145),size=(245,16))
+        self.text_heading = wx.StaticText(voyagedata_panel,-1,'',pos=(100,165),size=(245,16))
+        self.text_rateofturn = wx.StaticText(voyagedata_panel,-1,'',pos=(100,185),size=(245,16))
         # Set transponderdata
-        self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(105,65),size=(185,16))
-        self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(105,85),size=(185,16))
+        self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(105,25),size=(185,16))
+        self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(105,45),size=(185,16))
         # Set object information
-        self.text_bearing = wx.StaticText(objinfo_panel,-1,'',pos=(105,25),size=(185,16))
-        self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(185,16))
-        self.text_updates = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(185,16))
-        self.text_source = wx.StaticText(objinfo_panel,-1,'',pos=(105,85),size=(185,16))
-        self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(185,16))
-        self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(185,16))
+        self.text_bearing = wx.StaticText(objinfo_panel,-1,'',pos=(105,25),size=(245,16))
+        self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(245,16))
+        self.text_updates = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(245,16))
+        self.text_source = wx.StaticText(objinfo_panel,-1,'',pos=(105,85),size=(245,16))
+        self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(245,16))
+        self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(245,16))
         # Set remark text
-        self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(12,25),size=(370,35),style=wx.ST_NO_AUTORESIZE)
+        self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(12,25),size=(370,50),style=wx.ST_NO_AUTORESIZE)
+
+        # Add window to the message detail window send list
+        main_window.AddDetailWindow(self, itemmmsi)
+
+        # Set query in MainThread's queue
+        main_thread.put({'query': itemmmsi})
 
         # Buttons & events
         closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
+        closebutton.SetFocus()
         self.Bind(wx.EVT_BUTTON, self.OnClose, id=1)
+        self.Bind(wx.EVT_KEY_UP, self.OnKey)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
         # Sizer setup
@@ -904,98 +934,94 @@ class DetailWindow(wx.Dialog):
         mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
         self.SetSizerAndFit(mainsizer)
 
-        # Set self.itemmmsi to itemmmsi
-        self.itemmmsi = itemmmsi
+    def OnKey(self, event):
+        # Close dialog if escape is pressed
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.OnClose(event)
 
-        # Update the initial data
-        self.OnUpdate('')
-
-        # Timer for updating the window
-        self.timer = wx.Timer(self, -1)
-        self.timer.Start(2000)
-        wx.EVT_TIMER(self, -1, self.OnUpdate)
-
-    def OnUpdate(self, event):
-        # Query based on object's MMSI number
-        try: itemdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM data WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
-        except: return
-        try: iddbdata = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE mmsi LIKE ?", (self.itemmmsi,))]))[0]
-        except: pass
+    def DoUpdate(self, data):
         # Set ship data
-        self.text_mmsi.SetLabel(str(itemdata[0]))
-        try:
-            if itemdata[2]: self.text_imo.SetLabel(itemdata[2])
-            elif not itemdata[2] and iddbdata[1]: self.text_imo.SetLabel('* '+str(iddbdata[1])+' *')
-        except: pass
-        if itemdata[1] or not itemdata[1]:
-            country = _("[Non ISO]")
-            if itemdata[1]: country = itemdata[1]
-            if midfull.has_key(str(itemdata[0])[0:3]): country += ' - ' + midfull[str(itemdata[0])[0:3]]
-            self.text_country.SetLabel(country)
-        try:
-            if itemdata[3]: self.text_name.SetLabel(itemdata[3])
-            elif not itemdata[3] and iddbdata[2]: self.text_name.SetLabel('* '+str(iddbdata[2])+' *')
-        except: pass
-        if itemdata[4] and itemdata[5]: self.text_type.SetLabel(itemdata[4]+' - '+itemdata[5])
-        try:
-            if itemdata[6]: self.text_callsign.SetLabel(itemdata[6])
-            elif not itemdata[6] and iddbdata[3]: self.text_callsign.SetLabel('* '+str(iddbdata[3])+' *')
-        except: pass
-        if itemdata[17]: self.text_length.SetLabel(itemdata[17]+' m')
-        if itemdata[18]: self.text_width.SetLabel(itemdata[18]+' m')
-        if itemdata[19]: self.text_draught.SetLabel(itemdata[19]+' m')
+        self.text_mmsi.SetLabel(str(data['mmsi']))
+        if data['imo']: self.text_imo.SetLabel(str(data['imo']))
+        if data['mid']: country = data['mid']
+        else: country = _("[Non ISO]")
+        if str(data['mmsi'])[0:3] in midfull: country += ' - ' + midfull[str(data['mmsi'])[0:3]]
+        self.text_country.SetLabel(country)
+        if data['name']: self.text_name.SetLabel(data['name'])
+        if data['type']: type = str(data['type'])
+        else: type = ''
+        if data['typename']: type += ' - ' + str(data['typename'])
+        self.text_type.SetLabel(type)
+        if data['callsign']: self.text_callsign.SetLabel(data['callsign'])
+        if data['length'] == 'N/A': self.text_length.SetLabel('N/A')
+        elif not data['length'] is None: self.text_length.SetLabel(str(data['length'])+' m')
+        if data['width'] == 'N/A': self.text_width.SetLabel('N/A')
+        elif not data['width'] is None: self.text_width.SetLabel(str(data['width'])+' m')
+        if data['draught'] == 'N/A': self.text_draught.SetLabel('N/A')
+        elif not data['draught'] is None: self.text_draught.SetLabel(str(data['draught'])+' m')
         # Set voyage data
-        if itemdata[15]: self.text_destination.SetLabel(itemdata[15])
-        if itemdata[16]:
+        if data['destination']: self.text_destination.SetLabel(data['destination'])
+        if data['eta']:
             try:
-                etatime = 0,int(itemdata[16][0:2]),int(itemdata[16][2:4]),int(itemdata[16][4:6]),int(itemdata[16][6:8]),1,1,1,1
+                etatime = 0,int(data['eta'][0:2]),int(data['eta'][2:4]),int(data['eta'][4:6]),int(data['eta'][6:8]),1,1,1,1
                 fulletatime = time.strftime(_("%d %B at %H:%M"),etatime)
-            except: fulletatime = itemdata[16]
-            if fulletatime == '00002460': fulletatime = ''
+            except: fulletatime = data['eta']
+            if fulletatime == '00002460': fulletatime = 'N/A'
             self.text_etatime.SetLabel(fulletatime)
-        if itemdata[7]:
-            latitude = str(itemdata[7])
-            try: latitude =  latitude[1:3] + u'° ' + latitude[3:5] + '.' + latitude[5:] + "' " + latitude[0:1]
-            except: pass
-            self.text_latitude.SetLabel(latitude)
-        if itemdata[8]:
-            longitude = str(itemdata[8])
-            try: longitude = longitude[1:4] + u'° ' + longitude[4:6] + '.' + longitude[6:] + "' " + longitude[0:1]
-            except: pass
-            self.text_longitude.SetLabel(longitude)
-        if itemdata[9]: self.text_georef.SetLabel(itemdata[9])
-        if itemdata[12]: self.text_sog.SetLabel(str(itemdata[12])+' kn')
-        if itemdata[13]: self.text_cog.SetLabel(str(itemdata[13])+u'°')
-        if itemdata[14]: self.text_heading.SetLabel(str(itemdata[14])+u'°')
-        if itemdata[20]: self.text_rateofturn.SetLabel(str(itemdata[20])+u' °/m')
+        if data.get('latitude',False) and data.get('longitude',False) and data['latitude'] != 'N/A' and data['longitude'] != 'N/A':
+            pos = PositionConversion(data['latitude'],data['longitude']).default
+            self.text_latitude.SetLabel(pos[0])
+            self.text_longitude.SetLabel(pos[1])
+        elif not data['latitude'] is None and not data['longitude'] is None:
+            self.text_latitude.SetLabel(data['latitude'])
+            self.text_longitude.SetLabel(data['longitude'])
+        if data['georef']: self.text_georef.SetLabel(data['georef'])
+        if data['sog'] == 'N/A': self.text_sog.SetLabel('N/A')
+        elif not data['sog'] is None: self.text_sog.SetLabel(str(data['sog'])+' kn')
+        if data['cog'] == 'N/A': self.text_cog.SetLabel('N/A')
+        elif not data['cog'] is None: self.text_cog.SetLabel(str(data['cog'])+u'°')
+        if data['heading'] == 'N/A':  self.text_heading.SetLabel('N/A')
+        elif not data['heading'] is None: self.text_heading.SetLabel(str(data['heading'])+u'°')
+        if data['rot'] == 'N/A': self.text_rateofturn.SetLabel('N/A')
+        elif not data['rot'] is None: self.text_rateofturn.SetLabel(str(data['rot'])+u'°/m')
         # Set transponder data
-        if itemdata[23]:
-            self.text_navstatus.SetLabel(itemdata[23])
-        if itemdata[24]:
-            if itemdata[24] == '0': posacc = _("Good / GPS")
-            else: posacc = _("Very good / DGPS")
+        navstatus = data['navstatus']
+        if navstatus == None: navstatus = ''
+        elif navstatus == 0: navstatus = _("Under Way")
+        elif navstatus == 1: navstatus = _("At Anchor")
+        elif navstatus == 2: navstatus = _("Not Under Command")
+        elif navstatus == 3: navstatus = _("Restricted Manoeuvrability")
+        elif navstatus == 4: navstatus = _("Constrained by her draught")
+        elif navstatus == 5: navstatus = _("Moored")
+        elif navstatus == 6: navstatus = _("Aground")
+        elif navstatus == 7: navstatus = _("Engaged in Fishing")
+        elif navstatus == 8: navstatus = _("Under way sailing")
+        else: navstatus = str(navstatus)
+        self.text_navstatus.SetLabel(navstatus)
+        if not data['posacc'] is None:
+            if data['posacc']: posacc = _("Very good / DGPS")
+            else: posacc = _("Good / GPS")
             self.text_posacc.SetLabel(posacc)
         # Set local info
-        if itemdata[25] and itemdata[26]:
-            self.text_bearing.SetLabel(str(itemdata[26])+u'°')
-            self.text_distance.SetLabel(str(itemdata[25])+' km')
-        if itemdata[10]:
-            try: creationtime = itemdata[10].replace('T', " "+_("at")+" ")
-            except: creationtime = ''
-            self.text_creationtime.SetLabel(creationtime)
-        if itemdata[11]:
-            try: lasttime = itemdata[11].replace('T', " "+_("at")+" ")
-            except: lasttime = ''
-            self.text_time.SetLabel(lasttime)
-        if itemdata[28]:
-            self.text_updates.SetLabel(str(itemdata[28]))
-        if itemdata[27]:
-            self.text_source.SetLabel(str(itemdata[27]))
+        if data['bearing'] and data['distance']:
+            self.text_bearing.SetLabel(str(data['bearing'])+u'°')
+            self.text_distance.SetLabel(str(data['distance'])+' km')
+        if data['creationtime']:
+            self.text_creationtime.SetLabel(data['creationtime'].strftime('%Y-%m-%d %H:%M:%S'))
+        if data['time']:
+            self.text_time.SetLabel(data['time'].strftime('%Y-%m-%d %H:%M:%S'))
+        if not data['__version__'] is None:
+            self.text_updates.SetLabel(str(data['__version__']))
+        if data['source']:
+            self.text_source.SetLabel(str(data['source']))
         # Set remark text
-        if remarkdict.has_key(int(itemdata[0])): self.text_remark.SetLabel(unicode(remarkdict[int(itemdata[0])]))
+        if 'remark' in data:
+            self.text_remark.SetLabel(unicode(remarkdict[data['remark']]))
 
     def OnClose(self, event):
-        self.timer.Stop()
+        # Remove window to the message detail window send list
+        main_window.RemoveDetailWindow(self.itemmmsi)
+        # Destory dialog
         self.Destroy()
 
 
@@ -2696,18 +2722,18 @@ class AdvancedAlertWindow(wx.Dialog):
 
 class GUI(wx.App):
     def OnInit(self):
-        frame = MainWindow(None, -1, 'AIS Logger')
-        frame.Show(True)
+        self.frame = MainWindow(None, -1, 'AIS Logger')
+        self.frame.Show(True)
         return True
+
+    def GetFrame(self):
+        return self.frame
 
 
 class SerialThread:
     queue = Queue.Queue()
 
     def reader(self, port, baudrate, rtscts, xonxoff, repr_mode, portname):
-        # Define instance variables
-        maint = MainThread()
-        serialt = SerialThread()
         self.stats = {"received": 0, "parsed": 0}
         # Set queueitem and temp to empty, and seq_temp to "illegal" value
         queueitem = ''
@@ -2778,7 +2804,7 @@ class SerialThread:
                 if len(parser) > 0:
                     # Set source in parser as serial with portname and real port
                     parser['source'] = "Serial port " + portname + " (" + port + ")"
-                    maint.put(parser)
+                    main_thread.put(parser)
                     # Add to stats variable. If the message was more than one
                     # line, add that number to stats.
                     if nbr_several_parsed > 0:
@@ -2924,8 +2950,6 @@ class NetworkClientThread:
     queue = Queue.Queue()
 
     def client(self):
-        # Define thread to send data to
-        commt = CommHubThread()
         # Set empty queueitem
         queueitem = ''
         # Get config data and set empty dicts
@@ -2987,7 +3011,7 @@ class NetworkClientThread:
                     # If indata contains raw data, pass it along
                     if indata[0] == '!' or indata[0] == '$':
                         # Put it in CommHubThread's queue
-                        commt.put([name,indata])
+                        comm_hub_thread.put([name,indata])
 
     def put(self, item):
         self.queue.put(item)
@@ -3009,8 +3033,6 @@ class CommHubThread:
     incoming_queue = Queue.Queue()
 
     def runner(self):
-        # Define thread to send data to
-        maint = MainThread()
         # The routing matrix consists of a dict with key 'input'
         # and value 'output list'
         routing_matrix = {}
@@ -3090,7 +3112,7 @@ class CommHubThread:
                     # Set source in parser
                     parser['source'] = source
                     # Send data to main thread
-                    maint.put(parser)
+                    main_thread.put(parser)
                     # Add to stats variable
                     #self.stats[source]["parsed"] += 1
                 elif 'ownlatitude' and 'ownlongitude' in parser:
@@ -3282,7 +3304,7 @@ class MainThread:
         # Return the updated object and the iddb entry
         return self.db_main[main_record['__id__']], iddb, new
 
-    def UpdateMsg(self, object_info, iddb, new=False):
+    def UpdateMsg(self, object_info, iddb, new=False, query=False):
         # Define the dict we're going to send
         message = {}
 
@@ -3303,9 +3325,11 @@ class MainThread:
         message['soundalert'] = False
         # If, so DB should be updated...
 
-        # Make update or insert message
+        # Make update, insert or query message
         if new:
             message['insert'] = object_info
+        elif query:
+            message['query'] = object_info
         else:
             message['update'] = object_info
         # Call function to send message
@@ -3318,6 +3342,7 @@ class MainThread:
         # Calculate datetime objects to compare with
         old_limit = datetime.datetime.now()-datetime.timedelta(seconds=config['common'].as_int('listmakegreytime'))
         remove_limit = datetime.datetime.now()-datetime.timedelta(seconds=config['common'].as_int('deleteitemtime'))
+
 
         # Compare objects in db against old_limit and remove_limit
         old_objects = [ r for r in self.db_main
@@ -3387,8 +3412,23 @@ class MainThread:
                 self.consumers.append(incoming['add_consumer'])
             elif 'consumer_delete' in incoming and incoming['consumer_delete'] in self.consumers:
                 self.consumers.delete(incoming['consumer_delete'])
-            elif 'query' in incoming:
-                print "--> Write query code, stupid!"
+            elif 'query' in incoming and incoming['query'] > 0:
+                # Fetch the current data in DB for MMSI
+                query = self.db_main._mmsi[incoming['query']]
+                # Return a dictionary of query
+                if len(query) == 0:
+                    query = {}
+                elif len(query) > 0:
+                    query = query[0]
+                # Fetch current data in IDDB
+                iddb = self.db_iddb._mmsi[incoming['query']]
+                # Return a dictionary of iddb
+                if len(iddb) == 0:
+                    iddb = {}
+                elif len(iddb) > 0:
+                    iddb = iddb[0]
+                # Send the message
+                self.UpdateMsg(query, iddb, query=True)
 
             # Remove or mark objects as old if last update time is above threshold
             if lastchecktime + 10 < time.time():
@@ -3550,9 +3590,11 @@ class MainThread:
         self.put('stop')
 
 
-# Start threads
-MainThread().start()
-CommHubThread().start()
+# Start and define threads
+main_thread = MainThread()
+main_thread.start()
+comm_hub_thread = CommHubThread()
+comm_hub_thread.start()
 if config['serial_a'].as_bool('serial_on'):
     seriala = SerialThread()
     seriala.start('serial_a')
@@ -3589,14 +3631,15 @@ def GetStats():
 # Wait some time before initiating, to let the threads settle
 time.sleep(0.2)
 app = GUI(0)
+main_window = app.GetFrame()
 app.MainLoop()
 
 # Stop threads
 SerialThread().stop()
 NetworkServerThread().stop()
 NetworkClientThread().stop()
-CommHubThread().stop()
-MainThread().stop()
+comm_hub_thread.stop()
+main_thread.stop()
 
 # Exit program when only one thread remains
 while True:
