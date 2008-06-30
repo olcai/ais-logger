@@ -715,7 +715,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             self.greyitems.discard(mmsi)
             self.alertitems.discard(mmsi)
             # Remove object from list dict
-            del self.itemDataMap[message[mmsi]]
+            del self.itemDataMap[mmsi]
         elif 'old' in message:
             # Simply add object to set
             self.greyitems.add(message['old'])
@@ -3214,6 +3214,27 @@ class MainThread:
         # Fetch the current data in DB for MMSI (if exists)
         currentdata = self.db_main._mmsi[incoming_mmsi]
 
+        # Define a dictionary to hold update data
+        update_dict = {}
+
+        # Check if report is from a base station or a SAR station
+        if 'message' in self.incoming_packet:
+            # If message type 4 (Base Station Report), set property to True
+            if self.incoming_packet['message'] == 4:
+                update_dict['base_station'] = True
+            # Abort insertion if message type 9 (Special Position Report)
+            elif self.incoming_packet['message'] == 9:
+                return None
+            # FIXME: Should we just throw away these messages?
+            elif self.incoming_packet['message'] == 6:
+                return None
+            elif self.incoming_packet['message'] == 8:
+                return None
+            elif self.incoming_packet['message'] == 12:
+                return None
+            elif self.incoming_packet['message'] == 14:
+                return None
+
         # If not currently in DB, add the mmsi number, creation time and MID code
         if len(currentdata) == 0:
             # Set variable to indicate a new object
@@ -3223,7 +3244,8 @@ class MainThread:
                 mid_code = mid[str(self.incoming_packet['mmsi'])[0:3]]
             else:
                 mid_code = None
-            self.db_main.insert(mmsi=incoming_mmsi,mid=mid_code,creationtime=self.incoming_packet['time'])
+            self.db_main.insert(mmsi=incoming_mmsi,mid=mid_code,creationtime=self.incoming_packet['time'],
+                                time=self.incoming_packet['time'])
             currentdata = self.db_main._mmsi[incoming_mmsi]
 
         # Get the record so that we can address it
@@ -3253,8 +3275,6 @@ class MainThread:
             # We don't update iddb och iddb_record because there is no need, the info
             # will not be used later anyway
 
-        # Define a dictionary to hold update data
-        update_dict = {}
         # Iterate over incoming and copy matching fields to update_dict
         for key, value in self.incoming_packet.iteritems():
             if key in self.dbfields:
@@ -3282,15 +3302,6 @@ class MainThread:
                 update_dict['distance'] = decimal.Decimal(str(dist['km'])).quantize(decimal.Decimal('0.1'))
                 update_dict['bearing'] = decimal.Decimal(str(dist['bearing'])).quantize(decimal.Decimal('0.1'))
             except: pass
-
-        # Check if report is from a base station or a SAR station
-        if 'message' in self.incoming_packet:
-            # If message type 4 (Base Station Report), set property to True
-            if self.incoming_packet['message'] == 4:
-                update_dict['base_station'] = True
-            # Abort insertion if message type 9 (Special Position Report)
-            elif self.incoming_packet['message'] == 9:
-                return None
 
         # Update the DB with new data
         self.db_main.update(main_record,old=False,**update_dict)
@@ -3342,7 +3353,6 @@ class MainThread:
         # Calculate datetime objects to compare with
         old_limit = datetime.datetime.now()-datetime.timedelta(seconds=config['common'].as_int('listmakegreytime'))
         remove_limit = datetime.datetime.now()-datetime.timedelta(seconds=config['common'].as_int('deleteitemtime'))
-
 
         # Compare objects in db against old_limit and remove_limit
         old_objects = [ r for r in self.db_main

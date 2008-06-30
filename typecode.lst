@@ -8,14 +8,14 @@
 27,WIG
 28,WIG
 29,WIG
-30,Fiske
-31,Släp
-32,Släp
-33,Undervattensop
-34,Dykop
+30,Fiskebåt
+31,Bogserare
+32,Bogserare (stor)
+33,Mudderverk
+34,Dykftg
 35,Mil
-36,Segling
-37,-
+36,Segelftg
+37,Fritidsbåt
 38,-
 39,-
 40,HSC
@@ -30,12 +30,12 @@
 49,HSC
 50,Lots
 51,SAR
-52,BB
-53,Tender
+52,Bogserare
+53,Hamnlots
 54,MSKY
 55,'KBV'
 56,-
-47,-
+57,-
 58,'LASS-ftg'
 59,-
 60,PASS

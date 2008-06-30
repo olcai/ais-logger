@@ -286,7 +286,7 @@ def telegramparser(inputstring):
 
 
         # If the sentence contains message 4 - Base Station Report:
-        if message == 4:
+        elif message == 4:
             # Check the checksum
             if not checksum(inputstring):
                 return
@@ -321,7 +321,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 5 - Ship Static and Voyage
         # Related Data:
-        if message == 5 and int(bindata[38:40],2) == 0:
+        elif message == 5 and int(bindata[38:40],2) == 0:
             # Check the checksum
             if not checksum(inputstring):
                 return
@@ -371,8 +371,65 @@ def telegramparser(inputstring):
                     'time': timestamp,
                     'message': message}
 
-        # If the sentence contains message 9 - Special Position Report:
-        if message == 9:
+        # If the sentence contains message 6 - Addressed Binary Message:
+        elif message == 6:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Sequence number
+            sequence = int(bindata[38:40],2)
+            # Destination MMSI number
+            to_mmsi = int(bindata[40:70],2)
+            # Application ID (Designated Area Code, DAC) + (Function
+            # Identification, FI)
+            dac = int(bindata[72:82],2)
+            fi = int(bindata[82:88],2)
+            # Binary data payload
+            payload = bindata[88:1048]
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Try to decode message payload
+            decoded = binaryparser(dac,fi,payload)
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'sequence': sequence,
+                    'to_mmsi': to_mmsi,
+                    'dac': dac,
+                    'fi': fi,
+                    'decoded': decoded,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 8 - Binary Broadcast Message:
+        elif message == 8:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Application ID (Designated Area Code, DAC) + (Function
+            # Identification, FI)
+            dac = int(bindata[40:50],2)
+            fi = int(bindata[50:56],2)
+            # Binary data payload
+            payload = bindata[56:1008]
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Try to decode message payload
+            decoded = binaryparser(dac,fi,payload)
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'dac': dac,
+                    'fi': fi,
+                    'decoded': decoded,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 9 - SAR Aircraft position
+        # report:
+        elif message == 9:
             # Check the checksum
             if not checksum(inputstring):
                 return
@@ -409,6 +466,182 @@ def telegramparser(inputstring):
                     'time': timestamp,
                     'message': message}
 
+        # If the sentence contains message 12 - Addressed safety
+        # related message:
+        elif message == 12:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Sequence number
+            sequence = int(bindata[38:40],2)
+            # Destination MMSI number
+            to_mmsi = int(bindata[40:70],2)
+            # Content of message in ASCII (replace any " with ')
+            content = bintoascii(bindata[72:1008]).replace('''"''',"'")
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'sequence': sequence,
+                    'to_mmsi': to_mmsi,
+                    'content': content,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 14 - Safety related
+        # Broadcast Message:
+        elif message == 14:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Content of message in ASCII (replace any " with ')
+            content = bintoascii(bindata[40:1008]).replace('''"''',"'")
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'content': content,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 18 - Standard Class B CS
+        # Position Report:
+        elif message == 18:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Speed over ground in 1/10 knots
+            sog = decimal.Decimal(int(bindata[46:56],2)) / 10
+            if sog > decimal.Decimal("102.2"):
+                sog = None # N/A
+            # Position accuracy where 0=bad and 1=good/DGPS
+            posacc = int(bindata[56],2)
+            # Longitude in decimal degrees (DD)
+            longitude = calclongitude(bindata[57:85])
+            # Latitude in decimal degrees (DD)
+            latitude = calclatitude(bindata[85:112])
+            # Course over ground in 1/10 degrees between 0-359
+            cog = decimal.Decimal(int(bindata[112:124],2)) / 10
+            if cog > 360: # 360 and above means 360=N/A
+                cog = None
+            # Heading in whole degrees between 0-359 and 511=N/A
+            heading = int(bindata[124:133],2)
+            if heading > 359:
+                heading = None # N/A
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'sog': sog,
+                    'cog': cog,
+                    'heading': heading,
+                    'posacc': posacc,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 19 - Extended Class B
+        # Equipment Position Report:
+        elif message == 19:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Speed over ground in 1/10 knots
+            sog = decimal.Decimal(int(bindata[46:56],2)) / 10
+            if sog > decimal.Decimal("102.2"):
+                sog = None # N/A
+            # Position accuracy where 0=bad and 1=good/DGPS
+            posacc = int(bindata[56],2)
+            # Longitude in decimal degrees (DD)
+            longitude = calclongitude(bindata[57:85])
+            # Latitude in decimal degrees (DD)
+            latitude = calclatitude(bindata[85:112])
+            # Course over ground in 1/10 degrees between 0-359
+            cog = decimal.Decimal(int(bindata[112:124],2)) / 10
+            if cog > 360: # 360 and above means 360=N/A
+                cog = None
+            # Heading in whole degrees between 0-359 and 511=N/A
+            heading = int(bindata[124:133],2)
+            if heading > 359:
+                heading = None # N/A
+            # Name, removes the characters @, ' ' and "
+            name = bintoascii(bindata[143:263]).strip('''@ ''').replace('''"''',"'")
+            # Ship type, a two-digit code where 00=N/A
+            type = int(bindata[263:271],2)
+            if type == 0:
+                type = None # N/A
+            # Ship length calculated from antenna position
+            length = (int(bindata[271:280],2) + int(bindata[280:289],2))
+            # Ship width calculated from antenna position
+            width = (int(bindata[289:295],2) + int(bindata[295:301],2))
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'sog': sog,
+                    'cog': cog,
+                    'heading': heading,
+                    'posacc': posacc,
+                    'name': name,
+                    'type': type,
+                    'length': length,
+                    'width': width,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 24 - Class B CS Static Data
+        # Report:
+        elif message == 24:
+            # Check the checksum
+            if not checksum(inputstring):
+                return
+            # MMSI number
+            mmsi = int(bindata[8:38],2)
+            # Timestamp the message with local time
+            timestamp = datetime.datetime.now()
+            # See if it is message part A or B
+            if int(bindata[38:40]) == 0: # Part A
+                # Name, removes the characters @, ' ' and "
+                name = bintoascii(bindata[40:160]).strip('''@ ''').replace('''"''',"'")
+                # Return a dictionary with descriptive keys
+                return {'mmsi': mmsi,
+                        'name': name,
+                        'time': timestamp,
+                        'message': message}
+            else: # Part B
+                # Ship type, a two-digit code where 00=N/A
+                type = int(bindata[40:48],2)
+                if type == 0:
+                    type = None # N/A
+                # Vendor ID, removes the characters @, ' ' and "
+                vendor = bintoascii(bindata[48:90]).strip('''@ ''').replace('''"''',"'")
+                # Callsign, removes the characters @, ' ' and "
+                callsign = bintoascii(bindata[90:132]).strip('''@ ''').replace('''"''',"'")
+                # Ship length calculated from antenna position
+                length = (int(bindata[132:141],2) + int(bindata[141:150],2))
+                # Ship width calculated from antenna position
+                width = (int(bindata[150:156],2) + int(bindata[156:162],2))
+                # Return a dictionary with descriptive keys
+                return {'mmsi': mmsi,
+                        'type': type,
+                        'vendor': vendor,
+                        'callsign': callsign,
+                        'length': length,
+                        'width': width,
+                        'time': timestamp,
+                        'message': message}
+
         else:
             # If we don't decode the message, at least return message type
             return {'message': message}
@@ -440,6 +673,145 @@ def telegramparser(inputstring):
         # Return a dictionary with descriptive keys
         return {'ownlatitude': latitude, 'ownlongitude': longitude, 'time': timestamp}
 
+
+def binaryparser(dac,fi,data):
+    # This function decodes known binary messages and returns the
+    # interesting data as a dictionary where each key describes
+    # the information of each message part.
+
+    # For each value where we have a N/A-state None is returned
+
+    # Initiate a return dict
+    retdict = {}
+
+    # If the message is IFM 0: free text message
+    if dac == 1 and fi == 0:
+        return {'text': bintoascii(data[12:]).strip('''@ ''').replace('''"''',"'")}
+
+    # If the message is an IMO Meterology and Hydrology Message,
+    # as specified in IMO SN/Circ. 236, Annex 2, Application 1:
+    elif dac == 1 and fi == 11:
+        # Latitude in decimal degrees (DD)
+        retdict['latitude'] = calclatitude(data[0:24])
+        # Longitude in decimal degrees (DD)
+        retdict['longitude'] = calclongitude(data[24:49])
+        # Bits 49-65 contains current station time in UTC (ddhhmm)
+        # We use computer time as a baseline for year and month
+        try:
+            station_time = datetime.datetime.utcnow()
+            station_time = station_time.replace(day=int(data[49:54],2),
+                                                hour=int(data[54:59],2),
+                                                minute=int(data[59:65],2),
+                                                second=0, microsecond=0)
+            retdict['station_time'] = station_time
+        except ValueError:
+            retdict['station_time'] = None # N/A
+        # Average of wind speed values for the last ten minutes, knots
+        retdict['average_wind_speed'] = standard_int_field(data[65:72])
+        # Wind gust (maximum wind speed value) during the last ten
+        # minutes, knots
+        retdict['wind_gust'] = standard_int_field(data[72:79])
+        # Wind direction in whole degrees
+        retdict['wind_direction'] = standard_int_field(data[79:88])
+        # Wind gust direction in whole degrees
+        retdict['wind_gust_direction'] = standard_int_field(data[88:97])
+        # Air temperature in 0.1 degrees Celsius from -60.0 to +60.0
+        retdict['air_temperature'] = standard_decimal_tenth_signed_field(data[97:108])
+        # Relative humidity in percent
+        retdict['relative_humidity'] = standard_int_field(data[108:115])
+        # Dew point in 0.1 degrees Celsius from -20.0 to +50.0
+        retdict['dew_point'] = standard_decimal_tenth_signed_field(data[115:125])
+        # Air pressure in whole hPa
+        retdict['air_pressure'] = standard_int_field(data[125:134])
+        # Air pressure tendency where 0=steady, 1=decreasing, 2=increasing
+        retdict['air_pressure_tendency'] = standard_int_field(data[134:136])
+        # Horizontal visibility in 0.1 NM steps
+        retdict['horizontal_visibility'] = standard_decimal_tenth_field(data[136:144])
+        # Water level including tide, deviation from local chart datum,
+        # in 0.1 m from -10.0 to 30.0 m
+        retdict['water_level_incl_tide'] = standard_decimal_tenth_signed_field(data[144:153])
+        # Water level trend where 0=steady, 1=decreasing, 2=increasing
+        retdict['water_level_trend'] = standard_int_field(data[153:155])
+        # Surface current speed including tide in 0.1 kt steps
+        retdict['surface_current_speed_incl_tide'] = standard_decimal_tenth_field(data[155:163])
+        # Surface current direction in whole degrees
+        retdict['surface_current_direction'] = standard_int_field(data[163:172])
+        # Current speed #2, chosen below sea surface, in 0.1 kt steps
+        retdict['current_speed_2'] = standard_decimal_tenth_field(data[172:180])
+        # Current direction #2, chosen below sea surface in whole degrees
+        retdict['current_direction_2'] = standard_int_field(data[180:189])
+        # Current measuring level #2, whole meters below sea surface
+        retdict['current_measuring_level_2'] = standard_int_field(data[189:194])
+        # Current speed #3, chosen below sea surface, in 0.1 kt steps
+        retdict['current_speed_3'] = standard_decimal_tenth_field(data[194:202])
+        # Current direction #3, chosen below sea surface in whole degrees
+        retdict['current_direction_3'] = standard_int_field(data[202:211])
+        # Current measuring level #3, whole meters below sea surface
+        retdict['current_measuring_level_3'] = standard_int_field(data[211:216])
+        # Significant wave height in 0.1 m steps
+        retdict['significant_wave_height'] = standard_decimal_tenth_field(data[216:224])
+        # Wave period in whole seconds
+        retdict['wave_period'] = standard_int_field(data[224:230])
+        # Wave direction in whole degrees
+        retdict['wave_direction'] = standard_int_field(data[230:239])
+        # Swell height in 0.1 m steps
+        retdict['swell_height'] = standard_decimal_tenth_field(data[239:247])
+        # Swell period in whole seconds
+        retdict['swell_period'] = standard_int_field(data[247:253])
+        # Swell direction in whole degrees
+        retdict['swell_direction'] = standard_int_field(data[253:262])
+        # Sea state according to Beaufort scale (0-12)
+        retdict['sea_state'] = standard_int_field(data[262:266])
+        # Water temperature in 0.1 degrees Celsius from -10.0 to +50.0
+        retdict['water_temperature'] = standard_decimal_tenth_signed_field(data[266:276])
+        # Precipitation type according to WMO
+        retdict['precipitation_type'] = standard_int_field(data[276:279])
+        # Salinity in parts per thousand from 0.0 to 50.0
+        retdict['salinity'] = standard_decimal_tenth_field(data[279:288])
+        # Ice, Yes/No
+        retdict['ice'] = standard_int_field(data[288:290])
+        # Return a dictionary with descriptive keys
+        return retdict
+
+def standard_int_field(data):
+    # This function simplifies in checking for N/A-values
+    # Check if just ones, then return N/A (Nonetype)
+    if data.count('1') == len(data):
+        return None
+    else:
+        return int(data,2)
+
+def standard_int_signed_field(data):
+    # This function simplifies in checking for N/A-values and signs
+    # Check if just ones, then return N/A (Nonetype)
+    if data.count('1') == len(data):
+        return None
+    else:
+        # Return the signed integer
+        if data[0]:
+            # Positive
+            return int(data[1:],2)
+        else:
+            # Negative
+            return -int(data[1:],2)
+
+def standard_decimal_tenth_field(data):
+    # This function simplifies in checking for N/A-values
+    # and returns a decimal.Decimal devided by 10
+    # Check if just ones, then return N/A (Nonetype)
+    if data.count('1') == len(data):
+        return None
+    else:
+        return decimal.Decimal(int(data,2)) / 10
+
+def standard_decimal_tenth_signed_field(data):
+    # This function simplifies in checking for N/A-values and signs
+    # and returns a decimal.Decimal devided by 10
+    integer = standard_int_signed_field(data)
+    if integer is None:
+        return None
+    else:
+        return decimal.Decimal(integer) / 10
 
 def tobin(x, count=8):
     # Convert the integer x to a binary representation where count is
@@ -518,15 +890,26 @@ def calclatitude(binary_latitude):
     # First look at the signed bit
     sign = int(binary_latitude[0])
     latitude = int(binary_latitude[1:],2)
-    # See if the latitude are undefined
-    if latitude == 54600000:
+    # See how many bits we're looking at
+    nr_bits = len(binary_latitude)
+    if nr_bits == 24:
+        factor = 60000 # 1000 * 60
+        power = 23
+    elif nr_bits == 27:
+        factor = 600000 # 10000 * 60
+        power = 26
+    else:
+        # Better to return None than a wrong value
+        return None
+    # See if the latitude are undefined (lat=91)
+    if latitude == 91*factor:
         return None # N/A
     # Else, calculate the latitude
     if sign: # Negative == South
-        latitude = 67108864 - latitude
-        degree = -decimal.Decimal(latitude) / 600000 # 10000 * 60
+        latitude = pow(2,power) - latitude
+        degree = -decimal.Decimal(latitude) / factor
     else: # Positive == North
-        degree = decimal.Decimal(latitude) / 600000 # 10000 * 60
+        degree = decimal.Decimal(latitude) / factor
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
 
@@ -547,15 +930,26 @@ def calclongitude(binary_longitude):
     # First look at the signed bit
     sign = int(binary_longitude[0])
     longitude = int(binary_longitude[1:],2)
-    # See if the longitude are undefined
-    if longitude == 108600000:
+    # See how many bits we're looking at
+    nr_bits = len(binary_longitude)
+    if nr_bits == 25:
+        factor = 60000 # 1000 * 60
+        power = 24
+    elif nr_bits == 28:
+        factor = 600000 # 10000 * 60
+        power = 27
+    else:
+        # Better to return None than a wrong value
+        return None
+    # See if the longitude are undefined (long=181)
+    if longitude == 181*factor:
         return None # N/A
     # Else, calculate the longitude
     if sign: # Negative == West
-        longitude = 134217728 - longitude
-        degree = -decimal.Decimal(longitude) / 600000 # 10000 * 60
+        longitude = pow(2,power) - longitude
+        degree = -decimal.Decimal(longitude) / factor
     else: # Positive == East
-        degree = decimal.Decimal(longitude) / 600000 # 10000 * 60
+        degree = decimal.Decimal(longitude) / factor
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
 
@@ -584,7 +978,8 @@ class TestDecode(unittest.TestCase):
                    'cog': decimal.Decimal("156.4"),
                    'latitude': decimal.Decimal("38.436167"),
                    'navstatus': 0,
-                   'heading': 157}
+                   'heading': 157,
+                   'message': 1}
         decoded = telegramparser('!AIVDM,1,1,,A,13uTAH002nJRLAHEwTi674rh04:8,0*2B')
         del decoded['time'] # Delete the time key
         self.assertEqual(decoded, correct)
@@ -599,7 +994,8 @@ class TestDecode(unittest.TestCase):
                    'width': 13,
                    'length': 88,
                    'callsign': '9HII5',
-                   'type': 70}
+                   'type': 70,
+                   'message': 5}
         decoded = telegramparser("!AIVDM,1,1,,A,53fATb02;`2oTPTWF21LTi<tr0hDU@R2222222169`;676p`0=iCA1C`888888888888880,2*51")
         del decoded['time'] # Delete the time key
         self.assertEqual(decoded, correct)
