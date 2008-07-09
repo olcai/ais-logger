@@ -30,7 +30,7 @@ import sys, os, optparse, logging
 import time, datetime
 import threading, Queue, collections
 import socket, SocketServer
-import pickle, codecs
+import pickle, codecs, csv
 import md5
 import decimal
 
@@ -75,12 +75,12 @@ gettext.install('aislogger', ".", unicode=False)
 
 ### Load or create configuration
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
-columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 50], 'callsign': [_("CS"), 60], 'latitude': [_("Latitude"), 105], 'longitude': [_("Longitude"), 110], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
+columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 105], 'longitude': [_("Longitude"), 110], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
 defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 'deleteitemtime': 3600, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': ''},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
-                 'alert': {'alertfile_on': False, 'alertfile': '', 'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
+                 'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
@@ -115,8 +115,6 @@ config['logging'].comments['logfile'] = ['Filename of log file']
 config['iddb_logging'].comments['logging_on'] = ['Enable IDDB file logging']
 config['iddb_logging'].comments['logtime'] = ['Number of s between writes to log file']
 config['iddb_logging'].comments['logfile'] = ['Filename of log file']
-config['alert'].comments['alertfile_on'] = ['Enable loading of alert file at program start']
-config['alert'].comments['alertfile'] = ['Filename of alert file']
 config['alert'].comments['remarkfile_on'] = ['Enable loading of remark file at program start']
 config['alert'].comments['remarkfile'] = ['Filename of remark file']
 config['alert'].comments['alertsound_on'] = ['Enable audio alert']
@@ -143,10 +141,6 @@ midfull = {}
 typecode = {}
 data = {}
 owndata = {}
-alertlist = []
-alertstring = ''
-alertstringsound = ''
-remarkdict = {}
 # Define collections
 rawdata = collections.deque()
 networkdata = collections.deque()
@@ -226,9 +220,6 @@ class MainWindow(wx.Frame):
         # Read type codes and MID codes from file
         self.readmid()
         self.readtype()
-        # Try to read an alert file and a remark file
-        self.readalertfile()
-        self.readremarkfile()
 
         # Create and split two windows, a list window and an alert window
         self.split = wx.SplitterWindow(self, -1, style=wx.SP_3D)
@@ -290,6 +281,14 @@ class MainWindow(wx.Frame):
                 # See if we should send to a detail window
                 if message['query']['mmsi'] in self.detailwindow_dict:
                     self.detailwindow_dict[message['query']['mmsi']].DoUpdate(message['query'])
+            elif 'remarkdict' in message:
+                # See if we should send to set alert window
+                if self.set_alerts_dlg:
+                    self.set_alerts_dlg.GetData(message)
+            elif 'iddb' in message:
+                # See if we should send to set alert window
+                if self.set_alerts_dlg:
+                    self.set_alerts_dlg.GetData(message)
         # Refresh the listctrls (by sorting)
         self.splist.Refresh()
         self.spalert.Refresh()
@@ -332,63 +331,6 @@ class MainWindow(wx.Frame):
             row = line.strip().split(',')
             typecode[row[0]] = row[1]
         f.close()
-
-    def readalertfile(self):
-        # This function will try to read an alert file, if defined in config
-        path = config['alert']['alertfile']
-        if config['alert'].as_bool('alertfile_on') and len(path) > 0:
-            try:
-                self.queryitems = []
-                file = open(path, 'rb')
-                data = pickle.load(file)
-                if data[0] == 'Alertdata':
-                    del data[0]
-                    self.queryitems.extend(data[:])
-                file.close()
-                # Copy list to alertlist
-                global alertlist
-                alertlist = self.queryitems[:]
-                # Create a joined string from the list
-                global alertstring
-                if len(alertlist) > 0:
-                    alertstring = '(' + ') OR ('.join(zip(*alertlist)[0]) + ')'
-                else: alertstring = '()'
-                # Create a joined string from the sound alert list
-                querysoundlist = []
-                global alertstringsound
-                # Loop over alertlist and append those with sound alert to alertsoundlist
-                for i in alertlist:
-                    if i[1] == 1:
-                       querysoundlist.append(i)
-                # If querysoundlist is not empty, make a query string of it
-                if len(querysoundlist) > 0:
-                    alertstringsound = '(' + ') OR ('.join(zip(*querysoundlist)[0]) + ')'
-                else: alertstringsound = '()'
-            except:
-                dlg = wx.MessageDialog(self, _("Error, could not load the alertfile!") + "\n\n" + str(sys.exc_info()[0]), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-
-    def readremarkfile(self):
-        # This function will try to read an alert file, if defined in config
-        path = config['alert']['remarkfile']
-        if config['alert'].as_bool('remarkfile_on') and len(path) > 0:
-            try:
-                data = {}
-                f = open(path, 'r')
-                for line in f:
-                    # For each line, strip any whitespace and then split the data using ','
-                    row = line.strip().split(',')
-                    # Try to read line as ASCII/UTF-8, if error, try cp1252 (workaround for Windows)
-                    try:
-                        data[int(row[0])] = unicode(row[1])
-                    except:
-                        data[int(row[0])] = unicode(row[1], 'cp1252')
-                f.close()
-                global remarkdict
-                remarkdict = data.copy()
-            except:
-                dlg = wx.MessageDialog(self, _("Error, could not load the remark file!") + "\n\n" + str(sys.exc_info()[0]), style=wx.OK|wx.wx.ICON_ERROR)
-                dlg.ShowModal()
 
     def OnRefreshStatus(self, own_pos=False):
         # Update the status row
@@ -479,8 +421,8 @@ class MainWindow(wx.Frame):
         dlg.Destroy()
 
     def OnSetAlerts(self, event):
-        dlg = SetAlertsWindow(None, -1)
-        dlg.Show()
+        self.set_alerts_dlg = SetAlertsWindow(None, -1)
+        self.set_alerts_dlg.Show()
 
     def OnSettings(self, event):
         dlg = SettingsWindow(None, -1)
@@ -617,11 +559,11 @@ class AlertWindow(wx.Panel):
 
     def Update(self, message):
         # See if we should update
-        if 'alert' in message and message['alert']:
+        if message.get('alert', False):
             # Update the underlying listctrl data with message
             self.list.OnUpdate(message)
         # Sound an alert for selected objects
-        if 'soundalert' in message and message['soundalert']:
+        if message.get('soundalert', False):
             self.soundalert()
 
     def Refresh(self):
@@ -693,7 +635,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             # Remove object from grey item set
             self.greyitems.discard(data['mmsi'])
             # If alert, put it in alert item set
-            if 'alert' in message and message['alert']:
+            if message.get('alert', False):
                 self.alertitems.add(data['mmsi'])
             # Get the data formatted
             self.itemDataMap[data['mmsi']] = self.FormatData(data)
@@ -702,20 +644,22 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             self.SetItemCount(self.GetItemCount()+1)
             data = message['insert']
             # If alert, put it in alert item set
-            if 'alert' in message and message['alert']:
+            if message.get('alert', False):
                 self.alertitems.add(data['mmsi'])
             # Get the data formatted
             self.itemDataMap[data['mmsi']] = self.FormatData(data)
         elif 'remove' in message:
             # Get the MMSI number
             mmsi = message['remove']
-            # Set a new item count in the listctrl
-            self.SetItemCount(self.GetItemCount()-1)
             # Remove object from sets
             self.greyitems.discard(mmsi)
             self.alertitems.discard(mmsi)
-            # Remove object from list dict
-            del self.itemDataMap[mmsi]
+            # Remove object if possible
+            if mmsi in self.itemDataMap:
+                # Set a new item count in the listctrl
+                self.SetItemCount(self.GetItemCount()-1)
+                # Remove object from list dict
+                del self.itemDataMap[mmsi]
         elif 'old' in message:
             # Simply add object to set
             self.greyitems.add(message['old'])
@@ -745,17 +689,34 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                 if col == 'creationtime':
                     try: new[i] = data[col].isoformat()[11:19]
                     except: new[i] = ''
-                if col == 'time':
+                elif col == 'time':
                     try: new[i] = data[col].isoformat()[11:19]
                     except: new[i] = ''
-                if col == 'latitude':
+                elif col == 'latitude':
                     latpos = i
-                if col == 'longitude':
+                elif col == 'longitude':
                     longpos = i
-                if col == 'posacc':
-                    if data[col] == 0: new[i] = u'Bad'
-                    elif data[col] == 1: new[i] = u'DGPS'
+                elif col == 'navstatus':
+                    navstatus = data[col]
+                    if navstatus == None: navstatus = ''
+                    elif navstatus == 0: navstatus = _("Under Way")
+                    elif navstatus == 1: navstatus = _("At Anchor")
+                    elif navstatus == 2: navstatus = _("Not Under Command")
+                    elif navstatus == 3: navstatus = _("Restricted Manoeuvrability")
+                    elif navstatus == 4: navstatus = _("Constrained by her draught")
+                    elif navstatus == 5: navstatus = _("Moored")
+                    elif navstatus == 6: navstatus = _("Aground")
+                    elif navstatus == 7: navstatus = _("Engaged in Fishing")
+                    elif navstatus == 8: navstatus = _("Under way sailing")
+                    new[i] = navstatus
+                elif col == 'posacc':
+                    if data[col] == 0: new[i] = _('GPS')
+                    elif data[col] == 1: new[i] = _('DGPS')
                     else: new[i] = ''
+                elif col == 'transponder_type':
+                    if data[col] == 'A': new[i] = _('Class A')
+                    elif data[col] == 'B': new[i] = _('Class B')
+                    elif data[col] == 'base': new[i] = _('Base station')
         # Get position in a more human-readable format
         if data.get('latitude',False) and data.get('longitude',False) and data['latitude'] != 'N/A' and data['longitude'] != 'N/A':
             pos = PositionConversion(data['latitude'],data['longitude']).default
@@ -831,13 +792,14 @@ class DetailWindow(wx.Dialog):
         voyagedata_panel = wx.Panel(self, -1)
         transponderdata_panel = wx.Panel(self, -1)
         objinfo_panel = wx.Panel(self, -1)
-        remark_panel = wx.Panel(self, -1)
+        self.remark_panel = wx.Panel(self, -1)
         # Create static boxes
         wx.StaticBox(shipdata_panel,-1,_(" Ship data "),pos=(3,5),size=(400,205))
         wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(350,205))
-        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,65))
-        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(350,145))
-        wx.StaticBox(remark_panel,-1,_(" Remark "), pos=(3,5),size=(400,75))
+        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,85))
+        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(350,155))
+        wx.StaticBox(self.remark_panel,-1,_(" Remark "), pos=(3,5),size=(400,65))
+        self.remark_panel.Enable(False)
         # Ship data
         wx.StaticText(shipdata_panel,-1,_("MMSI nbr: "),pos=(12,25),size=(150,16))
         wx.StaticText(shipdata_panel,-1,_("IMO nbr: "),pos=(12,45),size=(150,16))
@@ -859,8 +821,9 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(voyagedata_panel,-1,_("Heading: "),pos=(12,165),size=(150,16))
         wx.StaticText(voyagedata_panel,-1,_("Rate of turn: "),pos=(12,185),size=(150,16))
         # Transponder data
-        wx.StaticText(transponderdata_panel,-1,_("Nav Status: "),pos=(12,25),size=(150,16))
-        wx.StaticText(transponderdata_panel,-1,_("Pos Accuracy: "),pos=(12,45),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Navigational Status: "),pos=(12,25),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Position Accuracy: "),pos=(12,45),size=(150,16))
+        wx.StaticText(transponderdata_panel,-1,_("Transponder Type: "),pos=(12,65),size=(150,16))
         # Object information such as bearing and distance
         wx.StaticText(objinfo_panel,-1,_("Bearing: "),pos=(12,25),size=(150,16))
         wx.StaticText(objinfo_panel,-1,_("Distance: "),pos=(12,45),size=(150,16))
@@ -890,8 +853,9 @@ class DetailWindow(wx.Dialog):
         self.text_heading = wx.StaticText(voyagedata_panel,-1,'',pos=(100,165),size=(245,16))
         self.text_rateofturn = wx.StaticText(voyagedata_panel,-1,'',pos=(100,185),size=(245,16))
         # Set transponderdata
-        self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(105,25),size=(185,16))
-        self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(105,45),size=(185,16))
+        self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(145,25),size=(145,16))
+        self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(145,45),size=(145,16))
+        self.text_transpondertype = wx.StaticText(transponderdata_panel,-1,'',pos=(145,65),size=(145,16))
         # Set object information
         self.text_bearing = wx.StaticText(objinfo_panel,-1,'',pos=(105,25),size=(245,16))
         self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(245,16))
@@ -900,7 +864,7 @@ class DetailWindow(wx.Dialog):
         self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(245,16))
         self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(245,16))
         # Set remark text
-        self.text_remark = wx.StaticText(remark_panel,-1,'',pos=(12,25),size=(370,50),style=wx.ST_NO_AUTORESIZE)
+        self.text_remark = wx.StaticText(self.remark_panel,-1,'',pos=(12,25),size=(370,40),style=wx.ST_NO_AUTORESIZE)
 
         # Add window to the message detail window send list
         main_window.AddDetailWindow(self, itemmmsi)
@@ -925,7 +889,7 @@ class DetailWindow(wx.Dialog):
         sizer1.Add(shipdata_panel, 1, wx.EXPAND, 0)
         sizer1.Add(voyagedata_panel, 0)
         sizer2.Add(transponderdata_panel, 0)
-        sizer2.Add(remark_panel, 0)
+        sizer2.Add(self.remark_panel, 0)
         sizer1.Add(sizer2)
         sizer1.Add(objinfo_panel, 0)
         mainsizer.Add(sizer1)
@@ -1002,6 +966,12 @@ class DetailWindow(wx.Dialog):
             if data['posacc']: posacc = _("Very good / DGPS")
             else: posacc = _("Good / GPS")
             self.text_posacc.SetLabel(posacc)
+        if not data.get('transponder_type', None) is None:
+            if data['transponder_type'] == 'A': transponder_type = _("Class A")
+            elif data['transponder_type'] == 'B': transponder_type = _("Class B")
+            elif data['transponder_type'] == 'base': transponder_type = _("Base station")
+            else: transponder_type = data['transponder_type']
+            self.text_transpondertype.SetLabel(transponder_type)
         # Set local info
         if data['bearing'] and data['distance']:
             self.text_bearing.SetLabel(str(data['bearing'])+u'°')
@@ -1015,8 +985,9 @@ class DetailWindow(wx.Dialog):
         if data['source']:
             self.text_source.SetLabel(str(data['source']))
         # Set remark text
-        if 'remark' in data:
-            self.text_remark.SetLabel(unicode(remarkdict[data['remark']]))
+        if data['remark']:
+            self.remark_panel.Enable(True)
+            self.text_remark.SetLabel(unicode(data['remark']))
 
     def OnClose(self, event):
         # Remove window to the message detail window send list
@@ -1294,18 +1265,21 @@ class StatsWindow(wx.Dialog):
 
 
 class SetAlertsWindow(wx.Dialog):
+    # Make a dict for the list ctrl data
+    list_data = {}
+
     def __init__(self, parent, id):
         # Define the dialog
         wx.Dialog.__init__(self, parent, id, title=_("Set alerts and remarks"))
         # Create panels
         filter_panel = wx.Panel(self, -1)
         list_panel = wx.Panel(self, -1)
-        object_panel = wx.Panel(self, -1)
+        self.object_panel = wx.Panel(self, -1)
         action_panel = wx.Panel(self, -1)
         # Create static boxes
         wx.StaticBox(filter_panel, -1, _(" Filter "), pos=(3,5), size=(700,100))
         list_staticbox = wx.StaticBox(list_panel, -1, _(" List view "), pos=(3,5), size=(700,280))
-        wx.StaticBox(object_panel, -1, _(" Selected object "), pos=(3,5), size=(520,160))
+        wx.StaticBox(self.object_panel, -1, _(" Selected object "), pos=(3,5), size=(520,160))
         wx.StaticBox(action_panel, -1, _(" Actions "), pos=(3,5), size=(170,160))
 
         # Create objects on the filter panel
@@ -1319,32 +1293,35 @@ class SetAlertsWindow(wx.Dialog):
         # If filter_query is empty, no SQL-filter is set
         # If filter_alerts is true, only show rows where alerts are set.
         # If filter_rermarks is true, only show rows where remarks are set.
-        self.current_filter = {"filter_query": "", "filter_alerts": False, "filter_remarks": False}
+        self.current_filter = {}
+
+        # Create the object information objects
+        wx.StaticText(self.object_panel, -1, _("MMSI nbr:"), pos=(20,25))
+        self.statictext_mmsi = wx.StaticText(self.object_panel, -1, '', pos=(20,45))
+        wx.StaticText(self.object_panel, -1, _("IMO nbr:"), pos=(120,25))
+        self.statictext_imo = wx.StaticText(self.object_panel, -1, '', pos=(120,45))
+        wx.StaticText(self.object_panel, -1, _("Callsign:"), pos=(220,25))
+        self.statictext_cs = wx.StaticText(self.object_panel, -1, '', pos=(220,45))
+        wx.StaticText(self.object_panel, -1, _("Name:"), pos=(320,25))
+        self.statictext_name = wx.StaticText(self.object_panel, -1, '', pos=(320,45))
+        statictext_remark = wx.StaticText(self.object_panel, -1, _("Remark field:"), pos=(25,73))
+        statictext_remark.SetFont(wx.Font(10, wx.NORMAL, wx.NORMAL, wx.NORMAL))
+        self.textctrl_remark = wx.TextCtrl(self.object_panel, -1, pos=(20,90), size=(300,60), style=wx.TE_MULTILINE)
+        self.radiobox_alert = wx.RadioBox(self.object_panel, -1, _(" Alert "), pos=(340,70), choices=(_("&No"), _("&Yes"), _("&Sound")))
+        self.update_button = wx.Button(self.object_panel, 10, _("&Update object"), pos=(350,120))
+        self.object_panel.Enable(False)
 
         # Create the list control
         self.lc = self.List(list_panel, self)
 
-        # Create the object information objects
-        wx.StaticText(object_panel, -1, _("MMSI nbr:"), pos=(20,25))
-        self.statictext_mmsi = wx.StaticText(object_panel, -1, '', pos=(20,45))
-        wx.StaticText(object_panel, -1, _("IMO nbr:"), pos=(120,25))
-        self.statictext_imo = wx.StaticText(object_panel, -1, '', pos=(120,45))
-        wx.StaticText(object_panel, -1, _("Callsign:"), pos=(220,25))
-        self.statictext_cs = wx.StaticText(object_panel, -1, '', pos=(220,45))
-        wx.StaticText(object_panel, -1, _("Name:"), pos=(320,25))
-        self.statictext_name = wx.StaticText(object_panel, -1, '', pos=(320,45))
-        statictext_remark = wx.StaticText(object_panel, -1, _("Remark field:"), pos=(25,73))
-        statictext_remark.SetFont(wx.Font(10, wx.NORMAL, wx.NORMAL, wx.NORMAL))
-        self.textctrl_remark = wx.TextCtrl(object_panel, -1, pos=(20,90), size=(300,60), style=wx.TE_MULTILINE)
-        self.radiobox_alert = wx.RadioBox(object_panel, -1, _(" Alert "), pos=(340,70), choices=(_("&No"), _("&Yes"), _("&Sound")))
-        update_button = wx.Button(object_panel, 10, _("Save &object"), pos=(350,120))
-
         # Create buttons
         wx.Button(action_panel, 20, _("&Insert new..."), pos=(20,40))
-        wx.Button(action_panel, 21, _("&Advanced..."), pos=(20,80))
-        wx.Button(action_panel, 22, _("&Export list..."), pos=(20,120))
+        wx.Button(action_panel, 22, _("&Export list..."), pos=(20,80))
+        self.apply_button = wx.Button(self, 31, _("&Apply changes"))
+        self.apply_button.Enable(False)
+        self.save_button = wx.Button(self, 32, _("&Save changes"))
+        self.save_button.Enable(False)
         close_button = wx.Button(self, 30, _("&Close"))
-        save_button = wx.Button(self, 31, _("&Save changes"))
 
         # Create sizers
         mainsizer = wx.BoxSizer(wx.VERTICAL)
@@ -1352,14 +1329,16 @@ class SetAlertsWindow(wx.Dialog):
         mainsizer.Add(filter_panel, 1, wx.EXPAND, 0)
         mainsizer.Add(list_panel, 0)
         lowsizer = wx.BoxSizer(wx.HORIZONTAL)
-        lowsizer.Add(object_panel, 1)
+        lowsizer.Add(self.object_panel, 1)
         lowsizer.Add(action_panel, 0, wx.EXPAND)
         mainsizer.Add(lowsizer, 0)
         mainsizer.AddSpacer((0,10))
         mainsizer.Add(sizer2, flag=wx.ALIGN_RIGHT)
+        sizer2.Add(self.apply_button, 0)
+        sizer2.AddSpacer((15,0))
+        sizer2.Add(self.save_button, 0)
+        sizer2.AddSpacer((50,0))
         sizer2.Add(close_button, 0)
-        sizer2.AddSpacer((20,0))
-        sizer2.Add(save_button, 0)
         self.SetSizerAndFit(mainsizer)
         mainsizer.Layout()
 
@@ -1367,210 +1346,211 @@ class SetAlertsWindow(wx.Dialog):
         self.Bind(wx.EVT_CHECKBOX, self.OnFilter, self.checkbox_filteralerts)
         self.Bind(wx.EVT_CHECKBOX, self.OnFilter, self.checkbox_filterremarks)
         self.Bind(wx.EVT_TEXT, self.OnFilter, self.textctrl_filtertext)
-        self.Bind(wx.EVT_BUTTON, self.OnSaveObject, id=10)
+        self.Bind(wx.EVT_TEXT, self.OnObjectEdit, self.textctrl_remark)
+        self.Bind(wx.EVT_RADIOBOX, self.OnObjectEdit, self.radiobox_alert)
+        self.Bind(wx.EVT_BUTTON, self.OnObjectUpdate, id=10)
         self.Bind(wx.EVT_BUTTON, self.OnInsertNew, id=20)
-        self.Bind(wx.EVT_BUTTON, self.OnAdvanced, id=21)
         self.Bind(wx.EVT_BUTTON, self.OnExportList, id=22)
         self.Bind(wx.EVT_BUTTON, self.OnClose, id=30)
-        self.Bind(wx.EVT_BUTTON, self.OnSaveChanges, id=31)
+        self.Bind(wx.EVT_BUTTON, self.OnApplyChanges, id=31)
+        self.Bind(wx.EVT_BUTTON, self.OnSaveChanges, id=32)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
-    def GenerateAlertQuery(self):
-        # Create a query string from alertlist
-        global alertstring
-        if len(alertlist) > 0:
-            alertstring = '(' + ') OR ('.join(zip(*alertlist)[0]) + ')'
-        else: alertstring = '()'
-        # Initiate variabels for alert sound query
-        querysoundlist = []
-        global alertstringsound
-        # Loop over alertlist and append those with sound alert to alertsoundlist
-        for i in alertlist:
-            if i[1] == 1:
-               querysoundlist.append(i)
-        # If querysoundlist is not empty, make a query string of it
-        if len(querysoundlist) > 0:
-            alertstringsound = '(' + ') OR ('.join(zip(*querysoundlist)[0]) + ')'
-        else: alertstringsound = '()'
+        # Set queries in MainThread's queue
+        main_thread.put({'remarkdict_query': None})
+        main_thread.put({'iddb_query': None})
+
+        # Show a dialog asking the user to wait
+        self.progress = wx.ProgressDialog(_("Please wait"), _("Populating list..."), parent=self)
+
+    def GetData(self, message):
+        # Update the list ctrl dict with new data
+        # If remarks, put in alerts and remarks in dict
+        if 'remarkdict' in message:
+            for mmsi, (alert,remark) in message['remarkdict'].iteritems():
+                row = self.list_data.get(mmsi, {})
+                row['alert'] = alert
+                row['remark'] = remark
+                self.list_data[mmsi] = row
+        # If IDDB data, put in metadata in dict
+        elif 'iddb' in message:
+            for object in message['iddb']:
+                mmsi = object['mmsi']
+                row = self.list_data.get(mmsi, {})
+                row['imo'] = object['imo']
+                row['callsign'] = object['callsign']
+                row['name'] = object['name']
+                self.list_data[mmsi] = row
+        # Destroy progress dialog
+        if self.progress:
+            self.progress.Destroy()
+        # Update the listctrl
+        self.lc.OnUpdate()
 
     def PopulateObject(self, objectinfo):
         # Populate the objec_panel with info from the currently selected list row
-        self.loaded_objectinfo = objectinfo
-        self.statictext_mmsi.SetLabel(unicode(objectinfo[0]))
-        self.statictext_imo.SetLabel(unicode(objectinfo[1]))
-        self.statictext_cs.SetLabel(unicode(objectinfo[2]))
-        self.statictext_name.SetLabel(unicode(objectinfo[3]))
-        self.radiobox_alert.SetSelection(int(objectinfo[4]))
-        self.textctrl_remark.SetValue(unicode(objectinfo[5]))
+        if objectinfo:
+            self.object_panel.Enable(True)
+            self.update_button.Enable(False)
+            self.loaded_objectinfo = objectinfo
+            self.statictext_mmsi.SetLabel(unicode(objectinfo[0]))
+            self.statictext_imo.SetLabel(unicode(objectinfo[1]))
+            self.statictext_cs.SetLabel(unicode(objectinfo[2]))
+            self.statictext_name.SetLabel(unicode(objectinfo[3]))
+            self.radiobox_alert.SetSelection(int(objectinfo[4]))
+            self.textctrl_remark.ChangeValue(unicode(objectinfo[5]))
+        else:
+            self.object_panel.Enable(False)
+            self.update_button.Enable(False)
+            self.loaded_objectinfo = None
+            self.statictext_mmsi.SetLabel('')
+            self.statictext_imo.SetLabel('')
+            self.statictext_cs.SetLabel('')
+            self.statictext_name.SetLabel('')
+            self.radiobox_alert.SetSelection(0)
+            self.textctrl_remark.ChangeValue('')
 
-    def OnSaveObject(self, event):
+    def OnObjectEdit(self, event):
+        # Enable update button
+        self.update_button.Enable(True)
+
+    def OnObjectUpdate(self, event):
         # Check if variable exist, if not, return
         try:
             assert self.loaded_objectinfo
         except: return
         # Read in the object information to be saved
         mmsi = int(self.loaded_objectinfo[0])
-        alert_oldstate = self.loaded_objectinfo[4]
-        remark_oldstate = self.loaded_objectinfo[5]
-        alert_newstate = self.radiobox_alert.GetSelection()
-        remark_newstate = unicode(self.textctrl_remark.GetValue())
-        # Check if the alert state has changed
-        if alert_oldstate != alert_newstate:
-            # Create counter variables
-            i = 0
-            pos = -1
-            # Create query from mmsi
-            query = "mmsi LIKE '" + str(mmsi) + "'"
-            # Loop over alertlist, try to find the query matching the mmsi
-            # If found, set its list position in pos
-            for v in alertlist:
-                if v[0].find(query) != -1:
-                    pos = i
-                i += 1
-            # If alert is off
-            if alert_newstate == 0:
-                # Delete query if pos is set
-                if pos != -1:
-                    del alertlist[pos]
-            # If alert is on
-            elif alert_newstate == 1:
-                # Create tuple to insert into list
-                query_tuple = (query, 0, 0)
-                # If object already in alertlist, set pos to query_tuple, else append to alertlist
-                if pos != -1:
-                    alertlist[pos] = query_tuple
-                else:
-                    alertlist.append(query_tuple)
-            # If sound alert is set
-            elif alert_newstate == 2:
-                # Create tuple to insert into list
-                query_tuple = (query, 1, 0)
-                # If object already in alertlist, set pos to query_tuple, else append to alertlist
-                if pos != -1:
-                    alertlist[pos] = query_tuple
-                else:
-                    alertlist.append(query_tuple)
-            # Call function to generate the new alert and sound alert queries
-            self.GenerateAlertQuery()
-        # Remove remark if the remark text ctrl is empty or only contains whitespace
-        if len(remark_newstate) == 0 or remark_newstate.isspace():
-            try: del remarkdict[mmsi]
-            except: pass
+        alert_box = self.radiobox_alert.GetSelection()
+        remark_box = unicode(self.textctrl_remark.GetValue()).strip().replace(",",";")
+        # Set alert
+        if alert_box == 1:
+            alert = 'A'
+        elif alert_box == 2:
+            alert = 'AS'
         else:
-            # Set the new remark
-            remarkdict[mmsi] = remark_newstate.replace(",", ";")
+            alert = ''
+        self.list_data[mmsi]['alert'] = alert
+        # Set remark
+        if remark_box.isspace():
+            # Set remark to empty if it only contains whitespace
+            self.list_data[mmsi]['remark'] = ''
+        else:
+            # Set remark
+            self.list_data[mmsi]['remark'] = remark_box
         # Update the listctrl
         self.lc.OnUpdate()
-        # Update the objectinfo
-        self.lc.UpdateActiveItem()
+        # Make main save and apply buttons enabled
+        self.save_button.Enable(True)
+        self.apply_button.Enable(True)
+        # Make object update button disabled
+        self.update_button.Enable(False)
+        # Update the text ctrl
+        self.textctrl_remark.ChangeValue(remark_box)
 
     def OnFilter(self, event):
         # Read values from the filter controls and set appropriate values in self.current_filter
         self.current_filter["filter_alerts"] = self.checkbox_filteralerts.GetValue()
         self.current_filter["filter_remarks"] = self.checkbox_filterremarks.GetValue()
-        # If the text control contains text, create a SQL-query from the value in the combobox
-        # and the text control. Replace dangerous char (').
+        # If the text control contains text, set a query from the value
+        # in the combobox and the text control. Replace dangerous char (,)
         # Else, set the filter query to empty.
         if len(self.textctrl_filtertext.GetValue()) > 0:
-            combostring = self.combobox_filtercolumn.GetValue()
-            self.current_filter["filter_query"] = combostring + " LIKE '%" + self.textctrl_filtertext.GetValue().replace("'","") + "%'"
+            self.current_filter["filter_column"] = self.combobox_filtercolumn.GetValue()
+            self.current_filter["filter_query"] = self.textctrl_filtertext.GetValue().replace(",","").upper()
         else:
+            self.current_filter["filter_column"] = ""
             self.current_filter["filter_query"] = ""
         # Update the listctrl
         self.lc.OnUpdate()
 
     def OnInsertNew(self, event):
         # Create a dialog with a textctrl, a checkbox and two buttons
-        dlg = wx.Dialog(self, -1, _("Insert new MMSI number"), size=(300,225))
-        wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert and choose the data to associate it with."), pos=(20,10), size=(260,60))
-        textbox = wx.TextCtrl(dlg, -1, pos=(20,70), size=(150,-1))
-        radiobox = wx.RadioBox(dlg, -1, _(" Associate with "), pos=(20,110), choices=(_("&Alert"), _("&Remark")))
+        dlg = wx.Dialog(self, -1, _("Insert new MMSI number"), size=(280,130))
+        wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert:"), pos=(20,10), size=(260,30))
+        textbox = wx.TextCtrl(dlg, -1, pos=(20,40), size=(150,-1))
         buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
-        buttonsizer.SetDimension(110, 165, 180, 40)
+        buttonsizer.SetDimension(110, 80, 150, 40)
         textbox.SetFocus()
-        # If user press OK, check that the textbox only contains digits, check if the number already exists
-        # and if not, update either the alertlist or the remarkdict
+        # If user press OK, check that the textbox only contains digits,
+        # check if the number already exists and if not, create object
         if dlg.ShowModal() == wx.ID_OK:
             new_mmsi = textbox.GetValue()
             if not new_mmsi.isdigit() or len(new_mmsi) > 9:
                 dlg = wx.MessageDialog(self, _("Only nine digits are allowed in a MMSI number! Insert failed."), _("Error"), wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
-            elif self.lc.CheckForMmsi(int(new_mmsi)):
+            elif int(new_mmsi) in self.list_data:
                 dlg = wx.MessageDialog(self, _("The specified MMSI number already exists! Insert failed."), _("Error"), wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
-            elif radiobox.GetSelection() == 0:
-                query = "mmsi LIKE '" + unicode(new_mmsi) + "'"
-                alertlist.append((query, 0, 0))
-            elif radiobox.GetSelection() == 1:
-                remarkdict[int(new_mmsi)] = "REMARK NOT SET"
-            # Update the alert queries
-            self.GenerateAlertQuery()
+            else:
+                self.list_data[int(new_mmsi)] = {}
             # Update list ctrl
             self.lc.OnUpdate()
             # Set active item
-            self.lc.SetActiveItem(int(new_mmsi))
+            self.lc.SetSelectedItem(int(new_mmsi))
 
-    def OnAdvanced(self, event):
-        # Call the advanced alert editor
-        dlg = AdvancedAlertWindow(self, -1)
-        dlg.ShowModal()
-        # Update list ctrl to display any changes
-        self.lc.OnUpdate()
+    def OnApplyChanges(self, event):
+        # Applies changes by sending them to MainThread
+        alertdict = {}
+        # Iterate over the data and pick out alerts and remarks
+        for mmsi, entry in self.list_data.iteritems():
+            # Get alert
+            alert = entry.get('alert','')
+            # Get remark
+            remark = entry.get('remark','')
+            # If neither remark or alert is set, don't save
+            if len(alert) == 0 and len(remark) == 0:
+                pass
+            else:
+                # For each entry split the data using ','
+                alertdict[mmsi] = (alert, remark)
+        # Send to main thread
+        main_thread.put({'update_remarkdict': alertdict})
+        # Make apply disabled
+        self.apply_button.Enable(False)
 
     def OnSaveChanges(self, event):
-        # Saves both alerts and remarks to the loaded files.
-        alert_file = config['alert']['alertfile']
+        # Saves alerts and remarks to the loaded keyfile.
+        # First, apply changes
+        self.OnApplyChanges(None)
+        # Save file
         remark_file = config['alert']['remarkfile']
-        if config['alert'].as_bool('alertfile_on'):
-            self.SaveAlertFile(alert_file)
-        else:
-            dlg = wx.MessageDialog(self, _("Cannot save alert file. No alert file is loaded.") + "\n" + _("Edit the alert file settings and restart the program."), style=wx.OK|wx.ICON_ERROR)
-            dlg.ShowModal()
         if config['alert'].as_bool('remarkfile_on'):
-            self.SaveRemarkFile(remark_file)
+            # Saves remarks to a supplied file
+            if len(remark_file) > 0:
+                try:
+                    # Open file
+                    output = codecs.open(remark_file, 'w', encoding='cp1252')
+                    # Loop over data
+                    for mmsi, entry in self.list_data.iteritems():
+                        # Get alert
+                        alert = entry.get('alert','')
+                        # Get remark
+                        remark = entry.get('remark','')
+                        # If neither remark or alert is set, don't save
+                        if len(alert) == 0 and len(remark) == 0:
+                            pass
+                        else:
+                            # For each entry split the data using ','
+                            output.write(str(mmsi) + "," + alert + "," + remark + "\r\n")
+                    output.close()
+                    # Make save button and apply button disabled
+                    self.save_button.Enable(False)
+                    self.apply_button.Enable(False)
+                except IOError, error:
+                    dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
+                    dlg.ShowModal()
+                except Exception, error:
+                    dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
+                    dlg.ShowModal()
         else:
             dlg = wx.MessageDialog(self, _("Cannot save remark file. No remark file is loaded.") + "\n" + _("Edit the remark file settings and restart the program."), style=wx.OK|wx.ICON_ERROR)
             dlg.ShowModal()
 
-    def SaveAlertFile(self, file):
-        # Saves alerts to a supplied file
-        if len(file) > 0:
-            try:
-                output = open(file, 'wb')
-                outdata = alertlist[:]
-                outdata.insert(0, 'Alertdata')
-                pickle.dump(outdata,output)
-                output.close()
-            except IOError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save alert file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-
-    def SaveRemarkFile(self, file):
-        # Saves remarks to a supplied file
-        if len(file) > 0:
-            try:
-                output = codecs.open(file, 'w', encoding='cp1252')
-                for entry in remarkdict.iteritems():
-                    # For each entry split the data using ','
-                    mmsi = str(entry[0])
-                    remark = entry[1]
-                    output.write(mmsi + "," + remark + "\r\n")
-                output.close()
-            except IOError, error:
-                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except error:
-                dlg = wx.MessageDialog(self, _("Cannot save remark file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-
     def OnExportList(self, event):
-        # Exports the current list view to the clipboard.
+        # Exports the current list view to a CSV-like file.
         exportdata = ""
-        for v in self.lc.itemDataMap.iteritems():
-            row = v[1]
+        for mmsi, row in self.lc.itemDataMap.iteritems():
             alert = row[4]
             if alert == 0:
                 alert = "No"
@@ -1578,7 +1558,7 @@ class SetAlertsWindow(wx.Dialog):
                 alert = "Yes"
             elif alert == 2:
                 alert = "Yes/Sound"
-            exportdata += str(row[0]) + "," + row[1] + "," + row[2] + "," + row[3] + "," + alert + "," + row[5] + "\n"
+            exportdata += str(mmsi) + "," + str(row[1]) + "," + row[2] + "," + row[3] + "," + alert + "," + row[5] + "\n"
         # Create file dialog
         file = ''
         wcd = _("CSV files (*.csv)|*.csv|All files (*)|*")
@@ -1630,6 +1610,9 @@ class SetAlertsWindow(wx.Dialog):
             listmix.ListCtrlAutoWidthMixin.__init__(self)
             listmix.ColumnSorterMixin.__init__(self, 6)
 
+            # Set selected object to none
+            self.selected = -1
+            
             # Do inital update
             self.OnUpdate()
             # Do initial sorting on column 0, ascending order (1)
@@ -1637,132 +1620,93 @@ class SetAlertsWindow(wx.Dialog):
 
             # Define events
             self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnItemSelected)
-
-        def OnUpdate(self):
-            # Check if a row is selected, if true, extract the mmsi
-            selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
-            if selected_row != -1:
-                selected_mmsi = self.itemIndexMap[selected_row]
-
-            # Check if filter is unactive. If active, filter. Otherwise, return all rows.
-            if len(self.topparent.current_filter["filter_query"]) == 0:
-                query = "mmsi LIKE '%'"
-            else:
-                query = self.topparent.current_filter["filter_query"]
-
-            # Run the query against the iddb in memory
-            iddb_result = execSQL(DbCmd(SqlCmd, [("SELECT * FROM iddb WHERE %s" % query,())]))
-
-            # Create a dictionary containing the data from the iddb_query.
-            # Use mmsi as key with value (imo, name, callsign)
-            iddb_dict = {}
-            for v in iddb_result:
-                iddb_dict[v[0]] = [(v[1], v[2], v[3])]
-
-            # Create a dictionary from the items in alertlist, extracting mmsi numbers from
-            # the SQL-queries. Use the mmsi as key and sound alert as value (0: false, 1: true)
-            alerts_mmsi_dict = {}
-            for v in alertlist:
-                query_string = v[0]
-                if query_string.find("mmsi") or query_string.find("MMSI"):
-                    try:
-                        mmsi = int(query_string.strip("msiMSIlikeLIKE '"))
-                        alerts_mmsi_dict[mmsi] = v[1]
-                    except: pass
-
-            # Create a set and make it contain all mmsi numbers from the dict keys
-            all_mmsi = set(iddb_dict.keys())
-            all_mmsi.update(alerts_mmsi_dict.keys())
-            all_mmsi.update(remarkdict.keys())
-
-            # Iterate over all the mmsi numbers and add the appropriate data
-            # from the different dictionaries to list_dict
-            list_dict = {}
-            for mmsi in all_mmsi:
-                # Define variables
-                imo = ''; name = ''; callsign = ''; alert = 0; remark = ''
-                # Extract data from iddb_dict (and from the inner list associated with the key)
-                if iddb_dict.has_key(mmsi):
-                    imo = iddb_dict[mmsi][0][0]
-                    name = iddb_dict[mmsi][0][1]
-                    callsign = iddb_dict[mmsi][0][2]
-                # Extract data from alerts_mmsi_dict (when alert is 1: alert active, when 2: alert+sound active)
-                if alerts_mmsi_dict.has_key(mmsi):
-                    alert = alerts_mmsi_dict[mmsi]
-                    if alert == 1:
-                        alert = 2
-                    elif alert == 0:
-                        alert = 1
-                # Extract data from remarkdict
-                if remarkdict.has_key(mmsi):
-                    remark = unicode(remarkdict[mmsi])
-                # If there are filters active and the conditions are met, skip adding entry to list_dict
-                filter = self.topparent.current_filter.copy()
-                filter_query = filter["filter_query"]
-                # Make sure that objects with only a mmsi won't show up when you use the filter on imo, name and callsign
-                if filter_query and filter_query.find("MMSI") == -1 and len(imo) == 0 and len(name) == 0 and len(callsign) == 0:
-                    pass
-                # Make also shure that when filtering on mmsi, only show matches
-                elif filter_query and filter_query.find("MMSI") != -1 and str(mmsi).find(filter_query.strip("msiMSIlikeLIKE '%")) == -1:
-                    pass
-                elif filter["filter_alerts"] and alert == 0:
-                    pass
-                elif filter["filter_remarks"] and remark == '':
-                    pass
-                else:
-                    # For each mmsi in all_mmsi, write to list_dict and map the mmsi as key and add imo, name, callsign, alert and remark to it
-                    list_dict[mmsi] = [mmsi, imo, callsign, name, alert, unicode(remark)]
-
-            # Set new ItemCount for the list ctrl if different from the current number
-            nrofobjects = len(list_dict)
-            if self.GetItemCount() != nrofobjects:
-                self.SetItemCount(nrofobjects)
-
-            # Assign to variables for the virtual list ctrl
-            self.itemDataMap = list_dict
-            self.itemIndexMap = list_dict.keys()
-
-            self.SortListItems()
-
-            # Set the selected row
-            try: self.SetActiveItem(selected_mmsi)
-            except: pass
+            self.Bind(wx.EVT_LIST_ITEM_DESELECTED, self.OnItemDeselected)
 
         def OnItemSelected(self, event):
-            # Get the MMSI number associated with the selected row
-            # Try to use event as a proper event, if except, use as a direct integer
-            try:
-                itemmmsi = self.itemIndexMap[event.m_itemIndex]
-            except:
-                itemmmsi = self.itemIndexMap[event]
+            # When an object is selected, extract the MMSI number and
+            # put it in self.selected
+            self.selected = self.itemIndexMap[event.m_itemIndex]
             # Populate the object box
-            self.topparent.PopulateObject(self.itemDataMap[itemmmsi])
+            self.topparent.PopulateObject(self.itemDataMap[self.selected])
 
-        def UpdateActiveItem(self):
-            # Get the currently selected row and call OnItemSelected
-            selected_row = self.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
-            self.OnItemSelected(selected_row)
+        def OnItemDeselected(self, event):
+            # Deselect objects
+            self.selected = -1
+            # Depopulate the object box
+            self.topparent.PopulateObject(None)
 
-        def SetActiveItem(self, mmsi):
-            # Set the active row to the specified MMSI number
-            # If the mmsi is found, set the new position as selected and visible
-            # If not found, deselect all objects
-            if self.itemDataMap.has_key(int(mmsi)):
-                new_position = self.itemIndexMap.index(int(mmsi))
-                self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
-                self.EnsureVisible(new_position)
-                return True
-            else:
-                for i in range(self.GetItemCount()):
-                    self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
-                return False
+        def SetSelectedItem(self, mmsi):
+            # Set selected
+            self.selected = mmsi
+            # Refresh ctrl
+            self.SortListItems()
+            # Populate the object box
+            self.topparent.PopulateObject(self.itemDataMap[mmsi])
 
-        def CheckForMmsi(self, mmsi):
-            # This function simply checks if the supplied MMSI number is currently in the list ctrl
-            if mmsi in self.itemIndexMap:
-                return True
-            else:
-                return False
+        def OnUpdate(self):
+            # Set empty dict
+            list_dict = {}
+
+            # Get current filter settings
+            filter = self.topparent.current_filter.copy()
+            filter_alerts = filter.get('filter_alerts',False)
+            filter_remarks = filter.get('filter_remarks',False)
+            filter_column = filter.get('filter_column','')
+            filter_query = filter.get('filter_query','')
+
+            # Populate the list dict with data
+            for mmsi, value in self.topparent.list_data.iteritems():
+                # The row list has data according to list
+                # [mmsi, imo, callsign, name, alert, remark]
+                row =  [mmsi, None, None, None, None, None]
+                row[1] = value.get('imo','')
+                row[2] = value.get('callsign','')
+                row[3] = value.get('name','')
+                alert = value.get('alert','')
+                if alert == 'A':
+                    # Alert active
+                    row[4] = 1
+                elif alert == 'AS':
+                    # Alert+sound active
+                    row[4] = 2
+                else:
+                    # No alert
+                    row[4] = 0
+                row[5] = value.get('remark','')
+                # See if we should add mmsi to dict
+                # Filter on columns, alerts and remarks
+                if filter_query and filter_column == 'MMSI' and unicode(mmsi).find(filter_query) == -1:
+                    pass
+                elif filter_query and filter_column == 'IMO' and unicode(row[1]).find(filter_query) == -1:
+                    pass
+                elif filter_query and filter_column == 'Callsign' and unicode(row[2]).find(filter_query) == -1:
+                    pass
+                elif filter_query and filter_column == 'Name' and unicode(row[3]).find(filter_query) == -1:
+                    pass
+                elif filter_alerts and not alert:
+                    pass
+                elif filter_remarks and not row[5]:
+                    pass
+                else:
+                    list_dict[mmsi] = row
+
+            # Set new ItemCount for the list ctrl if different from the current number
+            nbrofobjects = len(list_dict)
+            if self.GetItemCount() != nbrofobjects:
+                self.SetItemCount(nbrofobjects)
+
+            # Assign to variables for the virtual list ctrl
+            self.itemDataMap = list_dict.copy()
+            self.itemIndexMap = list_dict.keys()
+
+            # If no objects in list, deselect all
+            if nbrofobjects == 0:
+                # Deselect objects
+                self.selected = -1
+                # Depopulate the object box
+                self.topparent.PopulateObject(None)
+
+            self.SortListItems()
 
         def OnGetItemText(self, item, col):
             # Return the text in item, col
@@ -1773,9 +1717,6 @@ class SetAlertsWindow(wx.Dialog):
                 if string == 0: string = _("No")
                 elif string == 1: string = _("Yes")
                 elif string == 2: string = _("Yes/Sound")
-            # If string is an integer, make it to a unicode string
-            if type(string) == int:
-                string = unicode(string)
             # If string is a Nonetype, replace with an empty string
             elif string == None:
                 string = unicode('')
@@ -1786,8 +1727,22 @@ class SetAlertsWindow(wx.Dialog):
             items.sort(sorter)
             self.itemIndexMap = items
 
-            # Redraw the list
-            self.Refresh()
+            # See if the previous selected row exists after the sort
+            # If the MMSI number is found, set the new position as
+            # selected and visible. If not found, deselect all objects
+            # and depopulate the object box
+            try:
+                if self.selected in self.itemDataMap:
+                    new_position = self.FindItem(-1, unicode(self.selected))
+                    self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+                    self.EnsureVisible(new_position)
+                else:
+                    for i in range(self.GetItemCount()):
+                        self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
+                        self.selected = -1
+                        # Depopulate the object box
+                        self.topparent.PopulateObject(None)
+            except: pass
 
         # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
         def GetListCtrl(self):
@@ -2332,394 +2287,6 @@ class RawDataWindow(wx.Dialog):
         self.Destroy()
 
 
-class AdvancedAlertWindow(wx.Dialog):
-    # Copy alerts from alertlist
-    queryitems = alertlist[:]
-
-    def __init__(self, parent, id):
-        # Create a dialog with two static boxes
-        self.dlg = wx.Dialog.__init__(self, parent, id, title=_("Advanced alert editor"), size=(590,550))
-        wx.StaticBox(self,-1,_(" Current alerts "),pos=(3,5),size=(583,200))
-        wx.StaticBox(self,-1,_(" New alert "),pos=(3,210),size=(583,265))
-
-        # Show a list with current alerts
-        # panel1 - main panel
-        panel1 = wx.Panel(self, -1, pos=(15,25), size=(560,170))
-        # panel2 - sub panel containing the list ctrl
-        panel2 = wx.Panel(panel1, -1, pos=(100,0), size=(455,165))
-        self.querylist = wx.ListCtrl(panel2, -1, style=wx.LC_REPORT)
-        # Create a BoxSizer for the scroll ctrl
-        box = wx.BoxSizer(wx.VERTICAL)
-        box.Add(self.querylist, 1, wx.EXPAND)
-        panel2.SetSizer(box)
-        panel2.Layout()
-        # Add columns to list
-        self.querylist.InsertColumn(0, _("Sound alert"))
-        self.querylist.SetColumnWidth(0, 70)
-        self.querylist.InsertColumn(1, _("SQL string"))
-        self.querylist.SetColumnWidth(1, 370)
-        # Add buttons
-        wx.Button(panel1,01,_("&Remove"),pos=(0,10))
-        wx.Button(panel1,02,_("C&lear list"),pos=(0,50))
-        wx.Button(panel1,03,_("&Edit..."),pos=(0,90))
-        wx.Button(panel1,04,_("&Import..."),pos=(0,130))
-
-        panel3 = wx.Panel(self, -1, pos=(15,230), size=(560,235))
-        # Short explanation of how to add alert queries
-        wx.StaticText(panel3, -1,
-                _("New alerts are created as SQL queries by combining the three fields below.\n"
-                "The argument between each field is AND."),
-                pos=(0,0), size=(570,50))
-        # Create panels with a total of three possible SQL query parts
-        wx.StaticText(panel3, -1, 'I:', pos=(0,61))
-        self.searcharg1 = self.NewSearchPanel(panel3, -1, pos=(45,35))
-        wx.StaticText(panel3, -1, 'II: AND', pos=(0,116))
-        self.searcharg2 = self.NewSearchPanel(panel3, -1, pos=(45,90))
-        wx.StaticText(panel3, -1, 'III: AND', pos=(0,171))
-        self.searcharg3 = self.NewSearchPanel(panel3, -1, pos=(45,145))
-        # Checkbox for alert on/off
-        self.searchalertbox = wx.CheckBox(panel3, -1, _("A&ctivate sound alert"), pos=(60, 207))
-        # Button to add a query to list
-        wx.Button(panel3,05,_("A&dd to list"),pos=(405,200))
-
-        # Window buttons
-        wx.Button(self,10,_("O&pen..."),pos=(3,490))
-        wx.Button(self,11,_("&Save..."),pos=(103,490))
-        wx.Button(self,12,_("&Close"),pos=(300,490))
-        wx.Button(self,13,_("&Apply"),pos=(400,490))
-        wx.Button(self,14,_("&OK"),pos=(500,490))
-
-        # Events
-        self.Bind(wx.EVT_BUTTON, self.OnOpen, id=10)
-        self.Bind(wx.EVT_BUTTON, self.OnSave, id=11)
-        self.Bind(wx.EVT_BUTTON, self.OnClose, id=12)
-        self.Bind(wx.EVT_BUTTON, self.OnApply, id=13)
-        self.Bind(wx.EVT_BUTTON, self.OnOK, id=14)
-        self.Bind(wx.EVT_BUTTON, self.OnRemove, id=01)
-        self.Bind(wx.EVT_BUTTON, self.OnRemoveAll, id=02)
-        self.Bind(wx.EVT_BUTTON, self.OnEdit, id=03)
-        self.Bind(wx.EVT_BUTTON, self.OnImport, id=04)
-        self.Bind(wx.EVT_BUTTON, self.OnAdd, id=05)
-        self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnEdit, self.querylist)
-        self.Bind(wx.EVT_KEY_UP, self.OnKey)
-        self.Bind(wx.EVT_CLOSE, self.OnClose)
-
-        # Update the temporary list from alertlist
-        self.queryitems = alertlist[:]
-        # Update list ctrl
-        self.UpdateValues()
-
-    def OnKey(self, event):
-        # If enter is pressed, add to list
-        if event.GetKeyCode() == 13 or event.GetKeyCode() == 372:
-            self.OnAdd(event)
-
-    class NewSearchPanel(wx.Panel):
-        def __init__(self, parent, id, pos):
-            # Create panel
-            wx.Panel.__init__(self, parent, id, pos=pos, size=(465,50))
-            # Define a small font
-            smallfont = wx.Font(8, wx.NORMAL, wx.NORMAL, wx.NORMAL)
-            # List with SQL conditions
-            sqlchoices = ['LIKE', 'NOT LIKE', '=', '<', '<=', '>', '>=']
-            # Create a dict with key as in the combobox and the value as column name for the SQL-query
-            self.fieldmap = {_("MMSI number"): 'mmsi',
-                    _("Nation (2 chars)"): 'mid',
-                    _("IMO number"): 'imo',
-                    _("Name"): 'name',
-                    _("Type (number)"): 'type',
-                    _("Callsign"): 'callsign',
-                    _("GEOREF"): 'georef',
-                    _("Speed"): 'sog',
-                    _("Course"): 'cog',
-                    _("Destination"): 'destination',
-                    _("ETA (MMDDhhmm)"): 'eta',
-                    _("Length"): 'length',
-                    _("Width"): 'width',
-                    _("Draught"): 'draught',
-                    _("Rate of turn"): 'rateofturn',
-                    _("Nav Status"): 'navstatus',
-                    _("Bearing"): 'bearing',
-                    _("Distance"): 'distance'}
-            # Iterate over fieldchoices and create a sorted list of the keys
-            self.fieldchoices = []
-            for i in self.fieldmap.iterkeys(): self.fieldchoices.append(i)
-            self.fieldchoices.sort()
-
-            # Create a combo box for fiels choice
-            self.fieldbox = wx.ComboBox(self, -1, pos=(10,20),size=(150,-1), value=_("MMSI number"), choices=self.fieldchoices, style=wx.CB_READONLY)
-            fieldtext = wx.StaticText(self, -1, _("Column"), pos=(10,5))
-            fieldtext.SetFont(smallfont)
-            # Create combo box for SQL condition choice
-            self.sqlbox = wx.ComboBox(self, -1, pos=(175,20),size=(100,-1), value='LIKE', choices=sqlchoices, style=wx.CB_READONLY)
-            sqltext= wx.StaticText(self, -1, _("Condition"), pos=(175,5))
-            sqltext.SetFont(smallfont)
-            # Create textctrl for value input
-            self.valuebox = wx.TextCtrl(self, -1, pos=(290,20),size=(170,-1))
-            valuetext = wx.StaticText(self, -1, _("Value"), pos=(290,5))
-            valuetext.SetFont(smallfont)
-
-    def UpdateValues(self):
-        # Update the list ctrl with values from list queryitems
-        self.querylist.DeleteAllItems()
-        for x in self.queryitems:
-            if x[1] == 0: col0 = _("No")
-            elif x[1] == 1: col0 = _("Yes")
-            currentrow = self.querylist.GetItemCount()
-            self.querylist.InsertStringItem(currentrow, col0)
-            self.querylist.SetStringItem(currentrow, 1, x[0])
-        # Clear the input boxes
-        self.searcharg1.valuebox.Clear()
-        self.searcharg1.valuebox.SetFocus()
-        self.searcharg2.valuebox.Clear()
-        self.searcharg3.valuebox.Clear()
-        self.searchalertbox.SetValue(False)
-
-    def OnAdd(self, event):
-        sqlargs = self.ExtractInputData(['searcharg1', 'searcharg2', 'searcharg3'])
-        # Create a query string with AND between each part
-        if len(sqlargs) > 0:
-            if self.searchalertbox.GetValue():
-                alert = 1
-            else: alert = 0
-            self.queryitems.append((' AND '.join(sqlargs),alert,0))
-        # Update the list ctrl and clear input
-        self.UpdateValues()
-        # Make sure that the added query is visible in list
-        nritems = self.querylist.GetItemCount()
-        self.querylist.EnsureVisible(nritems-1)
-
-    def ExtractInputData(self, panels):
-        # This function extracts input data from the names in the list panels
-        sqlargs = []
-        # Add a string to sqlargs for each field that contains input
-        for i in panels:
-            # Create full strings for extracting data from the different fields and boxes
-            fieldbox = "self." + i + ".fieldbox.GetValue()"
-            fieldmap = "self." + i + ".fieldmap"
-            sqlbox = "self." + i + ".sqlbox.GetValue()"
-            valuebox = "self." + i + ".valuebox.GetValue()"
-            # If a value has been entered into the valuebox, process
-            if len(eval(valuebox)) > 0:
-                sqlargs.append(eval(fieldmap)[eval(fieldbox).encode('utf_8')]
-                + " " + eval(sqlbox) + " '" + eval(valuebox) + "'")
-        return sqlargs
-
-    def OnEdit(self, event):
-        # Edit a serch query
-        # If only one item is selected, edit
-        if self.querylist.GetSelectedItemCount() == 1:
-            # Step through items in list to find the selected one
-            item = self.querylist.GetNextItem(-1, -1, wx.LIST_STATE_SELECTED)
-            # Retreive the string itself from queryitems
-            querystring = str(self.queryitems[item][0])
-            # Create a dialog with a textctrl, a checkbox and two buttons
-            dlg = wx.Dialog(self, -1, _("Edit alert"), size=(400,145))
-            textbox = wx.TextCtrl(dlg, -1, querystring, pos=(10,10), size=(380,70), style=wx.TE_MULTILINE)
-            alertbox = wx.CheckBox(dlg, -1, _("A&ctivate sound alert"), pos=(30, 95))
-            buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
-            buttonsizer.SetDimension(210, 85, 180, 40)
-            # Make the checkbox checked if the value is set in queryitems
-            if self.queryitems[item][1] == 1: alertbox.SetValue(True)
-            # If user press OK, update the queryitems list and update the AdvancedAlertWindow
-            if dlg.ShowModal() == wx.ID_OK:
-                if alertbox.GetValue():
-                    alertstate = 1
-                else:
-                    alertstate = 0
-                self.queryitems[item] = (textbox.GetValue(), alertstate, 0)
-                self.UpdateValues()
-        # If more than one item selected, show error
-        elif self.querylist.GetSelectedItemCount() > 1:
-            dlg = wx.MessageDialog(self, _("You can only edit one query at a time!"), _("Error"), wx.OK|wx.ICON_ERROR)
-            dlg.ShowModal()
-
-    def OnRemove(self, event):
-        # Remove the object that is selected in list
-        # Step backwards in list and check if each object is selected
-        for x in range(self.querylist.GetItemCount()-1, -1, -1):
-            if self.querylist.GetItemState(x, wx.LIST_STATE_SELECTED):
-                del self.queryitems[x]
-        # Clear & update
-        self.UpdateValues()
-        return
-
-    def OnRemoveAll(self, event):
-        # Remove all objects
-        del self.queryitems[:]
-        # Update the list ctrl
-        self.UpdateValues()
-        return
-
-    def OnImport(self, event):
-        dlg = self.Import(self, -1)
-        dlg.ShowModal()
-        # Update
-        self.UpdateValues()
-
-    class Import(wx.Dialog):
-        def __init__(self, parent, id):
-            wx.Dialog.__init__(self, parent, id, title=_("Import"), size=(503,350))
-            # Make a box for import from clipboard
-            wx.StaticBox(self,-1,_(" Import from clipboard"),pos=(3,5),size=(496,290))
-            # Explain how the import is done
-            wx.StaticText(self, -1,
-            _("The data from the clipboard is expected to be in column format.\n"
-            "Additional arguments are written in the upper boxes while the choice\n"
-            "of column for imported data is in the bottom. Choose and press Paste.\n"
-            "Sound alert activation is for all the imported objects."),
-            pos=(10,25), size=(470,70))
-
-            # Map the parents variable queryitems to self.queryitems
-            self.queryitems = parent.queryitems
-            self.parent = parent
-
-            # Buttons and events
-            wx.Button(self,01,_("&Paste"),pos=(200,217))
-            wx.Button(self,02,_("&Close"),pos=(400,310))
-            self.Bind(wx.EVT_BUTTON, self.OnDoPaste, id=01)
-            self.Bind(wx.EVT_BUTTON, self.OnClose, id=02)
-            self.Bind(wx.EVT_CLOSE, self.OnClose)
-
-            # Create a combobox and map the resulting values
-            wx.StaticBox(self,-1,_(" Fields for the data import "),pos=(13,190),size=(475,90))
-            self.fieldbox = wx.ComboBox(self, -1, pos=(25,220),size=(150,-1), value=_("MMSI number"), choices=(_("MMSI number"), _("IMO number"), _("Name"), _("Callsign")), style=wx.CB_READONLY)
-            self.fieldmap = {_("MMSI number"): 'mmsi', _("IMO number"): 'imo', _("Name"): 'name', _("Callsign"): 'callsign'}
-            # Create a checkbox for alert on/off
-            self.alertbox = wx.CheckBox(self, -1, _("A&ctivate sound alert"), (25, 255))
-
-            # Create panels for additional search arguments
-            wx.StaticBox(self,-1,_(" Additional arguments "),pos=(13,100),size=(475,80))
-            AdvancedAlertWindow.importsearcharg = parent.NewSearchPanel(self, -1, pos=(15,120))
-
-        def OnDoPaste(self, event):
-            queries = []
-            clipboard = wx.Clipboard()
-            # Try to open clipboard and copy text objects
-            if clipboard.Open():
-                clipboarddata = wx.TextDataObject()
-                clipboard.GetData(clipboarddata)
-                data = clipboarddata.GetText()
-                clipboard.Close()
-            # For each line of input from clipboard, create a query and append to list queries
-            for i in data.splitlines():
-                # Check if value in the additional querybox and add to the full query
-                try: addquery = " AND " + self.parent.ExtractInputData(['importsearcharg'])[0]
-                except: addquery = ''
-                # Check if the line from clipboard contains data, if so, make the query
-                if len(i) > 0:
-                    queries.append(self.fieldmap[self.fieldbox.GetValue().encode('utf_8')] + " LIKE '" + i + "'" + addquery)
-            # Create a nicely formatted question to approve the imported data
-            formattedqueries = _("Do you approve of importing the following queries?\n\n")
-            for i in queries:
-                formattedqueries += str(i) + '\n'
-            # Create a dialog with a yes- and a no-button
-            dlg = wx.MessageDialog(self, formattedqueries, _("Approve import"), wx.YES_NO|wx.ICON_QUESTION)
-            # If user answers 'yes' use the imported data and destroy dialogs
-            if dlg.ShowModal() == wx.ID_YES:
-                fullqueries = []
-                # For each query, add alert on/off to list
-                for i in queries:
-                    # If alert is checked
-                    if self.alertbox.GetValue():
-                        fullqueries.append((i,1,0))
-                    # If not
-                    else:
-                        fullqueries.append((i,0,0))
-                # Extend the list containing all the queries
-                self.queryitems.extend(fullqueries)
-                # Destroy both dialogs
-                dlg.Destroy()
-                self.Destroy()
-            # If user press 'no' destroy only the approve-dialog
-            dlg.Destroy()
-
-        def OnClose(self, event):
-            self.Destroy()
-
-    def OnApply(self, event):
-        # Copy list to alertlist
-        global alertlist
-        alertlist = self.queryitems[:]
-        # Create a joined string of list
-        global alertstring
-        if len(alertlist) > 0:
-            alertstring = '(' + ') OR ('.join(zip(*alertlist)[0]) + ')'
-        else: alertstring = '()'
-        # Create a joined string of sound alert list
-        querysoundlist = []
-        global alertstringsound
-        # Loop over alertlist and append those with sound alert to alertsoundlist
-        for i in alertlist:
-            if i[1] == 1:
-               querysoundlist.append(i)
-        # If querysoundlist is not empty, make a query string of it
-        if len(querysoundlist) > 0:
-            alertstringsound = '(' + ') OR ('.join(zip(*querysoundlist)[0]) + ')'
-        else: alertstringsound = '()'
-
-    def OnOK(self, event):
-        # If user pressed OK, run apply function and destroy dialog
-        self.OnApply('')
-        self.Destroy()
-
-    def OnOpen(self, event):
-        path = ''
-        wcd = _("Alert files (*.alt)|*.alt|All files (*)|*")
-        dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN)
-        if open_dlg.ShowModal() == wx.ID_OK:
-            path = open_dlg.GetPath()
-        if len(path) > 0:
-            try:
-                file = open(path, 'rb')
-                data = pickle.load(file)
-                if data[0] == 'Alertdata':
-                    del data[0]
-                    self.queryitems.extend(data[:])
-                file.close()
-                self.UpdateValues()
-            except IOError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except KeyError, error:
-                dlg = wx.MessageDialog(self, _("File contains illegal values") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-                open_dlg.Destroy()
-            except:
-                dlg = wx.MessageDialog(self, _("Unknown error") + "\n" + str(sys.exc_info()[0]), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-
-    def OnSave(self, event):
-        self.OnApply('')
-        path = ''
-        wcd = _("Alert files (*.alt)|*.alt|All files (*)|*")
-        dir = os.getcwd()
-        open_dlg = wx.FileDialog(self, message=_("Choose a file"), defaultDir=dir, defaultFile='alert.alt', wildcard=wcd, style=wx.SAVE)
-        if open_dlg.ShowModal() == wx.ID_OK:
-            path = open_dlg.GetPath()
-        if len(path) > 0:
-            try:
-                output = open(path, 'wb')
-                outdata = self.queryitems[:]
-                outdata.insert(0, 'Alertdata')
-                pickle.dump(outdata,output)
-                output.close()
-            except IOError, error:
-                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-            except UnicodeDecodeError, error:
-                dlg = wx.MessageDialog(self, _("Could not save file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
-                dlg.ShowModal()
-                open_dlg.Destroy()
-
-    def OnClose(self, event):
-        self.Destroy()
-
-
 class GUI(wx.App):
     def OnInit(self):
         self.frame = MainWindow(None, -1, 'AIS Logger')
@@ -2740,6 +2307,11 @@ class SerialThread:
         temp = ''
         seq_temp = 10
         nbr_several_parsed = 0
+        # Workaround for high Windows port numbers...
+        if not port.upper().find('COM') == -1:
+            port_nbr = int(port.upper().strip('COM'))
+            if port_nbr > 9:
+                port = "\\.\\" + port
         # Define serial port connection
         s = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff)
         while True:
@@ -3065,9 +2637,6 @@ class CommHubThread:
             except:
                  routing_matrix[source] = []
 
-
-            # Parse data
-
             # Check if message is split on several lines
             lineinfo = data.split(',')
             if lineinfo[0] == '!AIVDM':
@@ -3120,14 +2689,8 @@ class CommHubThread:
                     pass
 
                 # Send raw data to the Raw Window queue
-                if 'mmsi' in parser:
-                    raw_mmsi = parser['mmsi']
-                else:
-                    raw_mmsi = 'N/A'
-                if 'message' in parser:
-                    raw_message = parser['message']
-                else:
-                    raw_message = 'N/A'
+                raw_mmsi = parser.get('mmsi','N/A')
+                raw_message = parser.get('message','N/A')
                 # Append source, message number, mmsi and data to rawdata
                 raw = [source, raw_message, raw_mmsi, data]
                 # Add the raw line to a list and pop when over 500 items in list
@@ -3165,14 +2728,15 @@ class MainThread:
         # Set an empty incoming dict
         self.incoming_packet = {}
 
-        # Define consumers
-        self.consumers = []
-
         # Define a dict to store the metadata hashes
         self.hashdict = {}
 
         # Define a dict to store own position data in
         self.ownposition = {}
+
+        # Define a dict to store remarks/alerts in
+        self.remarkdict = {}
+
         # See if we should set a fixed manual position
         if config['position'].as_bool('override_on'):
             ownlatitude = decimal.Decimal(config['position']['latitude'])
@@ -3193,8 +2757,8 @@ class MainThread:
                          'destination', 'eta', 'length',
                          'width', 'draught', 'rot',
                          'navstatus', 'posacc', 'distance',
-                         'bearing', 'source', 'base_station',
-                         'old', 'soundalerted')
+                         'bearing', 'source', 'transponder_type'
+                         'old')
         self.db_main.create(*self.dbfields)
         self.db_main.create_index('mmsi')
 
@@ -3205,6 +2769,9 @@ class MainThread:
 
         # Try to load ID database
         self.loadiddb()
+
+        # Try to load remark file
+        self.loadremarkfile()
 
     def DbUpdate(self, incoming_packet):
         self.incoming_packet = incoming_packet
@@ -3217,22 +2784,30 @@ class MainThread:
         # Define a dictionary to hold update data
         update_dict = {}
 
-        # Check if report is from a base station or a SAR station
+        # Check if report needs special treatment
         if 'message' in self.incoming_packet:
-            # If message type 4 (Base Station Report), set property to True
-            if self.incoming_packet['message'] == 4:
-                update_dict['base_station'] = True
+            message = self.incoming_packet['message']
+            # If message type 1, 2 or 3 (Mobile Position Report) or
+            # message type 5 (Static and Voyage Related Data):
+            if message == 1 or message == 2 or message == 3 or message == 5:
+                update_dict['transponder_type'] = 'A'
+            # If message type 4 (Base Station Report):
+            elif message == 4:
+                update_dict['transponder_type'] = 'base'
+            # If message type 18, 19 or 24 (Class B messages):
+            elif message == 18 or message == 19 or message == 24:
+                update_dict['transponder_type'] = 'B'
             # Abort insertion if message type 9 (Special Position Report)
-            elif self.incoming_packet['message'] == 9:
+            elif message == 9:
                 return None
             # FIXME: Should we just throw away these messages?
-            elif self.incoming_packet['message'] == 6:
+            elif message == 6:
                 return None
-            elif self.incoming_packet['message'] == 8:
+            elif message == 8:
                 return None
-            elif self.incoming_packet['message'] == 12:
+            elif message == 12:
                 return None
-            elif self.incoming_packet['message'] == 14:
+            elif message == 14:
                 return None
 
         # If not currently in DB, add the mmsi number, creation time and MID code
@@ -3320,21 +2895,34 @@ class MainThread:
         message = {}
 
         # See if we need to use data from iddb
-        if object_info['imo'] == None and 'imo' in iddb:
+        if object_info['imo'] is None and 'imo' in iddb:
             object_info['imo'] = str(iddb['imo']) + "'"
-        if object_info['callsign'] == None and 'callsign' in iddb:
+        if object_info['callsign'] is None and 'callsign' in iddb:
             object_info['callsign'] = iddb['callsign'] + "'"
-        if object_info['name'] == None and 'name' in iddb:
+        if object_info['name'] is None and 'name' in iddb:
             object_info['name'] = iddb['name'] + "'"
 
-        # Match against the set alerts
-        # FIXME: Check for alerts!
-        # If alert: set 'alert' = True
-        message['alert'] = False
+        # Match against set alerts
+        remarks = self.remarkdict.get(object_info['mmsi'], [])
+        if len(remarks) == 2 and remarks[0] == 'A':
+            message['alert'] = True
+            message['soundalert'] = False
+        elif len(remarks) == 2 and remarks[0] == 'AS':
+            message['alert'] = True
+            # If new object, set sound alert, otherwise don't
+            if new:
+                message['soundalert'] = True
+            else:
+                message['soundalert'] = False
+        else:
+            message['alert'] = False
+            message['soundalert'] = False
 
-        # See if we need to sound the alert
-        message['soundalert'] = False
-        # If, so DB should be updated...
+        # Match against set remarks
+        if len(remarks) == 2 and len(remarks[1]):
+            object_info['remark'] = remarks[1]
+        else:
+            object_info['remark'] = None
 
         # Make update, insert or query message
         if new:
@@ -3418,10 +3006,6 @@ class MainThread:
                 # Send a position update
                 self.SendMsg({'own_position': self.ownposition})
             # If incoming has special attributes
-            elif 'add_consumer' in incoming:
-                self.consumers.append(incoming['add_consumer'])
-            elif 'consumer_delete' in incoming and incoming['consumer_delete'] in self.consumers:
-                self.consumers.delete(incoming['consumer_delete'])
             elif 'query' in incoming and incoming['query'] > 0:
                 # Fetch the current data in DB for MMSI
                 query = self.db_main._mmsi[incoming['query']]
@@ -3439,6 +3023,17 @@ class MainThread:
                     iddb = iddb[0]
                 # Send the message
                 self.UpdateMsg(query, iddb, query=True)
+            # If the remark/alert dict is asked for
+            elif 'remarkdict_query' in incoming:
+                # Send a copy of the remark/alert dict
+                self.SendMsg({'remarkdict': self.remarkdict.copy()})
+            # If the IDDB is asked for
+            elif 'iddb_query' in incoming:
+                iddb = [ r for r in self.db_iddb ]
+                # Send a copy of the remark/alert dict
+                self.SendMsg({'iddb': iddb})
+            elif 'update_remarkdict' in incoming:
+                self.remarkdict = incoming['update_remarkdict']
 
             # Remove or mark objects as old if last update time is above threshold
             if lastchecktime + 10 < time.time():
@@ -3466,7 +3061,7 @@ class MainThread:
         for r in self.db_main:
             if r['imo']:
                 # If base station, don't log it
-                if r['base_station']: continue
+                if r['transponder_type'] == 'base': continue
                 # Make of string of these fields
                 infostring = str((r['imo'], r['name'], r['type'],
                                   r['callsign'], r['destination'],
@@ -3493,7 +3088,7 @@ class MainThread:
         # Iterate over all objects in db_main
         for r in self.db_main:
             # If base station, don't log it
-            if r['base_station']: continue
+            if r['transponder_type'] == 'base': continue
             # If object is newer than threshold, get data
             if r['time'] > threshold:
                 data = [r['time'], r['mmsi'], r['latitude'],
@@ -3583,6 +3178,25 @@ class MainThread:
                 self.db_iddb.insert(mmsi=int(ship[0]), imo=int(ship[1]), name=ship[2], callsign=ship[3])
         except:
             logging.warning("Reading from IDDB file failed", exc_info=True)
+
+    def loadremarkfile(self):
+        # This function will try to read a remark/alert file, if defined in config
+        path = config['alert']['remarkfile']
+        if config['alert'].as_bool('remarkfile_on') and len(path) > 0:
+            try:
+                temp = {}
+                file = open(path, 'rb')
+                csv_reader = csv.reader(file)
+                for row in csv_reader:
+                    # Try to read line as ASCII/UTF-8, if error, try cp1252 (workaround for Windows)
+                    try:
+                        temp[int(row[0])] = (unicode(row[1]), unicode(row[2]))
+                    except:
+                        temp[int(row[0])] = (unicode(row[1]), unicode(row[2], 'cp1252'))
+                file.close()
+                self.remarkdict = temp.copy()
+            except:
+                logging.warning("Reading from remark file failed", exc_info=True)
 
     def put(self, item):
         self.queue.put(item)
