@@ -77,8 +77,8 @@ gettext.install('aislogger', ".", unicode=False)
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
 columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 105], 'longitude': [_("Longitude"), 110], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
-defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
-                 'logging': {'logging_on': False, 'logtime': '600', 'logfile': ''},
+defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'showafterupdates': 3, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
+                 'logging': {'logging_on': False, 'logtime': '600', 'logfile': '', 'logbasestations': False},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms'},
@@ -106,13 +106,15 @@ config.comments['serial_c'] = ['', 'Settings for input from serial device C']
 config.comments['network'] = ['', 'Settings for sending/receiving data through a network connection']
 config['common'].comments['listmakegreytime'] = ['Number of s between last update and greying out an item']
 config['common'].comments['deleteitemtime'] = ['Number of s between last update and removing an item from memory']
-config['common'].comments['showbasestations'] = ['Display base stations']
-config['common'].comments['showclassbstations'] = ['Display AIS Class B stations (small ships)']
+config['common'].comments['showbasestations'] = ['Enable display of base stations']
+config['common'].comments['showclassbstations'] = ['Enable display of AIS Class B stations (small ships)']
+config['common'].comments['showafterupdates'] = ['Number of updates to an object before displaying it']
 config['common'].comments['listcolumns'] = ['Define visible columns in list view using db column names']
 config['common'].comments['alertlistcolumns'] = ['Define visible columns in alert list view using db column names']
 config['logging'].comments['logging_on'] = ['Enable file logging']
 config['logging'].comments['logtime'] = ['Number of s between writes to log file']
 config['logging'].comments['logfile'] = ['Filename of log file']
+config['logging'].comments['logbasestations'] = ['Enable logging of base stations']
 config['iddb_logging'].comments['logging_on'] = ['Enable IDDB file logging']
 config['iddb_logging'].comments['logtime'] = ['Number of s between writes to log file']
 config['iddb_logging'].comments['logfile'] = ['Filename of log file']
@@ -2907,6 +2909,11 @@ class MainThread:
         else:
             # Unknown transponder type, don't display it
             return
+        # See if we have enough updates
+        if object_info['__version__'] < config['common'].as_int('showafterupdates'):
+            return
+        elif object_info['__version__'] == config['common'].as_int('showafterupdates') and query == False:
+            new=True
 
         # Define the dict we're going to send
         message = {}
@@ -3078,8 +3085,9 @@ class MainThread:
         newhashdict = {}
         for r in self.db_main:
             if r['imo']:
-                # If base station, don't log it
-                if r['transponder_type'] == 'base': continue
+                # If base station, see if we should log it
+                if r['transponder_type'] == 'base' and not config['logging'].as_bool('logbasestations'):
+                    continue
                 # Make of string of these fields
                 infostring = str((r['imo'], r['name'], r['type'],
                                   r['callsign'], r['destination'],
@@ -3105,8 +3113,9 @@ class MainThread:
         threshold = datetime.datetime.now() - datetime.timedelta(seconds=config['logging'].as_int('logtime'))
         # Iterate over all objects in db_main
         for r in self.db_main:
-            # If base station, don't log it
-            if r['transponder_type'] == 'base': continue
+            # If base station, see if we should log it
+            if r['transponder_type'] == 'base' and not config['logging'].as_bool('logbasestations'):
+                continue
             # If object is newer than threshold, get data
             if r['time'] > threshold:
                 data = [r['time'], r['mmsi'], r['latitude'],
