@@ -77,7 +77,7 @@ gettext.install('aislogger', ".", unicode=False)
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
 columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 105], 'longitude': [_("Longitude"), 110], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
-defaultconfig = {'common': {'refreshlisttimer': 10000, 'listmakegreytime': 600, 'deleteitemtime': 3600, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
+defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': ''},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
@@ -104,9 +104,10 @@ config.comments['serial_a'] = ['', 'Settings for input from serial device A']
 config.comments['serial_b'] = ['', 'Settings for input from serial device B']
 config.comments['serial_c'] = ['', 'Settings for input from serial device C']
 config.comments['network'] = ['', 'Settings for sending/receiving data through a network connection']
-config['common'].comments['refreshlisttimer'] = ['Number of ms between refreshing the lists']
 config['common'].comments['listmakegreytime'] = ['Number of s between last update and greying out an item']
 config['common'].comments['deleteitemtime'] = ['Number of s between last update and removing an item from memory']
+config['common'].comments['showbasestations'] = ['Display base stations']
+config['common'].comments['showclassbstations'] = ['Display AIS Class B stations (small ships)']
 config['common'].comments['listcolumns'] = ['Define visible columns in list view using db column names']
 config['common'].comments['alertlistcolumns'] = ['Define visible columns in alert list view using db column names']
 config['logging'].comments['logging_on'] = ['Enable file logging']
@@ -2809,6 +2810,8 @@ class MainThread:
                 return None
             elif message == 14:
                 return None
+            else:
+                return None
 
         # If not currently in DB, add the mmsi number, creation time and MID code
         if len(currentdata) == 0:
@@ -2891,6 +2894,20 @@ class MainThread:
         return self.db_main[main_record['__id__']], iddb, new
 
     def UpdateMsg(self, object_info, iddb, new=False, query=False):
+        # See if we not should send message
+        transponder_type = object_info.get('transponder_type',None)
+        # See if we know the transponder type
+        if transponder_type:
+            # See if we display base stations
+            if transponder_type == 'base' and not config['common'].as_bool('showbasestations'):
+                return
+            # See if we display Class B stations
+            elif transponder_type == 'B' and not config['common'].as_bool('showclassbstations'):
+                return
+        else:
+            # Unknown transponder type, don't display it
+            return
+
         # Define the dict we're going to send
         message = {}
 
@@ -2931,6 +2948,7 @@ class MainThread:
             message['query'] = object_info
         else:
             message['update'] = object_info
+
         # Call function to send message
         self.SendMsg(message)
 
