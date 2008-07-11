@@ -85,7 +85,7 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
                  'serial_c': {'serial_on': False, 'port': '2', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
-                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000']}}
+                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -131,6 +131,8 @@ config['network'].comments['server_address'] = ['Server hostname or IP (server s
 config['network'].comments['server_port'] = ['Server port (server side)']
 config['network'].comments['client_on'] = ['Enable network client']
 config['network'].comments['client_addresses'] =['List of server:port to connect and use data from']
+config['network'].comments['clients_to_serial'] =['List of server:port to send data to serial out']
+config['network'].comments['clients_to_server'] =['List of server:port to send data to network server']
 
 # Log exceptions to file
 #except_file = open('except.log', 'a')
@@ -146,7 +148,6 @@ data = {}
 owndata = {}
 # Define collections
 rawdata = collections.deque()
-networkdata = collections.deque()
 # Set start time to start_time
 start_time = datetime.datetime.now()
 
@@ -2337,11 +2338,6 @@ class SerialThread:
             while len(rawdata) > 500:
                 rawdata.popleft()
 
-            # Put in NetworkFeeder's queue
-            networkdata.append(indata)
-            while len(networkdata) > 500:
-                networkdata.popleft()
-
             # Check if message is split on several lines
             lineinfo = indata.split(',')
             if lineinfo[0] == '!AIVDM':
@@ -2427,7 +2423,8 @@ class SerialThread:
 
 
 class NetworkServerThread:
-    comqueue = Queue.Queue()
+    # Define a queue for inserting data to send
+    comqueue = Queue.Queue(500)
 
     class NetworkClientHandler(SocketServer.BaseRequestHandler):
         def handle(self):
@@ -2468,7 +2465,7 @@ class NetworkServerThread:
 
     def feeder(self):
         # This function tracks each server thread and feeds them
-        # with data from networkdata
+        # with data from the queue
         queueitem = ''
         servers = []
         while True:
@@ -2480,26 +2477,23 @@ class NetworkServerThread:
                 # If a server stopped, remove from servers
                 elif queueitem[0] == 'stopped':
                     servers.remove(queueitem[1])
-            # If nothing in comqueue, pass along
-            except: pass
-            # If someone wants to stop us, send stop to servers
-            if queueitem == 'stop':
-                for server in servers:
-                    for i in range(0,100):
-                        server.indata.append('stop')
-                break
-            try:
-                # Pop message from collection
-                message = networkdata.popleft()
-            except IndexError:
-                # If no data in collection, sleep (prevents 100% CPU drain)
+                # If someone wants to stop us, send stop to servers
+                elif queueitem == 'stop':
+                    for server in servers:
+                        for i in range(0,100):
+                            server.indata.append('stop')
+                    break
+            # If no data in queue, sleep (prevents 100% CPU drain)
+            except Queue.Empty:
                 time.sleep(0.05)
                 continue
-            except: pass
-            # If message length is > 1, send message to socket
-            if len(message) > 1:
+            # If something in queue, but not in form of a list, pass
+            except IndexError: pass
+
+            # If queueitem length is > 1, send message to socket
+            if len(queueitem) > 1:
                 for server in servers:
-                    server.indata.append(message)
+                    server.indata.append(queueitem)
 
     def start(self):
         try:
@@ -2518,7 +2512,10 @@ class NetworkServerThread:
             self.comqueue.put('stop')
 
     def put(self, item):
-        self.comqueue.put(item)
+        try:
+            self.comqueue.put(item)
+        except Queue.Full:
+            pass
 
 
 class NetworkClientThread:
@@ -2610,7 +2607,7 @@ class CommHubThread:
     def runner(self):
         # The routing matrix consists of a dict with key 'input'
         # and value 'output list'
-        routing_matrix = {}
+        routing_matrix = self.CreateRoutingMatrix()
         # The message parts dict has 'input' as key and
         # and a list of previous messages as value
         message_parts = {}
@@ -2631,14 +2628,16 @@ class CommHubThread:
             # Set some variables
             source = incoming_item[0]
             data = incoming_item[1]
-            try:
-                outputs = routing_matrix[source]
-                # Route the raw data
-                for output in outputs:
-                    print "outputting to:", output
-                    # Put data in output queue or something
-            except:
-                 routing_matrix[source] = []
+
+            # See if we should route the data
+            outputs = routing_matrix.get(source,[])
+            # Route the raw data
+            for output in outputs:
+                if output == 'serial':
+                    pass
+                elif output == 'network':
+                    network_server_thread.put(data)
+            # FIXME: Put data in output queue or something
 
             # Check if message is split on several lines
             lineinfo = data.split(',')
@@ -2701,6 +2700,34 @@ class CommHubThread:
                 while len(rawdata) > 500:
                     rawdata.popleft()
             except: continue
+
+    def CreateRoutingMatrix(self):
+        # Define the matrix
+        matrix = {}
+
+        # Creates a routing matrix dict from the set config options
+        clients_to_serial = config['network']['clients_to_serial']
+        clients_to_server = config['network']['clients_to_server']
+
+        # See if we only will have one in the send list
+        if not type(clients_to_serial) == list:
+            clients_to_serial = [clients_to_serial]
+        if not type(clients_to_server) == list:
+            clients_to_server = [clients_to_server]
+
+        # Add to matrix
+        for network_source in clients_to_serial:
+            if network_source:
+                send_list = matrix.get(network_source,[])
+                send_list.append('serial')
+                matrix[network_source] = send_list
+        for network_source in clients_to_server:
+            if network_source:
+                send_list = matrix.get(network_source,[])
+                send_list.append('network')
+                matrix[network_source] = send_list
+
+        return matrix
 
     def ReturnStats(self):
         return self.stats
@@ -3256,10 +3283,11 @@ if config['serial_c'].as_bool('serial_on'):
     serialc = SerialThread()
     serialc.start('serial_c')
 if config['network'].as_bool('server_on'):
-    NetworkServerThread().start()
+    network_server_thread = NetworkServerThread()
+    network_server_thread.start()
 if config['network'].as_bool('client_on'):
-    networkc = NetworkClientThread()
-    networkc.start()
+    network_client_thread = NetworkClientThread()
+    network_client_thread.start()
 
 # Function for getting statistics from the various threads
 def GetStats():
@@ -3274,7 +3302,7 @@ def GetStats():
         stats['serial_c'] = serialc.ReturnStats()
     except: pass
     try:
-        stats['network'] = networkc.ReturnStats()
+        stats['network'] = network_client_thread.ReturnStats()
     except: pass
     return stats
 
@@ -3287,8 +3315,8 @@ app.MainLoop()
 
 # Stop threads
 SerialThread().stop()
-NetworkServerThread().stop()
-NetworkClientThread().stop()
+network_server_thread.stop()
+network_client_thread.stop()
 comm_hub_thread.stop()
 main_thread.stop()
 
