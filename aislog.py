@@ -82,9 +82,8 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms'},
-                 'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
-                 'serial_b': {'serial_on': False, 'port': '1', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
-                 'serial_c': {'serial_on': False, 'port': '2', 'baudrate': '9600', 'rtscts': False, 'xonxoff': False, 'repr_mode': False},
+                 'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
+                 'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
                  'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
@@ -101,8 +100,7 @@ config.comments['iddb_logging'] = ['', 'Settings for logging the identification 
 config.comments['alert'] = ['', 'Settings for alerts and remarks']
 config.comments['position'] = ['', 'Set manual position (overrides decoded own position)']
 config.comments['serial_a'] = ['', 'Settings for input from serial device A']
-config.comments['serial_b'] = ['', 'Settings for input from serial device B']
-config.comments['serial_c'] = ['', 'Settings for input from serial device C']
+config.comments['serial_server'] = ['', 'Settings for sending data through a serial port']
 config.comments['network'] = ['', 'Settings for sending/receiving data through a network connection']
 config['common'].comments['listmakegreytime'] = ['Number of s between last update and greying out an item']
 config['common'].comments['deleteitemtime'] = ['Number of s between last update and removing an item from memory']
@@ -2303,89 +2301,112 @@ class GUI(wx.App):
         return self.frame
 
 
-class SerialClientThread:
+class SerialThread:
     queue = Queue.Queue()
+    # Define a queue for inserting data to send
+    comqueue = Queue.Queue(500)
 
-    def reader(self, port, baudrate, rtscts, xonxoff, repr_mode, portname):
-        self.stats = {"received": 0, "parsed": 0}
-        # Set queueitem and temp to empty, and seq_temp to "illegal" value
+    def reader(self):
+        # Set some empty variables
         queueitem = ''
-        temp = ''
-        seq_temp = 10
-        nbr_several_parsed = 0
-        # Workaround for high Windows port numbers...
-        if not port.upper().find('COM') == -1:
-            port_nbr = int(port.upper().strip('COM'))
-            if port_nbr > 9:
-                port = "\\.\\" + port
-        # Define serial port connection
-        s = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff)
+        serial_ports = {}
+        remainder = {}
+
+        # See what ports we shall open and read from
+        # Get all entries in config starting with 'serial'
+        conf_ports = [ port for port in config.iterkeys()
+                  if port.find('serial') != -1 ]
+        # Iterate over ports and set port data
+        for port_data in conf_ports:
+            conf = config[port_data]
+            if 'serial_on' in conf and conf.as_bool('serial_on') and 'port' in conf:
+                # Try to get these values, if not, use standard
+                baudrate = 38400
+                rtscts = False
+                xonxoff = False
+                try:
+                    # Baudrate
+                    baudrate = conf.as_int('baudrate')
+                    # RTS/CTS
+                    rtscts = conf.as_bool('rtscts')
+                    # XON/XOFF
+                    xonxoff = conf.as_bool('xonxoff')
+                except: pass
+                # Create port name (the part after 'serial_')
+                portname = 'Serial port ' + port[7:] + ' (' + conf['port'] + ')'
+                # OK, try to open serial port, and add to serial_ports dict
+                #try:
+                serial_ports[portname] = serial.Serial(conf['port'], baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=5)
+                # FIXME: add something to logging and make user aware of failure
+                #except serial.SerialException:
+                #    # Oops, something went wrong... Close and continue
+                #    if portname in serial_ports:
+                #        serial_ports[portname].close()
+                #        del serial_ports[portname]
+                #    continue
+
+        # See if we should act as a serial server
+        serial_server = None
+        if config['serial_server'].as_bool('server_on'):
+            port = config['serial_server']['port']
+            baudrate = config['serial_server']['baudrate']
+            rtscts = config['serial_server']['rtscts']
+            xonxoff = config['serial_server']['xonxoff']
+            serial_server = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=2)
+            # FIXME: handle errors, of course...
+
         while True:
             try:
                 queueitem = self.queue.get_nowait()
             except: pass
             if queueitem == 'stop':
-                s.close()
+                for s in serial_ports.itervalues():
+                    s.close()
+                if serial_server:
+                    serial_server.flushOutput()
+                    serial_server.close()
                 break
 
-            try:
-                indata = s.readline()
-                self.stats["received"] += 1
-                if repr_mode:
-                    indata = repr(indata)[1:-1]
-            except: continue
-
-            # Add the indata line to a list and pop when over 500 items in list
-            rawdata.append(indata)
-            while len(rawdata) > 500:
-                rawdata.popleft()
-
-            # Check if message is split on several lines
-            lineinfo = indata.split(',')
-            if lineinfo[0] == '!AIVDM':
-                nbr_of_lines = int(lineinfo[1])
+            # Iterate over serial ports
+            for (name, s) in serial_ports.iteritems():
                 try:
-                    line_nbr = int(lineinfo[2])
-                    line_seq_id = int(lineinfo[3])
-                except: pass
-                # If message is split, check that they belong together
-                if nbr_of_lines > 1:
-                    # If first message, set seq_temp to the sequential message ID
-                    if line_nbr == 1:
-                        temp = ''
-                        seq_temp = line_seq_id
-                    # If not first message, check that the seq ID matches that in seq_temp
-                    # If not true, reset variables and continue
-                    elif line_seq_id != seq_temp:
-                        temp = ''
-                        seq_temp = 10
-                        continue
-                    # Add data to variable temp
-                    temp += indata
-                    # If the final message has been received, join messages and decode
-                    if len(temp.splitlines()) == nbr_of_lines:
-                        indata = decode.jointelegrams(temp)
-                        temp = ''
-                        seq_temp = 10
-                        nbr_several_parsed = nbr_of_lines
-                    else:
-                        continue
+                    # Try to read data from serial port
+                    data = s.readline()
+                except:
+                    # Prevent CPU drain if nothing to do
+                    time.sleep(0.05)
+                    continue
 
-            # Set the telegramparser result in dict parser and queue it
-            try:
-                parser = dict(decode.telegramparser(indata))
-                if len(parser) > 0:
-                    # Set source in parser as serial with portname and real port
-                    parser['source'] = "Serial port " + portname + " (" + port + ")"
-                    main_thread.put(parser)
-                    # Add to stats variable. If the message was more than one
-                    # line, add that number to stats.
-                    if nbr_several_parsed > 0:
-                        self.stats["parsed"] += nbr_several_parsed
-                        nbr_several_parsed = 0
-                    else:
-                        self.stats["parsed"] += 1
-            except: continue
+                # See if we have data left since last read
+                # If so, concat it with the first new data
+                if name in remainder:
+                    data[0] = remainder.pop(name) + data[0]
+
+                # See if the last data has a line break in it
+                # If not, pop it for use at next read
+                listlength = len(data)
+                if listlength > 0 and not data[listlength-1].endswith('\n'):
+                    remainder[name] = data.pop(listlength-1)
+
+                for indata in data:
+                    # If indata contains raw data, pass it along
+                    if indata[0] == '!' or indata[0] == '$':
+                        # Put it in CommHubThread's queue
+                        comm_hub_thread.put([name,indata])
+
+            # Is the serial server activated?
+            if serial_server:
+                lines = []
+                # Try to get data from queue
+                while True:
+                    try:
+                        lines.append(self.raw_queue.get_nowait())
+                    except Queue.Empty:
+                        break
+                # Write to port
+                for line in lines:
+                    serial_server.write(line)
+                # FIXME: handle errors
 
     def ReturnStats(self):
         return self.stats
@@ -2393,26 +2414,16 @@ class SerialClientThread:
     def put(self, item):
         self.queue.put(item)
 
-    def start(self, openport):
-        if openport == 'serial_a':
-            portconfig = config['serial_a']
-            # Set internal port name to A
-            portname = 'A'
-        elif openport == 'serial_b':
-            portconfig = config['serial_b']
-            # Set internal port name to B
-            portname = 'B'
-        elif openport == 'serial_c':
-            portconfig = config['serial_c']
-            # Set internal port name to C
-            portname = 'C'
-        port = portconfig['port']
-        baudrate = portconfig.as_int('baudrate')
-        rtscts = portconfig.as_bool('rtscts')
-        xonxoff = portconfig.as_bool('xonxoff')
-        repr_mode = portconfig.as_bool('repr_mode')
+    def put_send(self, item):
         try:
-            r = threading.Thread(target=self.reader, args=(port, baudrate, rtscts, xonxoff, repr_mode, portname))
+            self.comqueue.put_nowait(item)
+        except Queue.Full:
+            self.comqueue.get_nowait()
+            self.comqueue.put_nowait(item)
+
+    def start(self):
+        try:
+            r = threading.Thread(target=self.reader)
             r.setDaemon(1)
             r.start()
             return True
@@ -2515,9 +2526,10 @@ class NetworkServerThread:
 
     def put(self, item):
         try:
-            self.comqueue.put(item)
+            self.comqueue.put_nowait(item)
         except Queue.Full:
-            pass
+            self.comqueue.get_nowait()
+            self.comqueue.put_nowait(item)
 
 
 class NetworkClientThread:
@@ -2642,7 +2654,7 @@ class CommHubThread:
             # Route the raw data
             for output in outputs:
                 if output == 'serial':
-                    pass
+                    serial_thread.put_send(data)
                 elif output == 'network':
                     network_server_thread.put(data)
             # FIXME: Put data in output queue or something
@@ -2690,16 +2702,19 @@ class CommHubThread:
                 self.stats[source]['received'] += 1
                 # Parse data
                 parser = dict(decode.telegramparser(data))
+                # Set source in parser
+                parser['source'] = source
+                # See if we should send it, and if so: do it!
                 if 'mmsi' in parser:
-                    # Set source in parser
-                    parser['source'] = source
                     # Send data to main thread
                     main_thread.put(parser)
                     # Add to stats dict
                     self.stats[source]['parsed'] += 1
                 elif 'ownlatitude' and 'ownlongitude' in parser:
-                    # FIXME: See if we shold set own lat/long
-                    pass
+                    # Send data to main thread
+                    main_thread.put(parser)
+                    # Add to stats dict
+                    self.stats[source]['parsed'] += 1
 
                 # Send raw data to the Raw Window queue
                 raw_mmsi = parser.get('mmsi','N/A')
@@ -2715,10 +2730,12 @@ class CommHubThread:
             except: continue
 
     def CreateRoutingMatrix(self):
+        # Creates a routing matrix dict from the set config options
+
         # Define the matrix
         matrix = {}
 
-        # Creates a routing matrix dict from the set config options
+        # Get network config options
         clients_to_serial = config['network']['clients_to_serial']
         clients_to_server = config['network']['clients_to_server']
 
@@ -2739,6 +2756,32 @@ class CommHubThread:
                 send_list = matrix.get(network_source,[])
                 send_list.append('network')
                 matrix[network_source] = send_list
+
+        # Get serial config options
+        conf_ports = [ port for port in config.iterkeys()
+                       if port.find('serial') != -1 ]
+
+        # Iterate over configured ports
+        for port in conf_ports:
+            if 'port' in config[port]:
+                # Try to create port name (the part after 'serial_')
+                try:
+                    portname = 'Serial port ' + port[7:] + ' (' + config[port]['port'] + ')'
+                except: continue
+                # Add to serial server send list
+                try:
+                    if config[port].as_bool('send_to_serial_server'):
+                        send_list = matrix.get(portname,[])
+                        send_list.append('serial')
+                        matrix[portname] = send_list
+                except: pass
+                # Add to network server send list
+                try:
+                    if config[port].as_bool('send_to_network_server'):
+                        send_list = matrix.get(portname,[])
+                        send_list.append('network')
+                        matrix[portname] = send_list
+                except: pass
 
         return matrix
 
@@ -3025,7 +3068,6 @@ class MainThread:
                            if r['time'] < remove_limit ]
 
         # Mark old as old in the DB and send messages
-        print len(old_objects)
         for object in old_objects:
             self.db_main[object['__id__']]['old'] = True
             self.SendMsg({'old': {'mmsi': object['mmsi'], 'distance': object['distance']}})
@@ -3038,9 +3080,10 @@ class MainThread:
     def SendMsg(self, message):
         # Puts message in queue for consumers to get
         try:
-            self.outgoing.put(message)
+            self.outgoing.put_nowait(message)
         except Queue.Full:
-            pass
+            self.outgoing.get_nowait()
+            self.outgoing.put_nowait(message)
 
     def ReturnOutgoing(self):
         # Return all messages in the outgoing queue
@@ -3298,15 +3341,8 @@ main_thread = MainThread()
 main_thread.start()
 comm_hub_thread = CommHubThread()
 comm_hub_thread.start()
-if config['serial_a'].as_bool('serial_on'):
-    seriala = SerialClientThread()
-    seriala.start('serial_a')
-if config['serial_b'].as_bool('serial_on'):
-    serialb = SerialClientThread()
-    serialb.start('serial_b')
-if config['serial_c'].as_bool('serial_on'):
-    serialc = SerialClientThread()
-    serialc.start('serial_c')
+serial_thread = SerialThread()
+serial_thread.start()
 if config['network'].as_bool('server_on'):
     network_server_thread = NetworkServerThread()
     network_server_thread.start()
@@ -3322,7 +3358,7 @@ main_window = app.GetFrame()
 app.MainLoop()
 
 # Stop threads
-SerialClientThread().stop()
+serial_thread.stop()
 network_server_thread.stop()
 network_client_thread.stop()
 comm_hub_thread.stop()
