@@ -153,13 +153,11 @@ start_time = datetime.datetime.now()
 
 
 class MainWindow(wx.Frame):
-    # Intialize some sets and dictionaries,
+    # Intialize a set and a dict
     # active_set for the MMSI numers who are active,
-    # grey_set for grey-outed MMSI numbers,
-    # detailwindow_dict for keeping track of open Detail Windows
+    # grey_dict for grey-outed MMSI numbers (and distance)
     active_set = set()
-    grey_set = set()
-    detailwindow_dict = {}
+    grey_dict = {}
 
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, size=(800,500))
@@ -237,14 +235,22 @@ class MainWindow(wx.Frame):
         self.Bind(wx.EVT_TIMER, self.GetMessages, self.timer)
         self.timer.Start(2000)
 
+        # Set some dlg pointers to None
+        self.set_alerts_dlg = None
+        self.stats_dlg = None
+        self.raw_data_dlg = None
+        # A dict for keeping track of open Detail Windows
+        self.detailwindow_dict = {}
+
     def GetMessages(self, event):
         # Get messages from main thread
         messages = main_thread.ReturnOutgoing()
         # See what to do with them
         for message in messages:
             if 'update' in message:
-                # "Move" from grey_set to active_set
-                self.grey_set.discard(message['update']['mmsi'])
+                # "Move" from grey_dict to active_set
+                if message['update']['mmsi'] in self.grey_dict:
+                    del self.grey_dict[message['update']['mmsi']]
                 self.active_set.add(message['update']['mmsi'])
                 # Update lists
                 self.splist.Update(message)
@@ -261,18 +267,21 @@ class MainWindow(wx.Frame):
                 self.splist.Update(message)
                 self.spalert.Update(message)
             elif 'old' in message:
-                # "Move" from active_set to grey_set
-                self.active_set.discard(message['old'])
-                self.grey_set.add(message['old'])
+                # "Move" from active_set to grey_dict
+                distance = message['old'].get('distance', None)
+                if message['old']['mmsi'] in self.active_set:
+                    self.active_set.discard(message['old']['mmsi'])
+                    self.grey_dict[message['old']['mmsi']] = distance
                 # Refresh status row
                 self.OnRefreshStatus()
                 # Update lists
                 self.splist.Update(message)
                 self.spalert.Update(message)
             elif 'remove' in message:
-                # Remove from grey set (and active_set to be sure)
+                # Remove from grey_dict (and active_set to be sure)
                 self.active_set.discard(message['remove'])
-                self.grey_set.discard(message['remove'])
+                if message['remove'] in self.grey_dict:
+                    del self.grey_dict[message['remove']]
                 # Refresh status row
                 self.OnRefreshStatus()
                 # Update lists
@@ -296,6 +305,13 @@ class MainWindow(wx.Frame):
         # Refresh the listctrls (by sorting)
         self.splist.Refresh()
         self.spalert.Refresh()
+        # See if we should fetch statistics data from CommHubThread
+        # Also add data in grey_dict and nbr of items
+        if self.stats_dlg:
+            self.stats_dlg.SetData([comm_hub_thread.ReturnStats(), self.grey_dict, len(self.active_set)])
+        # See if we should fetch raw data from CommHubThread
+        if self.raw_data_dlg:
+            self.raw_data_dlg.SetData(comm_hub_thread.ReturnRaw())
 
     def splitwindows(self, window=None):
         if self.split.IsSplit(): self.split.Unsplit(window)
@@ -340,25 +356,25 @@ class MainWindow(wx.Frame):
         # Update the status row
 
         # Get total number of items by taking the length of the union
-        # between active_set and grey_set
-        nbritems = len(self.active_set.union(self.grey_set))
-        nbrgreyitems = len(self.grey_set)
+        # between active_set and grey_dict
+        nbrgreyitems = len(self.grey_dict)
+        nbritems = len(self.active_set) + nbrgreyitems
         # See if we should update the position row
         if own_pos:
             # Get human-readable position
             pos = PositionConversion(own_pos['ownlatitude'],own_pos['ownlongitude']).default
-            # Print own position
+            # Set text with own position
             self.SetStatusText(_("Own position: ") + pos[0] + '  ' + pos[1] + '  (' + own_pos['owngeoref'] + ')', 0)
-        # Print number of objects-string
+        # Set number of objects and old objects
         self.SetStatusText(_("Total nbr of objects / old: ") + str(nbritems) + ' / ' + str(nbrgreyitems), 1)
 
     def OnShowRawdata(self, event):
-        dlg = RawDataWindow(None, -1)
-        dlg.Show()
+        self.raw_data_dlg = RawDataWindow(None, -1)
+        self.raw_data_dlg.Show()
 
     def OnStatistics(self, event):
-        dlg = StatsWindow(None, -1)
-        dlg.Show()
+        self.stats_dlg = StatsWindow(None, -1)
+        self.stats_dlg.Show()
 
     def OnLoadRawFile(self, event):
         path = ''
@@ -665,8 +681,11 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                 # Remove object from list dict
                 del self.itemDataMap[mmsi]
         elif 'old' in message:
-            # Simply add object to set
-            self.greyitems.add(message['old'])
+            # Get the MMSI number
+            mmsi = message['old']['mmsi']
+            # Add object to set if already in lists
+            if mmsi in self.itemDataMap:
+                self.greyitems.add(message['old']['mmsi'])
 
         # Extract the MMSI numbers as keys for the data
         self.itemIndexMap = self.itemDataMap.keys()
@@ -1052,31 +1071,31 @@ class StatsWindow(wx.Dialog):
         horizon_panel.SetSizer(hor_sizer)
 
         # Input panels, texts and sizers
-        serial_a = self.MakeInputStatSizer(input_panel," "+_("Serial Port A")+" ("+config['serial_a']['port']+") ")
-        serial_b = self.MakeInputStatSizer(input_panel," "+_("Serial Port B")+" ("+config['serial_b']['port']+") ")
-        serial_c = self.MakeInputStatSizer(input_panel," "+_("Serial Port C")+" ("+config['serial_c']['port']+") ")
-        network = self.MakeInputStatSizer(input_panel," "+_("Network client")+" ("+config['network']['client_address']+") ")
-        self.text_input_serial_a_received = serial_a[1]
-        self.text_input_serial_a_parsed = serial_a[2]
-        self.text_input_serial_a_parserate = serial_a[3]
-        self.text_input_serial_b_received = serial_b[1]
-        self.text_input_serial_b_parsed = serial_b[2]
-        self.text_input_serial_b_parserate = serial_b[3]
-        self.text_input_serial_c_received = serial_c[1]
-        self.text_input_serial_c_parsed = serial_c[2]
-        self.text_input_serial_c_parserate = serial_c[3]
-        self.text_input_network_received = network[1]
-        self.text_input_network_parsed = network[2]
-        self.text_input_network_parserate = network[3]
+#         serial_a = self.MakeInputStatSizer(input_panel," "+_("Serial Port A")+" ("+config['serial_a']['port']+") ")
+#         serial_b = self.MakeInputStatSizer(input_panel," "+_("Serial Port B")+" ("+config['serial_b']['port']+") ")
+#         serial_c = self.MakeInputStatSizer(input_panel," "+_("Serial Port C")+" ("+config['serial_c']['port']+") ")
+#         network = self.MakeInputStatSizer(input_panel," "+_("Network client")+" ("+config['network']['client_address']+") ")
+#         self.text_input_serial_a_received = serial_a[1]
+#         self.text_input_serial_a_parsed = serial_a[2]
+#         self.text_input_serial_a_parserate = serial_a[3]
+#         self.text_input_serial_b_received = serial_b[1]
+#         self.text_input_serial_b_parsed = serial_b[2]
+#         self.text_input_serial_b_parserate = serial_b[3]
+#         self.text_input_serial_c_received = serial_c[1]
+#         self.text_input_serial_c_parsed = serial_c[2]
+#         self.text_input_serial_c_parserate = serial_c[3]
+#         self.text_input_network_received = network[1]
+#         self.text_input_network_parsed = network[2]
+#         self.text_input_network_parserate = network[3]
         input_sizer = wx.StaticBoxSizer(box_input, wx.VERTICAL)
-        input_sizer.AddSpacer(5)
-        input_sizer.Add(serial_a[0], 0, wx.EXPAND)
-        input_sizer.AddSpacer(5)
-        input_sizer.Add(serial_b[0], 0, wx.EXPAND)
-        input_sizer.AddSpacer(5)
-        input_sizer.Add(serial_c[0], 0, wx.EXPAND)
-        input_sizer.AddSpacer(5)
-        input_sizer.Add(network[0], 0, wx.EXPAND)
+#         input_sizer.AddSpacer(5)
+#         input_sizer.Add(serial_a[0], 0, wx.EXPAND)
+#         input_sizer.AddSpacer(5)
+#         input_sizer.Add(serial_b[0], 0, wx.EXPAND)
+#         input_sizer.AddSpacer(5)
+#         input_sizer.Add(serial_c[0], 0, wx.EXPAND)
+#         input_sizer.AddSpacer(5)
+#         input_sizer.Add(network[0], 0, wx.EXPAND)
         input_panel.SetSizer(input_sizer)
 
         # Uptime panels, texts and sizers
@@ -1122,12 +1141,6 @@ class StatsWindow(wx.Dialog):
         # Update the initial data
         self.LastUpdateTime = 0
         self.OldParseStats = {}
-        self.OnUpdate('')
-
-        # Timer for updating the window
-        self.timer = wx.Timer(self, -1)
-        self.timer.Start(2000)
-        wx.EVT_TIMER(self, -1, self.OnUpdate)
 
     def MakeInputStatSizer(self, panel, boxlabel):
         # Creates a StaticBoxSizer and the StaticText in it
@@ -1147,20 +1160,19 @@ class StatsWindow(wx.Dialog):
         sizer.Add(panel_right, 1, wx.EXPAND)
         return sizer, received, parsed, parsed_rate
 
-    def OnUpdate(self, event):
+    def Update(self, input_stats, grey_dict, nbr_tot_items):
         # Update data in the window
-        horizon = self.CalcHorizon()
-        input_stats = GetStats()
+        horizon = self.CalcHorizon(grey_dict)
         rates = self.CalcParseRate(input_stats)
         # Objects text
-        self.text_object_nbr.SetLabel(str(horizon[0]))
-        self.text_object_grey_nbr.SetLabel(str(horizon[1]))
-        self.text_object_distance_nbr.SetLabel(str(horizon[2]))
+        self.text_object_nbr.SetLabel(str(nbr_tot_items))
+        self.text_object_grey_nbr.SetLabel(str(horizon[0]))
+        self.text_object_distance_nbr.SetLabel(str(horizon[1]))
         # Horizon text
-        self.text_horizon_min.SetLabel(str(round(horizon[3],1)) + " km")
-        self.text_horizon_max.SetLabel(str(round(horizon[4],1)) + " km")
-        self.text_horizon_mean.SetLabel(str(round(horizon[5],1)) + " km")
-        self.text_horizon_median.SetLabel(str(round(horizon[6],1)) + " km")
+        self.text_horizon_min.SetLabel(str(round(horizon[2],1)) + " km")
+        self.text_horizon_max.SetLabel(str(round(horizon[3],1)) + " km")
+        self.text_horizon_mean.SetLabel(str(round(horizon[4],1)) + " km")
+        self.text_horizon_median.SetLabel(str(round(horizon[5],1)) + " km")
         # Uptime text
         uptime = datetime.datetime.now() - start_time
         up_since = start_time.isoformat()[:19]
@@ -1220,29 +1232,24 @@ class StatsWindow(wx.Dialog):
         self.LastUpdateTime = time.time()
         return data
 
-    def CalcHorizon(self):
+    def CalcHorizon(self, grey_dict):
         # Calculate a "horizon", the distance to greyed out objects
-        old = []
-        # Fetch the total number of rows in the db
-        query1 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi FROM data", ())]))
-        nritems = len(query1)
-        # Fetch the greyed out rows in the db
-        query2 = execSQL(DbCmd(SqlCmd, [("SELECT mmsi, distance FROM data WHERE datetime(time) < datetime('now', 'localtime', '-%s seconds')" % config['common'].as_int('listmakegreytime'), ())]))
-        nrgreyitems = len(query2)
         # Set as initial values
-        nrhorizonitems = 0
+        nbrgreyitems = 0
+        nbrhorizonitems = 0
         totaldistance = 0
         distancevalues = []
-        # Extract values from the SQL-query
-        for v in query2:
-            if v[1]:
-                totaldistance += float(v[1])
-                distancevalues.append(float(v[1]))
-                nrhorizonitems += 1
+        # Extract values from grey_dict
+        for distance in grey_dict.itervalues():
+            nbrgreyitems += 1
+            if distance:
+                totaldistance += float(distance)
+                distancevalues.append(float(distance))
+                nbrhorizonitems += 1
         # Calculate median
         median = 0
         # Calculate meanvalue
-        if totaldistance > 0: mean = (totaldistance/nrhorizonitems)
+        if totaldistance > 0: mean = (totaldistance/nbrhorizonitems)
         else: mean = 0
         # Sort the list and take the middle element.
         n = len(distancevalues)
@@ -1261,10 +1268,16 @@ class StatsWindow(wx.Dialog):
             maximum = max(distancevalues)
         except: pass
         # Return strings
-        return nritems, nrgreyitems, nrhorizonitems, minimum, maximum, mean, median
+        return nbrgreyitems, nbrhorizonitems, minimum, maximum, mean, median
+
+    def SetData(self, data):
+        # Make an update with the new data
+        # data[0] is the stats dict
+        # data[1] is the grey dict
+        # data[2] is the total nbr of items
+        self.Update(data[0], data[1], data[2])
 
     def OnClose(self, event):
-        self.timer.Stop()
         self.Destroy()
 
 
@@ -2232,6 +2245,7 @@ class RawDataWindow(wx.Dialog):
         self.textbox = wx.TextCtrl(panel,-1,pos=(15,25),size=(895,355),style=(wx.TE_MULTILINE | wx.TE_READONLY))
         # Buttons
         self.pausebutton = wx.ToggleButton(self,1,_("&Pause"), size=(-1,35))
+        self.pause = False
         self.closebutton = wx.Button(self,2,_("&Close"), size=(-1,35))
 
         # Sizers
@@ -2250,17 +2264,10 @@ class RawDataWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnClose, id=2)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
-        # Timer for updating the textbox
-        self.timer = wx.Timer(self, -1)
-        wx.EVT_TIMER(self, -1, self.Update)
-        self.OnStart(self)
-
-    def Update(self, event):
+    def Update(self, data):
         updatetext = ''
-        # Loop if objects in queue
-        while len(rawdata) > 0:
-            # Pop from queue and add string to updatetext (make sure it's ascii)
-            line = rawdata.popleft()
+        # Get data and add string to updatetext (make sure it's ascii)
+        for line in data:
             sentence = unicode(line[3], 'ascii', 'replace').rstrip('\r\n')
             updatetext += sentence + '  => message ' + str(line[1]) + ', mmsi ' + str(line[2]) + ', source ' + str(line[0]) + '\n'
         # Write updatetext from the top of the box
@@ -2273,19 +2280,14 @@ class RawDataWindow(wx.Dialog):
             self.textbox.Remove(20000, numberofchars)
             self.textbox.ShowPosition(0)
 
-    def OnStart(self, event):
-        # Make an update before starting timer
-        self.Update(self)
-        self.textbox.ShowPosition(0)
-        # Start timer
-        self.timer.Start(1000)
+    def SetData(self, data):
+        # If not paused, update
+        if not self.pause:
+            self.Update(data)
 
     def OnPause(self, event):
-        # If button is toggled, stop timer, if not start timer
-        if self.pausebutton.GetValue() is True:
-            self.timer.Stop()
-        elif self.pausebutton.GetValue() is False:
-            self.OnStart(self)
+        # Set pause to togglebutton value
+        self.pause = self.pausebutton.GetValue()
 
     def OnClose(self, event):
         self.Destroy()
@@ -2301,7 +2303,7 @@ class GUI(wx.App):
         return self.frame
 
 
-class SerialThread:
+class SerialClientThread:
     queue = Queue.Queue()
 
     def reader(self, port, baudrate, rtscts, xonxoff, repr_mode, portname):
@@ -2603,6 +2605,8 @@ class NetworkClientThread:
 
 class CommHubThread:
     incoming_queue = Queue.Queue()
+    raw_queue = Queue.Queue(500)
+    stats = {}
 
     def runner(self):
         # The routing matrix consists of a dict with key 'input'
@@ -2611,8 +2615,6 @@ class CommHubThread:
         # The message parts dict has 'input' as key and
         # and a list of previous messages as value
         message_parts = {}
-        # Set statistics dict
-        self.statistics = {}
         # Empty incoming queue
         incoming_item = ''
         while True:
@@ -2628,6 +2630,12 @@ class CommHubThread:
             # Set some variables
             source = incoming_item[0]
             data = incoming_item[1]
+
+            # See if we got source in stats dict
+            if not source in self.stats:
+                self.stats[source] = {}
+                self.stats[source]['received'] = 0
+                self.stats[source]['parsed'] = 0
 
             # See if we should route the data
             outputs = routing_matrix.get(source,[])
@@ -2678,14 +2686,17 @@ class CommHubThread:
 
             # Set the telegramparser result in dict parser and queue it
             try:
+                # Add one to stats dict
+                self.stats[source]['received'] += 1
+                # Parse data
                 parser = dict(decode.telegramparser(data))
                 if 'mmsi' in parser:
                     # Set source in parser
                     parser['source'] = source
                     # Send data to main thread
                     main_thread.put(parser)
-                    # Add to stats variable
-                    #self.stats[source]["parsed"] += 1
+                    # Add to stats dict
+                    self.stats[source]['parsed'] += 1
                 elif 'ownlatitude' and 'ownlongitude' in parser:
                     # FIXME: See if we shold set own lat/long
                     pass
@@ -2695,10 +2706,12 @@ class CommHubThread:
                 raw_message = parser.get('message','N/A')
                 # Append source, message number, mmsi and data to rawdata
                 raw = [source, raw_message, raw_mmsi, data]
-                # Add the raw line to a list and pop when over 500 items in list
-                rawdata.append(raw)
-                while len(rawdata) > 500:
-                    rawdata.popleft()
+                # Add the raw line to the raw queue
+                try:
+                    self.raw_queue.put_nowait(raw)
+                except Queue.Full:
+                    self.raw_queue.get_nowait()
+                    self.raw_queue.put_nowait(raw)
             except: continue
 
     def CreateRoutingMatrix(self):
@@ -2732,6 +2745,16 @@ class CommHubThread:
     def ReturnStats(self):
         return self.stats
 
+    def ReturnRaw(self):
+        # Return all data in the raw queue
+        temp = []
+        while True:
+            try:
+                temp.append(self.raw_queue.get_nowait())
+            except Queue.Empty:
+                break
+        return temp
+            
     def put(self, item):
         self.incoming_queue.put(item)
 
@@ -2936,6 +2959,7 @@ class MainThread:
         else:
             # Unknown transponder type, don't display it
             return
+
         # See if we have enough updates
         if object_info['__version__'] < config['common'].as_int('showafterupdates'):
             return
@@ -2996,14 +3020,15 @@ class MainThread:
 
         # Compare objects in db against old_limit and remove_limit
         old_objects = [ r for r in self.db_main
-                        if r['time'] < old_limit ]
+                        if not r['old'] and r['time'] < old_limit ]
         remove_objects = [ r for r in self.db_main
                            if r['time'] < remove_limit ]
 
         # Mark old as old in the DB and send messages
+        print len(old_objects)
         for object in old_objects:
             self.db_main[object['__id__']]['old'] = True
-            self.SendMsg({'old': object['mmsi']})
+            self.SendMsg({'old': {'mmsi': object['mmsi'], 'distance': object['distance']}})
         # Delete removable objects in db
         self.db_main.delete(remove_objects)
         # Send removal messages
@@ -3274,13 +3299,13 @@ main_thread.start()
 comm_hub_thread = CommHubThread()
 comm_hub_thread.start()
 if config['serial_a'].as_bool('serial_on'):
-    seriala = SerialThread()
+    seriala = SerialClientThread()
     seriala.start('serial_a')
 if config['serial_b'].as_bool('serial_on'):
-    serialb = SerialThread()
+    serialb = SerialClientThread()
     serialb.start('serial_b')
 if config['serial_c'].as_bool('serial_on'):
-    serialc = SerialThread()
+    serialc = SerialClientThread()
     serialc.start('serial_c')
 if config['network'].as_bool('server_on'):
     network_server_thread = NetworkServerThread()
@@ -3288,23 +3313,6 @@ if config['network'].as_bool('server_on'):
 if config['network'].as_bool('client_on'):
     network_client_thread = NetworkClientThread()
     network_client_thread.start()
-
-# Function for getting statistics from the various threads
-def GetStats():
-    stats = {}
-    try:
-        stats['serial_a'] = seriala.ReturnStats()
-    except: pass
-    try:
-        stats['serial_b'] = serialb.ReturnStats()
-    except: pass
-    try:
-        stats['serial_c'] = serialc.ReturnStats()
-    except: pass
-    try:
-        stats['network'] = network_client_thread.ReturnStats()
-    except: pass
-    return stats
 
 # Start the GUI
 # Wait some time before initiating, to let the threads settle
@@ -3314,7 +3322,7 @@ main_window = app.GetFrame()
 app.MainLoop()
 
 # Stop threads
-SerialThread().stop()
+SerialClientThread().stop()
 network_server_thread.stop()
 network_client_thread.stop()
 comm_hub_thread.stop()
