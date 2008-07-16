@@ -43,8 +43,12 @@ from configobj import ConfigObj
 
 import decode
 from util import *
-if os.name == 'nt': import serialwin32 as serial
-elif os.name == 'posix': import serialposix as serial
+if os.name == 'nt':
+    import serialwin32 as serial
+    platform = 'nt'
+elif os.name == 'posix':
+    import serialposix as serial
+    platform = 'posix'
 
 ### Fetch command line arguments
 # Define standard config file
@@ -347,7 +351,11 @@ class MainWindow(wx.Frame):
         for line in f:
             # For each line, strip any whitespace and then split the data using ','
             row = line.strip().split(',')
-            typecode[row[0]] = row[1]
+            # Try to read line as ASCII/UTF-8, if error, try cp1252 (workaround for Windows)
+            try:
+                typecode[row[0]] = unicode(row[1])
+            except:
+                typecode[row[0]] = unicode(row[1], 'cp1252')
         f.close()
 
     def OnRefreshStatus(self, own_pos=False):
@@ -519,7 +527,7 @@ class PositionConversion(object):
 
 class ListWindow(wx.Panel):
     def __init__(self, parent, id):
-        wx.Panel.__init__(self, parent, id)
+        wx.Panel.__init__(self, parent, id, style=wx.CLIP_CHILDREN)
 
         # Read config and extract columns
         # Create a list from the comma-separated string in config (removing all whitespace)
@@ -553,7 +561,7 @@ class ListWindow(wx.Panel):
 
 class AlertWindow(wx.Panel):
     def __init__(self, parent, id):
-        wx.Panel.__init__(self, parent, id)
+        wx.Panel.__init__(self, parent, id, style=wx.CLIP_CHILDREN)
 
         # Read config and extract columns
         # Create a list from the comma-separated string in config (removing all whitespace)
@@ -750,7 +758,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
     def OnGetItemText(self, item, col):
         # Return the text in item, col
         mmsi = self.itemIndexMap[item]
-        string = self.itemDataMap[mmsi][col]
+        string = unicode(self.itemDataMap[mmsi][col])
         # If string is a Nonetype, replace with an empty string
         if string == None:
             string = u''
@@ -773,10 +781,14 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         return self.attr
 
     def SortItems(self,sorter=cmp):
-        # Do the sort
+        # Sort items
         items = list(self.itemDataMap.keys())
         items.sort(sorter)
         self.itemIndexMap = items
+
+        # Workaround for updating listctrl on Windows
+        if platform == 'nt':
+            self.Refresh(False)
 
         # See if the previous selected row exists after the sort
         # If the MMSI number is found, set the new position as
@@ -1288,7 +1300,7 @@ class SetAlertsWindow(wx.Dialog):
         wx.Dialog.__init__(self, parent, id, title=_("Set alerts and remarks"))
         # Create panels
         filter_panel = wx.Panel(self, -1)
-        list_panel = wx.Panel(self, -1)
+        list_panel = wx.Panel(self, -1, style=wx.CLIP_CHILDREN)
         self.object_panel = wx.Panel(self, -1)
         action_panel = wx.Panel(self, -1)
         # Create static boxes
@@ -1348,7 +1360,7 @@ class SetAlertsWindow(wx.Dialog):
         lowsizer.Add(action_panel, 0, wx.EXPAND)
         mainsizer.Add(lowsizer, 0)
         mainsizer.AddSpacer((0,10))
-        mainsizer.Add(sizer2, flag=wx.ALIGN_RIGHT)
+        mainsizer.Add(sizer2, 0, flag=wx.ALIGN_RIGHT)
         sizer2.Add(self.apply_button, 0)
         sizer2.AddSpacer((15,0))
         sizer2.Add(self.save_button, 0)
@@ -1726,12 +1738,12 @@ class SetAlertsWindow(wx.Dialog):
         def OnGetItemText(self, item, col):
             # Return the text in item, col
             mmsi = self.itemIndexMap[item]
-            string = self.itemDataMap[mmsi][col]
+            string = unicode(self.itemDataMap[mmsi][col])
             # If column with alerts, map 0, 1 and 2 to text strings
             if col == 4:
-                if string == 0: string = _("No")
-                elif string == 1: string = _("Yes")
-                elif string == 2: string = _("Yes/Sound")
+                if string == '0': string = _("No")
+                elif string == '1': string = _("Yes")
+                elif string == '2': string = _("Yes/Sound")
             # If string is a Nonetype, replace with an empty string
             elif string == None:
                 string = unicode('')
@@ -1741,6 +1753,10 @@ class SetAlertsWindow(wx.Dialog):
             items = list(self.itemDataMap.keys())
             items.sort(sorter)
             self.itemIndexMap = items
+
+            # Workaround for updating listctrl on Windows
+            if platform == 'nt':
+                self.Refresh()
 
             # See if the previous selected row exists after the sort
             # If the MMSI number is found, set the new position as
@@ -2336,7 +2352,7 @@ class SerialThread:
                 portname = 'Serial port ' + port[7:] + ' (' + conf['port'] + ')'
                 # OK, try to open serial port, and add to serial_ports dict
                 #try:
-                serial_ports[portname] = serial.Serial(conf['port'], baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=5)
+                serial_ports[portname] = serial.Serial(conf['port'], baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=1)
                 # FIXME: add something to logging and make user aware of failure
                 #except serial.SerialException:
                 #    # Oops, something went wrong... Close and continue
@@ -2358,7 +2374,9 @@ class SerialThread:
         while True:
             try:
                 queueitem = self.queue.get_nowait()
-            except: pass
+            # If no data in queue, sleep (prevents 100% CPU drain)
+            except Queue.Empty:
+                time.sleep(0.05)
             if queueitem == 'stop':
                 for s in serial_ports.itervalues():
                     s.close()
@@ -2371,10 +2389,8 @@ class SerialThread:
             for (name, s) in serial_ports.iteritems():
                 try:
                     # Try to read data from serial port
-                    data = s.readline()
+                    data = s.read(65536).splitlines(True)
                 except:
-                    # Prevent CPU drain if nothing to do
-                    time.sleep(0.05)
                     continue
 
                 # See if we have data left since last read
@@ -2400,7 +2416,7 @@ class SerialThread:
                 # Try to get data from queue
                 while True:
                     try:
-                        lines.append(self.raw_queue.get_nowait())
+                        lines.append(self.comqueue.get_nowait())
                     except Queue.Empty:
                         break
                 # Write to port
@@ -2568,8 +2584,10 @@ class NetworkClientThread:
                 queueitem = self.queue.get_nowait()
             except: pass
             if queueitem == 'stop':
-                for con in connections.itervalues():
-                    con.close()
+                try:
+                    for con in connections.itervalues():
+                        con.close()
+                except: pass
                 break
 
             # Now iterate over the connetions
@@ -3106,8 +3124,11 @@ class MainThread:
         while True:
             # Try to get the next item in queue
             try:
-                incoming = self.queue.get()
-            except: pass
+                incoming = self.queue.get_nowait()
+            except:
+                # Prevent CPU drain if nothing to do
+                time.sleep(0.05)
+                incoming = {}
             if incoming == 'stop': break
             # Check if incoming contains a MMSI number
             if 'mmsi' in incoming and incoming['mmsi'] > 1:
@@ -3343,11 +3364,11 @@ comm_hub_thread = CommHubThread()
 comm_hub_thread.start()
 serial_thread = SerialThread()
 serial_thread.start()
+network_server_thread = NetworkServerThread()
+network_client_thread = NetworkClientThread()
 if config['network'].as_bool('server_on'):
-    network_server_thread = NetworkServerThread()
     network_server_thread.start()
 if config['network'].as_bool('client_on'):
-    network_client_thread = NetworkClientThread()
     network_client_thread.start()
 
 # Start the GUI
@@ -3358,10 +3379,10 @@ main_window = app.GetFrame()
 app.MainLoop()
 
 # Stop threads
+comm_hub_thread.stop()
 serial_thread.stop()
 network_server_thread.stop()
 network_client_thread.stop()
-comm_hub_thread.stop()
 main_thread.stop()
 
 # Exit program when only one thread remains
