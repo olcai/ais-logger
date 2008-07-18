@@ -2675,7 +2675,6 @@ class CommHubThread:
                     serial_thread.put_send(data)
                 elif output == 'network':
                     network_server_thread.put(data)
-            # FIXME: Put data in output queue or something
 
             # Check if message is split on several lines
             lineinfo = data.split(',')
@@ -2903,26 +2902,23 @@ class MainThread:
             message = self.incoming_packet['message']
             # If message type 1, 2 or 3 (Mobile Position Report) or
             # message type 5 (Static and Voyage Related Data):
-            if message == 1 or message == 2 or message == 3 or message == 5:
+            if message == '1' or message == '2' or message == '3' or message == '5':
+                update_dict['transponder_type'] = 'A'
+            # If message type S02 (Standard Position), S0E (Identification)
+            # or S0F (Vessel Data):
+            elif message == 'S02' or message == 'S0E' or message == 'S0F':
                 update_dict['transponder_type'] = 'A'
             # If message type 4 (Base Station Report):
-            elif message == 4:
+            elif message == '4':
                 update_dict['transponder_type'] = 'base'
             # If message type 18, 19 or 24 (Class B messages):
-            elif message == 18 or message == 19 or message == 24:
+            elif message == '18' or message == '19' or message == '24':
                 update_dict['transponder_type'] = 'B'
-            # Abort insertion if message type 9 (Special Position Report)
-            elif message == 9:
+            # Abort insertion if message type 9 (Special Position
+            # Report), or type S0D and S11 (aviation reports)
+            elif message == '9' or message == 'S0D' or message == 'S11':
                 return None
-            # FIXME: Should we just throw away these messages?
-            elif message == 6:
-                return None
-            elif message == 8:
-                return None
-            elif message == 12:
-                return None
-            elif message == 14:
-                return None
+            # FIXME: Should we just throw the rest of these messages?
             else:
                 return None
 

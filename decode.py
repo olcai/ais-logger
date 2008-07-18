@@ -74,19 +74,35 @@ def telegramparser(inputstring):
 
     # If the sentence follows the SAAB TransponderTech standard:
     if telegram[0] == '$PAIS':
+        # Check the checksum
+        #if not checksum(inputstring):
+        #    return
+
+        # Get the source MMSI number
+        mmsi = int(telegram[2],16)
+
+        # Extract the message type number and prefix the number with
+        # an 'S' to indicate SAAB messages
+        message = 'S' + telegram[1]
+
+        # Get current computer time to timestamp messages
+        timestamp = datetime.datetime.now()
+
         # If the sentence contains 02 - AIS Standard Position:
-        if telegram[1] == '02':
-            # Check the checksum
-            if not checksum(inputstring):
-                return
-            # MMSI number
-            mmsi = int(telegram[2],16)
+        if message == 'S02':
             # Rate of turn in degrees/minute from -127 to +127 where 128=N/A
             rateofturn = int(telegram[3], 16)
             if rateofturn >=0 and rateofturn <128: # Turning right
-                rateofturn = rateofturn
+                # Convert between ROTais and ROTind
+                rateofturn = int(math.pow((rateofturn/4.733), 2))
+                if rateofturn > 720:
+                    rateofturn = 720 # Full
             elif rateofturn >128 and rateofturn <=255: # Turning left
                 rateofturn = 256 - rateofturn
+                # Convert between ROTais and ROTind
+                rateofturn = -int(math.pow((rateofturn/4.733), 2))
+                if rateofturn < -720:
+                    rateofturn = -720 # Full
             else:
                 rateofturn = None # N/A
             # Navigation status converted to ITU-R M.1371 standard
@@ -97,10 +113,10 @@ def telegramparser(inputstring):
             elif navstatus == '4': navstatus = 1 # At Anchor
             elif navstatus == '5': navstatus = None # (MAYDAY?) sets to N/A
             else: navstatus = None # N/A
-            # Latitude in degrees and minutes, example: N57 23.8200
-            latitude = saab_calclatitude(int(telegram[5],16))
-            # Longitude in degrees and minutes, example: W115 20.3154
-            longitude = saab_calclongitude(int(telegram[6],16))
+            # Latitude in decimal degrees (DD)
+            latitude = calclatitude(tobin(int(telegram[5],16),27))
+            # Longitude in decimal degrees (DD)
+            longitude = calclongitude(tobin(int(telegram[6],16),28))
             # Speed over ground in 1/10 knots
             sog = decimal.Decimal(int(telegram[7],16)) / 10
             if sog > decimal.Decimal("102.2"):
@@ -115,8 +131,6 @@ def telegramparser(inputstring):
                 heading = None # N/A
             # Position accuracy where 0=bad and 1=good/DGPS
             posacc = int(telegram[11])
-            # Timestamp the message with local time
-            timestamp = datetime.datetime.now()
             # Return a dictionary with descriptive keys
             return {'mmsi': mmsi,
                     'rot': rateofturn,
@@ -127,15 +141,116 @@ def telegramparser(inputstring):
                     'cog': cog,
                     'heading': heading,
                     'posacc': posacc,
-                    'time': timestamp}
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 04 - Addressed Text Telegram:
+        elif message == 'S04':
+            # Text
+            text = telegram[4]
+            # Destination MMSI number
+            to_mmsi = int(telegram[5],16)
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'text': text,
+                    'to_mmsi': to_mmsi,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 06 - Broadcast Text Telegram:
+        elif message == 'S06':
+            # Text
+            text = str(telegram[4])
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'text': text,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 07 - Addressed Binary Telegram:
+        elif message == 'S07':
+            # Binary data payload
+            payload = []
+            for char in telegram[4]:
+                payload.append(tobin(int(char,16),4))
+            payload = ''.join(payload)
+            # Destination MMSI number
+            to_mmsi = int(telegram[5],16)
+            # Application ID (Designated Area Code, DAC) + (Function
+            # Identification, FI)
+            appid = []
+            for char in telegram[7]:
+                appid.append(tobin(int(char,16),4))
+            appid = ''.join(appid)
+            dac = int(appid[0:10],2)
+            fi = int(appid[10:16],2)
+            # Try to decode message payload
+            decoded = binaryparser(dac,fi,payload)
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'to_mmsi': to_mmsi,
+                    'dac': dac,
+                    'fi': fi,
+                    'decoded': decoded,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 09 - Broadcast Binary Telegram:
+        elif message == 'S09':
+            # Binary data payload
+            payload = []
+            for char in telegram[4]:
+                payload.append(tobin(int(char,16),4))
+            payload = ''.join(payload)
+            # Application ID (Designated Area Code, DAC) + (Function
+            # Identification, FI)
+            appid = []
+            for char in telegram[6]:
+                appid.append(tobin(int(char,16),4))
+            appid = ''.join(appid)
+            dac = int(appid[0:10],2)
+            fi = int(appid[10:16],2)
+            # Try to decode message payload
+            decoded = binaryparser(dac,fi,payload)
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'dac': dac,
+                    'fi': fi,
+                    'decoded': decoded,
+                    'time': timestamp,
+                    'message': message}
+
+        # If the sentence contains message 0D - Standard Position,
+        # aviation, or message 11 - SAR Standard Position
+        elif message == 'S0D' or 'S11':
+            # Latitude in decimal degrees (DD)
+            latitude = calclatitude(tobin(int(telegram[3],16),27))
+            # Longitude in decimal degrees (DD)
+            longitude = calclongitude(tobin(int(telegram[4],16),28))
+            # Speed over ground in knots
+            sog = int(telegram[5],16)
+            if sog > 1022:
+                sog = None # N/A
+            # Course over ground in 1/10 degrees where 0=360
+            cog = decimal.Decimal(int(telegram[6],16)) / 10
+            if cog > 360: # 360 and above means 360=N/A
+                cog = None
+            # Altitude in meters, 4095=N/A
+            altitude = int(telegram[7],16)
+            if altitude == 4095:
+                altitude = None # N/A
+            # Return a dictionary with descriptive keys
+            return {'mmsi': mmsi,
+                    'altitude': altitude,
+                    'sog': sog,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'cog': cog,
+                    'time': timestamp,
+                    'message': message}
 
         # If the sentence contains 0E - Identification Data:
-        elif telegram[1] == '0E':
-            # Check the checksum
-            if not checksum(inputstring):
-                return
-            # MMSI number
-            mmsi = int(telegram[2],16)
+        elif message == 'S0E':
             # Name, removes the characters @, ' ' and "
             name = telegram[3].strip('''@ ''').replace('''"''',"'")
             # Callsign, removes the characters @, ' ' and "
@@ -144,44 +259,32 @@ def telegramparser(inputstring):
             imo = int(telegram[5],16)
             if imo == 0:
                 imo = None
-            # Built In Test where 0=OK, 1=error
-            bit = int(telegram[6])
-            # Tamper warning where 0=OK, 1=manipulated
-            tamper = int(telegram[7])
-            # Timestamp the message with local time
-            timestamp = datetime.datetime.now()
             # Return a dictionary with descriptive keys
             return {'mmsi': mmsi,
                     'name': name,
                     'callsign': callsign,
                     'imo': imo,
-                    'bit': bit,
-                    'tamper': tamper,
-                    'time': timestamp}
+                    'time': timestamp,
+                    'message': message}
 
         # If the sentence contains 0F - Vessel Data:
-        elif telegram[1] == '0F':
-            # Check the checksum
-            if not checksum(inputstring):
-                return
-            # MMSI number
-            mmsi = int(telegram[2],16)
+        elif message == 'S0F':
             # Ship type, a two-digit code where 00=N/A
             type = int(telegram[3],16)
             if type == 0:
                 type = None # N/A
-            # Draught in 1/10 meters
+            # Draught in 1/10 meters, where 0.0 = N/A
             draught = decimal.Decimal(int(telegram[4],16)) / 10
-            # Calculate ship length in meters from the antenna position in hex
+            if draught == 0:
+                draught = None
+            # Calculate ship width and length in meters from
+            # antenna position in hex
             # Convert hex->int->bits
-            l_binnumber = tobin(int(telegram[5],16),count=30)
-            # Add the integers from the two parts
-            length = int(l_binnumber[12:21],2) + int(l_binnumber[21:30],2)
-            # Calculate ship width in meters from the antenna position in hex
-            # Convert hex->int->bits
-            w_binnumber = tobin(int(telegram[5],16),count=30)
-            # Add integers from the two parts
-            width = int(w_binnumber[0:6],2) + int(w_binnumber[6:12],2)
+            ant_binnumber = tobin(int(telegram[5],16),count=30)
+            # Add integers from the two parts to form length
+            length = int(ant_binnumber[12:21],2) + int(ant_binnumber[21:30],2)
+            # Add integers from the two parts to form width
+            width = int(ant_binnumber[0:6],2) + int(ant_binnumber[6:12],2)
             # Destination, removes the characters @, ' ' and "
             destination = telegram[6].strip('''@ ''').replace('''"''',"'")
             # Received estimated time of arrival in format
@@ -189,8 +292,6 @@ def telegramparser(inputstring):
             eta = telegram[8]
             if eta == '00000000':
                 eta = None
-            # Timestamp the message with local time
-            timestamp = datetime.datetime.now()
             # Return a dictionary with descriptive keys
             return {'mmsi': mmsi,
                     'type': type,
@@ -199,10 +300,12 @@ def telegramparser(inputstring):
                     'width': width,
                     'destination': destination,
                     'eta': eta,
-                    'time': timestamp}
+                    'time': timestamp,
+                    'message': message}
 
         else:
-            return ''
+            # If we don't decode the message, at least return message type
+            return {'mmsi': mmsi, 'time': timestamp, 'message': message}
 
 
     # If the sentence follows the ITU-R M.1371 standard:
@@ -215,7 +318,7 @@ def telegramparser(inputstring):
         bindata = sixtobin(telegram[5])
 
         # Extract the message type number
-        message = int(bindata[0:6],2)
+        message = str(int(bindata[0:6],2))
 
         # Get the source MMSI number
         mmsi = int(bindata[8:38],2)
@@ -224,7 +327,7 @@ def telegramparser(inputstring):
         timestamp = datetime.datetime.now()
 
         # If the sentence contains message 1, 2 or 3 - Position Report:
-        if message == 1 or message == 2 or message == 3:
+        if message == '1' or message == '2' or message == '3':
             # Navigation status according to ITU-R M.1371
             navstatus = int(bindata[38:42],2)
             if navstatus == 0: navstatus = 0 # Under Way
@@ -286,9 +389,8 @@ def telegramparser(inputstring):
                     'time': timestamp,
                     'message': message}
 
-
         # If the sentence contains message 4 - Base Station Report:
-        elif message == 4:
+        elif message == '4':
             # Bits 38-78 contains current station time in UTC
             try:
                 station_time = datetime.datetime(int(bindata[38:52],2),
@@ -316,7 +418,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 5 - Ship Static and Voyage
         # Related Data:
-        elif message == 5 and int(bindata[38:40],2) == 0:
+        elif message == '5' and int(bindata[38:40],2) == 0:
             # IMO number where 00000000=N/A
             imo = int(bindata[40:70],2)
             if imo == 0:
@@ -334,15 +436,17 @@ def telegramparser(inputstring):
             # Ship width calculated from antenna position
             width = (int(bindata[258:264],2) + int(bindata[264:270],2))
             # Received estimated time of arrival in format
-            #  month-day-hour-minute: MMDDHHMM where 00000000=N/A
+            # month-day-hour-minute: MMDDHHMM where 00000000=N/A
             eta = (str(int(bindata[274:278],2)).zfill(2) +
                   str(int(bindata[278:283],2)).zfill(2) +
                   str(int(bindata[283:288],2)).zfill(2) +
                   str(int(bindata[288:294],2)).zfill(2))
             if eta == '00000000':
                 eta = None
-            # Draught in 1/10 meters
+            # Draught in 1/10 meters, where 0.0 == N/A
             draught = decimal.Decimal(int(bindata[294:302],2)) / 10
+            if draught == 0:
+                draught = None
             # Destination, removes the characters @, ' ' and "
             destination = bintoascii(bindata[302:422]).strip('''@ ''').replace('''"''',"'")
             # Return a dictionary with descriptive keys
@@ -360,7 +464,7 @@ def telegramparser(inputstring):
                     'message': message}
 
         # If the sentence contains message 6 - Addressed Binary Message:
-        elif message == 6:
+        elif message == '6':
             # Sequence number
             sequence = int(bindata[38:40],2)
             # Destination MMSI number
@@ -384,7 +488,7 @@ def telegramparser(inputstring):
                     'message': message}
 
         # If the sentence contains message 8 - Binary Broadcast Message:
-        elif message == 8:
+        elif message == '8':
             # Application ID (Designated Area Code, DAC) + (Function
             # Identification, FI)
             dac = int(bindata[40:50],2)
@@ -403,7 +507,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 9 - SAR Aircraft position
         # report:
-        elif message == 9:
+        elif message == '9':
             # Altitude in meters, 4095=N/A, 4094=>4094
             altitude = int(bindata[38:50],2)
             if altitude == 4095:
@@ -435,7 +539,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 12 - Addressed safety
         # related message:
-        elif message == 12:
+        elif message == '12':
             # Sequence number
             sequence = int(bindata[38:40],2)
             # Destination MMSI number
@@ -452,7 +556,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 14 - Safety related
         # Broadcast Message:
-        elif message == 14:
+        elif message == '14':
             # Content of message in ASCII (replace any " with ')
             content = bintoascii(bindata[40:1008]).replace('''"''',"'")
             # Return a dictionary with descriptive keys
@@ -463,7 +567,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 18 - Standard Class B CS
         # Position Report:
-        elif message == 18:
+        elif message == '18':
             # Speed over ground in 1/10 knots
             sog = decimal.Decimal(int(bindata[46:56],2)) / 10
             if sog > decimal.Decimal("102.2"):
@@ -495,7 +599,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 19 - Extended Class B
         # Equipment Position Report:
-        elif message == 19:
+        elif message == '19':
             # Speed over ground in 1/10 knots
             sog = decimal.Decimal(int(bindata[46:56],2)) / 10
             if sog > decimal.Decimal("102.2"):
@@ -541,7 +645,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 24 - Class B CS Static Data
         # Report:
-        elif message == 24:
+        elif message == '24':
             # See if it is message part A or B
             if int(bindata[38:40]) == 0: # Part A
                 # Name, removes the characters @, ' ' and "
@@ -849,18 +953,6 @@ def calclatitude(binary_latitude):
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
 
-def saab_calclatitude(latitude):
-    # Special calculations for SAAB latitude
-    if latitude >=0 and latitude <=2147483647: # North
-        degree = decimal.Decimal(latitude) / 600000 # 10000 * 60
-    elif latitude >=2147483648 and latitude <=4294967295: # South
-        latitude = 4294967296 - latitude
-        degree = -decimal.Decimal(latitude) / 600000 # 10000 * 60
-    else:
-        return None # N/A
-    # Return a value quantized to six decimal digits
-    return degree.quantize(decimal.Decimal('1E-6'))
-
 def calclongitude(binary_longitude):
     # Calculates longitude
     # First look at the signed bit
@@ -886,18 +978,6 @@ def calclongitude(binary_longitude):
         degree = -decimal.Decimal(longitude) / factor
     else: # Positive == East
         degree = decimal.Decimal(longitude) / factor
-    # Return a value quantized to six decimal digits
-    return degree.quantize(decimal.Decimal('1E-6'))
-
-def saab_calclongitude(longitude):
-    # Special calculations for SAAB longitude
-    if longitude >=0 and longitude <=2147483647: # East
-        degree = decimal.Decimal(longitude) / 600000 # 10000 * 60
-    elif longitude >=2147483648 and longitude <=4294967295: # West
-        longitude = 4294967296 - longitude
-        degree = -decimal.Decimal(longitude) / 600000 # 10000 * 60
-    else:
-        return None # N/A
     # Return a value quantized to six decimal digits
     return degree.quantize(decimal.Decimal('1E-6'))
 
