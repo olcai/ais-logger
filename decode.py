@@ -146,24 +146,24 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 04 - Addressed Text Telegram:
         elif message == 'S04':
-            # Text
-            text = telegram[4]
+            # Content of message in ASCII (replace any " with ')
+            content = telegram[4].replace('''"''',"'")
             # Destination MMSI number
             to_mmsi = int(telegram[5],16)
             # Return a dictionary with descriptive keys
             return {'mmsi': mmsi,
-                    'text': text,
+                    'content': content,
                     'to_mmsi': to_mmsi,
                     'time': timestamp,
                     'message': message}
 
         # If the sentence contains message 06 - Broadcast Text Telegram:
         elif message == 'S06':
-            # Text
-            text = str(telegram[4])
+            # Content of message in ASCII (replace any " with ')
+            content = str(telegram[4]).replace('''"''',"'")
             # Return a dictionary with descriptive keys
             return {'mmsi': mmsi,
-                    'text': text,
+                    'content': content,
                     'time': timestamp,
                     'message': message}
 
@@ -305,7 +305,7 @@ def telegramparser(inputstring):
 
         else:
             # If we don't decode the message, at least return message type
-            return {'mmsi': mmsi, 'time': timestamp, 'message': message}
+            return {'mmsi': mmsi, 'time': timestamp, 'message': message, 'decoded': False}
 
 
     # If the sentence follows the ITU-R M.1371 standard:
@@ -680,7 +680,7 @@ def telegramparser(inputstring):
 
         else:
             # If we don't decode the message, at least return message type
-            return {'mmsi': mmsi, 'time': timestamp, 'message': message}
+            return {'mmsi': mmsi, 'time': timestamp, 'message': message, 'decoded': False}
 
 
     # If the sentence contains NMEA-compliant position data (from own GPS):

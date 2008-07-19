@@ -1035,15 +1035,16 @@ class StatsWindow(wx.Dialog):
         wx.Dialog.__init__(self, parent, id, title=_("Statistics"))
         # Create panels
         objects_panel = wx.Panel(self, -1)
-        objects_panel.SetMinSize((280,-1))
+        objects_panel.SetMinSize((290,-1))
         horizon_panel = wx.Panel(self, -1)
-        input_panel = wx.Panel(self, -1)
-        input_panel.SetMinSize((250,-1))
+        horizon_panel.SetMinSize((220,-1))
+        self.input_panel = wx.Panel(self, -1)
+        self.input_panel.SetMinSize((500,-1))
         uptime_panel = wx.Panel(self, -1)
         # Create static boxes
         box_objects = wx.StaticBox(objects_panel,-1,_(" Objects "))
         box_horizon = wx.StaticBox(horizon_panel,-1,_(" Radio Horizon (calculated) "))
-        box_input = wx.StaticBox(input_panel,-1,_(" Input "))
+        box_input = wx.StaticBox(self.input_panel,-1,_(" Inputs "))
         box_uptime = wx.StaticBox(uptime_panel,-1,_(" Uptime "))
 
         # Object panels, texts and sizers
@@ -1080,33 +1081,12 @@ class StatsWindow(wx.Dialog):
         hor_sizer.Add(hor_panel_right, wx.EXPAND)
         horizon_panel.SetSizer(hor_sizer)
 
-        # Input panels, texts and sizers
-#         serial_a = self.MakeInputStatSizer(input_panel," "+_("Serial Port A")+" ("+config['serial_a']['port']+") ")
-#         serial_b = self.MakeInputStatSizer(input_panel," "+_("Serial Port B")+" ("+config['serial_b']['port']+") ")
-#         serial_c = self.MakeInputStatSizer(input_panel," "+_("Serial Port C")+" ("+config['serial_c']['port']+") ")
-#         network = self.MakeInputStatSizer(input_panel," "+_("Network client")+" ("+config['network']['client_address']+") ")
-#         self.text_input_serial_a_received = serial_a[1]
-#         self.text_input_serial_a_parsed = serial_a[2]
-#         self.text_input_serial_a_parserate = serial_a[3]
-#         self.text_input_serial_b_received = serial_b[1]
-#         self.text_input_serial_b_parsed = serial_b[2]
-#         self.text_input_serial_b_parserate = serial_b[3]
-#         self.text_input_serial_c_received = serial_c[1]
-#         self.text_input_serial_c_parsed = serial_c[2]
-#         self.text_input_serial_c_parserate = serial_c[3]
-#         self.text_input_network_received = network[1]
-#         self.text_input_network_parsed = network[2]
-#         self.text_input_network_parserate = network[3]
-        input_sizer = wx.StaticBoxSizer(box_input, wx.VERTICAL)
-#         input_sizer.AddSpacer(5)
-#         input_sizer.Add(serial_a[0], 0, wx.EXPAND)
-#         input_sizer.AddSpacer(5)
-#         input_sizer.Add(serial_b[0], 0, wx.EXPAND)
-#         input_sizer.AddSpacer(5)
-#         input_sizer.Add(serial_c[0], 0, wx.EXPAND)
-#         input_sizer.AddSpacer(5)
-#         input_sizer.Add(network[0], 0, wx.EXPAND)
-        input_panel.SetSizer(input_sizer)
+        # Initial input panel and sizer
+        # The sub-boxes are created on request in Update
+        maininput_sizer = wx.StaticBoxSizer(box_input, wx.VERTICAL)
+        self.input_sizer = wx.GridSizer(0, 2, 10, 10)
+        maininput_sizer.Add(self.input_sizer, 0, wx.EXPAND)
+        self.input_panel.SetSizer(maininput_sizer)
 
         # Uptime panels, texts and sizers
         up_panel_left = wx.Panel(uptime_panel)
@@ -1128,31 +1108,34 @@ class StatsWindow(wx.Dialog):
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
         # Sizer setup
-        mainsizer = wx.BoxSizer(wx.VERTICAL)
+        self.mainsizer = wx.BoxSizer(wx.VERTICAL)
         sizer1 = wx.BoxSizer(wx.HORIZONTAL)
         sizer2 = wx.BoxSizer(wx.VERTICAL)
         sizer_button = wx.BoxSizer(wx.HORIZONTAL)
-        # Sizer1 is the sizer positioning the different panels (and static boxes)
-        # Sizer2 is an inner sizer for th transponder data panel and remark panel
+        # Sizer1 is the sizer positioning the different panels and boxes
+        # Sizer2 is an inner sizer for the objects data and update panels
         sizer2.Add(objects_panel, 0)
-        sizer2.AddSpacer(5)
-        sizer2.Add(horizon_panel, 0, wx.EXPAND)
         sizer2.AddSpacer(5)
         sizer2.Add(uptime_panel, 0, wx.EXPAND)
         sizer1.Add(sizer2)
         sizer1.AddSpacer(5)
-        sizer1.Add(input_panel, 0, wx.EXPAND)
-        mainsizer.Add(sizer1)
-        mainsizer.AddSpacer((0,10))
+        sizer1.Add(horizon_panel, 0, wx.EXPAND)
+        self.mainsizer.Add(sizer1)
+        self.mainsizer.AddSpacer(5)
+        self.mainsizer.Add(self.input_panel, 0, wx.EXPAND)
+        self.mainsizer.AddSpacer((0,10))
         sizer_button.Add(closebutton, 0)
-        mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
-        self.SetSizerAndFit(mainsizer)
+        self.mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
+        self.SetSizerAndFit(self.mainsizer)
 
-        # Update the initial data
+        # Define dict for storing input boxes
+        self.input_boxes = {}
+
+        # Set variables to hold data for calculating parse rate
         self.LastUpdateTime = 0
         self.OldParseStats = {}
 
-    def MakeInputStatSizer(self, panel, boxlabel):
+    def MakeInputStatBox(self, panel, boxlabel):
         # Creates a StaticBoxSizer and the StaticText in it
         box = wx.StaticBox(panel, -1, boxlabel)
         sizer = wx.StaticBoxSizer(box, wx.HORIZONTAL)
@@ -1163,17 +1146,16 @@ class StatsWindow(wx.Dialog):
         wx.StaticText(panel_left,-1,_("Parsed rate:"),pos=(-1,40))
         received = wx.StaticText(panel_right,-1,'',pos=(-1,0))
         parsed = wx.StaticText(panel_right,-1,'',pos=(-1,20))
-        parsed_rate = wx.StaticText(panel_right,-1,'',pos=(-1,40))
+        rate = wx.StaticText(panel_right,-1,'',pos=(-1,40))
         sizer.AddSpacer(5)
         sizer.Add(panel_left, 0)
         sizer.AddSpacer(10)
         sizer.Add(panel_right, 1, wx.EXPAND)
-        return sizer, received, parsed, parsed_rate
+        return {'sizer': sizer, 'received': received, 'parsed': parsed, 'rate': rate}
 
     def Update(self, input_stats, grey_dict, nbr_tot_items):
         # Update data in the window
         horizon = self.CalcHorizon(grey_dict)
-        rates = self.CalcParseRate(input_stats)
         # Objects text
         self.text_object_nbr.SetLabel(str(nbr_tot_items))
         self.text_object_grey_nbr.SetLabel(str(horizon[0]))
@@ -1188,59 +1170,49 @@ class StatsWindow(wx.Dialog):
         up_since = start_time.isoformat()[:19]
         self.text_uptime_delta.SetLabel(str(uptime).split('.')[0])
         self.text_uptime_since.SetLabel(str(up_since.replace('T', " "+_("at")+" ")))
-        # Input text
-        if input_stats.has_key('serial_a'):
-            self.text_input_serial_a_received.SetLabel(str(input_stats['serial_a']['received'])+_(" msgs"))
-            self.text_input_serial_a_parsed.SetLabel(str(input_stats['serial_a']['parsed'])+_(" msgs"))
-            if rates.has_key('serial_a'):
-                self.text_input_serial_a_parserate.SetLabel(str(rates['serial_a'])+_(" msgs/sec"))
-        if input_stats.has_key('serial_b'):
-            self.text_input_serial_b_received.SetLabel(str(input_stats['serial_b']['received'])+_(" msgs"))
-            self.text_input_serial_b_parsed.SetLabel(str(input_stats['serial_b']['parsed'])+_(" msgs"))
-            if rates.has_key('serial_b'):
-                self.text_input_serial_b_parserate.SetLabel(str(rates['serial_b'])+_(" msgs/sec"))
-        if input_stats.has_key('serial_c'):
-            self.text_input_serial_c_received.SetLabel(str(input_stats['serial_c']['received'])+_(" msgs"))
-            self.text_input_serial_c_parsed.SetLabel(str(input_stats['serial_c']['parsed'])+_(" msgs"))
-            if rates.has_key('serial_c'):
-                self.text_input_serial_c_parserate.SetLabel(str(rates['serial_c'])+_(" msgs/sec"))
-        if input_stats.has_key('network'):
-            self.text_input_network_received.SetLabel(str(input_stats['network']['received'])+_(" msgs"))
-            self.text_input_network_parsed.SetLabel(str(input_stats['network']['parsed'])+_(" msgs"))
-            if rates.has_key('network'):
-                self.text_input_network_parserate.SetLabel(str(rates['network'])+_(" msgs/sec"))
-
-    def CalcParseRate(self, input_stats):
-        # Compare data from last run with new data and calculate a parse rate
-        data = {}
+        # Iterate over items in the statistics dict
+        for (name, data) in input_stats.iteritems():
+            if name in self.input_boxes:
+                # Just update the box
+                box = self.input_boxes[name]
+                if 'received' in data:
+                    box['received'].SetLabel(str(data['received'])+_(" msgs"))
+                if 'parsed' in data:
+                    box['parsed'].SetLabel(str(data['parsed'])+_(" msgs"))
+                    rate = self.CalcParseRate(name, data['parsed'])
+                    box['rate'].SetLabel(str(rate)+_(" msgs/sec"))
+            else:
+                # New input name, redraw input panel
+                self.input_boxes[name] = self.MakeInputStatBox(self.input_panel, " " + name + " ")
+                self.input_sizer.Add(self.input_boxes[name]['sizer'], 0, wx.EXPAND)
+                self.SetSizerAndFit(self.mainsizer)
+        # Set current time to LastUpdateTime
+        self.LastUpdateTime = time.time()
+                
+    def CalcParseRate(self, name, nbrparsed):
+        # Compare data from five runs ago with new data and calculate
+        # a parse rate
+        rate = 0
         # If there are a LastUpdateTime, check for input_stats
         if self.LastUpdateTime:
             # Calculate a timediff (in seconds)
             timediff = time.time() - self.LastUpdateTime
-            # Check if input_stats has key, and then check if OldParseStats are available
-            if input_stats.has_key('serial_a'):
-                if self.OldParseStats.has_key('serial_a'):
-                    rate = round(((input_stats['serial_a']['parsed'] - self.OldParseStats['serial_a']) / timediff), 1)
-                    data['serial_a'] = rate
-                self.OldParseStats['serial_a'] = int(input_stats['serial_a']['parsed'])
-            if input_stats.has_key('serial_b'):
-                if self.OldParseStats.has_key('serial_b'):
-                    rate = round(((input_stats['serial_b']['parsed'] - self.OldParseStats['serial_b']) / timediff), 1)
-                    data['serial_b'] = rate
-                self.OldParseStats['serial_b'] = int(input_stats['serial_b']['parsed'])
-            if input_stats.has_key('serial_c'):
-                if self.OldParseStats.has_key('serial_c'):
-                    rate = round(((input_stats['serial_c']['parsed'] - self.OldParseStats['serial_c']) / timediff), 1)
-                    data['serial_c'] = rate
-                self.OldParseStats['serial_c'] = int(input_stats['serial_c']['parsed'])
-            if input_stats.has_key('network'):
-                if self.OldParseStats.has_key('network'):
-                    rate = round(((input_stats['network']['parsed'] - self.OldParseStats['network']) / timediff), 1)
-                    data['network'] = rate
-                self.OldParseStats['network'] = int(input_stats['network']['parsed'])
-        # Set current time to LastUpdateTime
-        self.LastUpdateTime = time.time()
-        return data
+            # Check if OldParseStats are available
+            if name in self.OldParseStats:
+                # Calculate a rate based on the oldest of the five
+                # previous updates
+                diff = nbrparsed - self.OldParseStats[name][0]
+                # Calculate the rate
+                rate = round((diff / (timediff * 5)), 1)
+            else:
+                # Set the list to current values
+                self.OldParseStats[name] = [nbrparsed,nbrparsed,nbrparsed,nbrparsed,nbrparsed]
+            # Set new stats to the OldParseStats list
+            self.OldParseStats[name].append(nbrparsed)
+            # Remove the oldest (first) item
+            del self.OldParseStats[name][0]
+        # Return rate
+        return rate
 
     def CalcHorizon(self, grey_dict):
         # Calculate a "horizon", the distance to greyed out objects
@@ -1263,10 +1235,12 @@ class StatsWindow(wx.Dialog):
         else: mean = 0
         # Sort the list and take the middle element.
         n = len(distancevalues)
-        copy = distancevalues[:] # So that "numbers" keeps its original order
+        # Make sure that "numbers" keeps its original order
+        copy = distancevalues[:]
         copy.sort()
         if n > 2:
-            if n & 1:         # There is an odd number of elements
+            # If there is an odd number of elements
+            if n & 1:
                 median = copy[n // 2]
             else:
                 median = (copy[n // 2 - 1] + copy[n // 2]) / 2
@@ -2725,8 +2699,10 @@ class CommHubThread:
                 if 'mmsi' in parser:
                     # Send data to main thread
                     main_thread.put(parser)
-                    # Add to stats dict
-                    self.stats[source]['parsed'] += 1
+                    # Add to stats dict if we have decoded message
+                    # (see if 'decoded' is True)
+                    if parser.get('decoded',True):
+                        self.stats[source]['parsed'] += 1
                 elif 'ownlatitude' and 'ownlongitude' in parser:
                     # Send data to main thread
                     main_thread.put(parser)
