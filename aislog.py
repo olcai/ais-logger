@@ -49,6 +49,8 @@ if os.name == 'nt':
 elif os.name == 'posix':
     import serialposix as serial
     platform = 'posix'
+else:
+    platform = 'unknown'
 
 ### Fetch command line arguments
 # Define standard config file
@@ -58,6 +60,7 @@ configfile = 'config.ini'
 cmdlineparser = optparse.OptionParser()
 # Add an option for supplying a different config file than the default one
 cmdlineparser.add_option("-c", "--config", dest="configfile", help="Specify a config file other than the default")
+cmdlineparser.add_option("-n", "--nogui", action="store_true", dest="nogui", default=False, help="Run without GUI, i.e. as a server and logger")
 # Parse the arguments
 (cmdlineoptions, cmdlineargs) = cmdlineparser.parse_args()
 if cmdlineoptions.configfile:
@@ -79,13 +82,13 @@ gettext.install('aislogger', ".", unicode=False)
 
 ### Load or create configuration
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
-columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 105], 'longitude': [_("Longitude"), 110], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
+columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 110], 'longitude': [_("Longitude"), 115], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
 defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'showafterupdates': 3, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': '', 'logbasestations': False},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
-                 'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms'},
+                 'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
                  'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []}}
@@ -128,6 +131,7 @@ config['position'].comments['override_on'] = ['Enable manual position override']
 config['position'].comments['position_format'] = ['Define the position presentation format in DD, DM or DMS']
 config['position'].comments['latitude'] = ['Latitude in decimal degrees (DD)']
 config['position'].comments['longitude'] = ['Longitude in decimal degrees (DD)']
+config['position'].comments['use_position_from'] = ['Define the source to get GPS position from']
 config['network'].comments['server_on'] = ['Enable network server']
 config['network'].comments['server_address'] = ['Server hostname or IP (server side)']
 config['network'].comments['server_port'] = ['Server port (server side)']
@@ -136,11 +140,6 @@ config['network'].comments['client_addresses'] =['List of server:port to connect
 config['network'].comments['clients_to_serial'] =['List of server:port to send data to serial out']
 config['network'].comments['clients_to_server'] =['List of server:port to send data to network server']
 
-# Log exceptions to file
-#except_file = open('except.log', 'a')
-#logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',filename='except.log',filemode='a')
-#sys.stderr = except_file
-#sys.stderr = sys.stdout()
 
 # Define global variables
 mid = {}
@@ -155,11 +154,13 @@ start_time = datetime.datetime.now()
 
 
 class MainWindow(wx.Frame):
-    # Intialize a set and a dict
+    # Intialize a set, a dict and a list
     # active_set for the MMSI numers who are active,
     # grey_dict for grey-outed MMSI numbers (and distance)
+    # last_own_pos for last own position
     active_set = set()
     grey_dict = {}
+    last_own_pos = []
 
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, size=(800,500))
@@ -304,6 +305,9 @@ class MainWindow(wx.Frame):
                 # See if we should send to set alert window
                 if self.set_alerts_dlg:
                     self.set_alerts_dlg.GetData(message)
+            elif 'error' in message:
+                # Create a dialog and display error
+                self.ShowErrorMsg(message['error'])
         # Refresh the listctrls (by sorting)
         self.splist.Refresh()
         self.spalert.Refresh()
@@ -318,6 +322,18 @@ class MainWindow(wx.Frame):
     def splitwindows(self, window=None):
         if self.split.IsSplit(): self.split.Unsplit(window)
         else: self.split.SplitHorizontally(self.splist, self.spalert, 0)
+
+    def ShowErrorMsg(self, messagestring):
+        # Format and show a message dialog displaying the error and
+        # the last line from the traceback (internal exception message)
+        messagelist = messagestring.splitlines(True)
+        message = messagelist[0]
+        if len(messagelist) > 1:
+            traceback = messagelist[-1]
+        else:
+            traceback = ''
+        dlg = wx.MessageDialog(self, "\n" +message+ "\n" +traceback, style=wx.OK|wx.ICON_ERROR)
+        dlg.ShowModal()
 
     def AddDetailWindow(self, window, mmsi):
         # If there already is a window open with the same MMSI number,
@@ -351,26 +367,26 @@ class MainWindow(wx.Frame):
         for line in f:
             # For each line, strip any whitespace and then split the data using ','
             row = line.strip().split(',')
-            # Try to read line as ASCII/UTF-8, if error, try cp1252 (workaround for Windows)
+            # Try to read line as ASCII/UTF-8, if error, try cp1252
             try:
-                typecode[row[0]] = unicode(row[1])
+                typecode[row[0]] = unicode(row[1], 'utf-8')
             except:
                 typecode[row[0]] = unicode(row[1], 'cp1252')
         f.close()
 
     def OnRefreshStatus(self, own_pos=False):
         # Update the status row
-
         # Get total number of items by taking the length of the union
         # between active_set and grey_dict
         nbrgreyitems = len(self.grey_dict)
         nbritems = len(self.active_set) + nbrgreyitems
         # See if we should update the position row
         if own_pos:
-            # Get human-readable position
-            pos = PositionConversion(own_pos['ownlatitude'],own_pos['ownlongitude']).default
+            # Get human-readable position and save to variable
+            self.last_own_pos = [PositionConversion(own_pos['ownlatitude'],own_pos['ownlongitude']).default, own_pos['owngeoref']]
+        if self.last_own_pos:
             # Set text with own position
-            self.SetStatusText(_("Own position: ") + pos[0] + '  ' + pos[1] + '  (' + own_pos['owngeoref'] + ')', 0)
+            self.SetStatusText(_("Own position: ") + self.last_own_pos[0][0] + '  ' + self.last_own_pos[0][1] + '  (' + self.last_own_pos[1] + ')', 0)
         # Set number of objects and old objects
         self.SetStatusText(_("Total nbr of objects / old: ") + str(nbritems) + ' / ' + str(nbrgreyitems), 1)
 
@@ -453,76 +469,6 @@ class MainWindow(wx.Frame):
     def OnSettings(self, event):
         dlg = SettingsWindow(None, -1)
         dlg.Show()
-
-
-class PositionConversion(object):
-    # Makes position conversions from position in a DD format
-    # to human-readable strings in DD, DM or DMS format
-    # Input must be of type decimal.Decimal
-    def __init__(self, lat, long):
-        self.latitude = lat
-        self.longitude = long
-
-    @property
-    def default(self):
-        # Extract the format we should use from configuration, and
-        # return the right function
-        format = config['position']['position_format'].lower()
-        if format == 'dms':
-            return self.dms
-        elif format == 'dm':
-            return self.dm
-        elif format == 'dd':
-            return self.dd
-
-    @property
-    def dd(self):
-        # Return a human-readable DD position
-        if self.latitude > 0:
-            lat = str(abs(self.latitude)) + u'°N'
-        elif self.latitude < 0:
-            lat = str(abs(self.latitude)) + u'°S'
-        if self.longitude > 0:
-            long = str(abs(self.longitude)) + u'°E'
-        elif self.longitude < 0:
-            long = str(abs(self.longitude)) + u'°W'
-        return lat, long
-
-    @property
-    def dm(self):
-        # Return a human-readable DM position
-        latdegree = int(self.latitude)
-        longdegree = int(self.longitude)
-        latmin = ((self.latitude - latdegree) * 60).quantize(decimal.Decimal('0.0001')).normalize()
-        longmin = ((self.longitude - longdegree) * 60).quantize(decimal.Decimal('0.0001')).normalize()
-        if self.latitude > 0:
-            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(abs(latmin)) + "'N"
-        elif self.latitude < 0:
-            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(abs(latmin)) + "'S"
-        if self.longitude > 0:
-            long = str(abs(longdegree)).zfill(3) + u'°'+ str(abs(longmin)) + "'E"
-        elif self.longitude < 0:
-            long = str(abs(longdegree)).zfill(3) + u'°' + str(abs(longmin)) + "'W"
-        return lat, long
-
-    @property
-    def dms(self):
-        # Return a human-readable DMS position
-        latdegree = int(self.latitude)
-        longdegree = int(self.longitude)
-        latmin = (self.latitude - latdegree) * 60
-        longmin = (self.longitude - longdegree) * 60
-        latsec = ((latmin - int(latmin)) * 60).quantize(decimal.Decimal('0.01')).normalize()
-        longsec = ((longmin - int(longmin)) * 60).quantize(decimal.Decimal('0.01')).normalize()
-        if self.latitude > 0:
-            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(int(abs(latmin))).zfill(2) + "'" + str(abs(latsec)) + "''N"
-        elif self.latitude < 0:
-            lat = str(abs(latdegree)).zfill(2) + u'°'+ str(int(abs(latmin))).zfill(2) + "'" + str(abs(latsec)) + "''S"
-        if self.longitude > 0:
-            long = str(abs(longdegree)).zfill(3) + u'°'+ str(int(abs(longmin))).zfill(2) + "'" + str(abs(longsec)) + "''E"
-        elif self.longitude < 0:
-            long = str(abs(longdegree)).zfill(3) + u'°' + str(int(abs(longmin))).zfill(2) + "'" + str(abs(longsec)) + "''W"
-        return lat, long
 
 
 class ListWindow(wx.Panel):
@@ -827,11 +773,11 @@ class DetailWindow(wx.Dialog):
         objinfo_panel = wx.Panel(self, -1)
         self.remark_panel = wx.Panel(self, -1)
         # Create static boxes
-        wx.StaticBox(shipdata_panel,-1,_(" Ship data "),pos=(3,5),size=(400,205))
-        wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(350,205))
-        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(400,85))
-        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(350,155))
-        wx.StaticBox(self.remark_panel,-1,_(" Remark "), pos=(3,5),size=(400,65))
+        wx.StaticBox(shipdata_panel,-1,_(" Ship data "),pos=(3,5),size=(380,205))
+        wx.StaticBox(voyagedata_panel,-1,_(" Voyage data "),pos=(3,5),size=(320,205))
+        wx.StaticBox(transponderdata_panel,-1,_(" Received transponder data "),pos=(3,5),size=(380,85))
+        wx.StaticBox(objinfo_panel,-1,_(" Object information "),pos=(3,5),size=(320,155))
+        wx.StaticBox(self.remark_panel,-1,_(" Remark "), pos=(3,5),size=(380,65))
         self.remark_panel.Enable(False)
         # Ship data
         wx.StaticText(shipdata_panel,-1,_("MMSI nbr: "),pos=(12,25),size=(150,16))
@@ -866,38 +812,38 @@ class DetailWindow(wx.Dialog):
         wx.StaticText(objinfo_panel,-1,_("Updated: "),pos=(12,125),size=(150,16))
 
         # Set ship data
-        self.text_mmsi = wx.StaticText(shipdata_panel,-1,'',pos=(100,25),size=(300,16))
-        self.text_imo = wx.StaticText(shipdata_panel,-1,'',pos=(100,45),size=(300,16))
-        self.text_country = wx.StaticText(shipdata_panel,-1,'',size=(300,16),pos=(100,65))
-        self.text_name = wx.StaticText(shipdata_panel,-1,'',pos=(100,85),size=(300,16))
-        self.text_type = wx.StaticText(shipdata_panel,-1,'',pos=(100,105),size=(300,16))
-        self.text_callsign = wx.StaticText(shipdata_panel,-1,'',pos=(100,125),size=(300,16))
-        self.text_length = wx.StaticText(shipdata_panel,-1,'',pos=(100,145),size=(300,16))
-        self.text_width = wx.StaticText(shipdata_panel,-1,'',pos=(100,165),size=(300,16))
-        self.text_draught = wx.StaticText(shipdata_panel,-1,'',pos=(100,185),size=(300,16))
+        self.text_mmsi = wx.StaticText(shipdata_panel,-1,'',pos=(100,25),size=(280,16))
+        self.text_imo = wx.StaticText(shipdata_panel,-1,'',pos=(100,45),size=(280,16))
+        self.text_country = wx.StaticText(shipdata_panel,-1,'',size=(280,16),pos=(100,65))
+        self.text_name = wx.StaticText(shipdata_panel,-1,'',pos=(100,85),size=(280,16))
+        self.text_type = wx.StaticText(shipdata_panel,-1,'',pos=(100,105),size=(280,16))
+        self.text_callsign = wx.StaticText(shipdata_panel,-1,'',pos=(100,125),size=(280,16))
+        self.text_length = wx.StaticText(shipdata_panel,-1,'',pos=(100,145),size=(280,16))
+        self.text_width = wx.StaticText(shipdata_panel,-1,'',pos=(100,165),size=(280,16))
+        self.text_draught = wx.StaticText(shipdata_panel,-1,'',pos=(100,185),size=(280,16))
         # Set voyage data
-        self.text_destination = wx.StaticText(voyagedata_panel,-1,'',pos=(100,25),size=(245,16))
-        self.text_etatime = wx.StaticText(voyagedata_panel,-1,'',pos=(100,45),size=(245,16))
-        self.text_latitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,65),size=(245,16))
-        self.text_longitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,85),size=(245,16))
-        self.text_georef = wx.StaticText(voyagedata_panel,-1,'',pos=(100,105),size=(245,16))
-        self.text_sog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,125),size=(245,16))
-        self.text_cog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,145),size=(245,16))
-        self.text_heading = wx.StaticText(voyagedata_panel,-1,'',pos=(100,165),size=(245,16))
-        self.text_rateofturn = wx.StaticText(voyagedata_panel,-1,'',pos=(100,185),size=(245,16))
+        self.text_destination = wx.StaticText(voyagedata_panel,-1,'',pos=(100,25),size=(215,16))
+        self.text_etatime = wx.StaticText(voyagedata_panel,-1,'',pos=(100,45),size=(215,16))
+        self.text_latitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,65),size=(215,16))
+        self.text_longitude = wx.StaticText(voyagedata_panel,-1,'',pos=(100,85),size=(215,16))
+        self.text_georef = wx.StaticText(voyagedata_panel,-1,'',pos=(100,105),size=(215,16))
+        self.text_sog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,125),size=(215,16))
+        self.text_cog = wx.StaticText(voyagedata_panel,-1,'',pos=(100,145),size=(215,16))
+        self.text_heading = wx.StaticText(voyagedata_panel,-1,'',pos=(100,165),size=(215,16))
+        self.text_rateofturn = wx.StaticText(voyagedata_panel,-1,'',pos=(100,185),size=(215,16))
         # Set transponderdata
-        self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(145,25),size=(145,16))
-        self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(145,45),size=(145,16))
-        self.text_transpondertype = wx.StaticText(transponderdata_panel,-1,'',pos=(145,65),size=(145,16))
+        self.text_navstatus = wx.StaticText(transponderdata_panel,-1,'',pos=(145,25),size=(125,16))
+        self.text_posacc = wx.StaticText(transponderdata_panel,-1,'',pos=(145,45),size=(125,16))
+        self.text_transpondertype = wx.StaticText(transponderdata_panel,-1,'',pos=(145,65),size=(125,16))
         # Set object information
-        self.text_bearing = wx.StaticText(objinfo_panel,-1,'',pos=(105,25),size=(245,16))
-        self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(245,16))
-        self.text_updates = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(245,16))
-        self.text_source = wx.StaticText(objinfo_panel,-1,'',pos=(105,85),size=(245,16))
-        self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(245,16))
-        self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(245,16))
+        self.text_bearing = wx.StaticText(objinfo_panel,-1,'',pos=(105,25),size=(215,16))
+        self.text_distance = wx.StaticText(objinfo_panel,-1,'',pos=(105,45),size=(215,16))
+        self.text_updates = wx.StaticText(objinfo_panel,-1,'',pos=(105,65),size=(215,16))
+        self.text_source = wx.StaticText(objinfo_panel,-1,'',pos=(105,85),size=(215,16))
+        self.text_creationtime = wx.StaticText(objinfo_panel,-1,'',pos=(105,105),size=(215,16))
+        self.text_time = wx.StaticText(objinfo_panel,-1,'',pos=(105,125),size=(215,16))
         # Set remark text
-        self.text_remark = wx.StaticText(self.remark_panel,-1,'',pos=(12,25),size=(370,40),style=wx.ST_NO_AUTORESIZE)
+        self.text_remark = wx.StaticText(self.remark_panel,-1,'',pos=(12,25),size=(350,40),style=wx.ST_NO_AUTORESIZE)
 
         # Add window to the message detail window send list
         main_window.AddDetailWindow(self, itemmmsi)
@@ -947,7 +893,7 @@ class DetailWindow(wx.Dialog):
         if data['name']: self.text_name.SetLabel(data['name'])
         if data['type']: type = str(data['type'])
         else: type = ''
-        if data['typename']: type += ' - ' + str(data['typename'])
+        if data['typename']: type += ' - ' + unicode(data['typename'])
         self.text_type.SetLabel(type)
         if data['callsign']: self.text_callsign.SetLabel(data['callsign'])
         if data['length'] == 'N/A': self.text_length.SetLabel('N/A')
@@ -1035,11 +981,11 @@ class StatsWindow(wx.Dialog):
         wx.Dialog.__init__(self, parent, id, title=_("Statistics"))
         # Create panels
         objects_panel = wx.Panel(self, -1)
-        objects_panel.SetMinSize((290,-1))
+        objects_panel.SetMinSize((280,-1))
         horizon_panel = wx.Panel(self, -1)
-        horizon_panel.SetMinSize((220,-1))
+        horizon_panel.SetMinSize((210,-1))
         self.input_panel = wx.Panel(self, -1)
-        self.input_panel.SetMinSize((500,-1))
+        self.input_panel.SetMinSize((450,-1))
         uptime_panel = wx.Panel(self, -1)
         # Create static boxes
         box_objects = wx.StaticBox(objects_panel,-1,_(" Objects "))
@@ -1083,10 +1029,10 @@ class StatsWindow(wx.Dialog):
 
         # Initial input panel and sizer
         # The sub-boxes are created on request in Update
-        maininput_sizer = wx.StaticBoxSizer(box_input, wx.VERTICAL)
+        self.maininput_sizer = wx.StaticBoxSizer(box_input, wx.VERTICAL)
         self.input_sizer = wx.GridSizer(0, 2, 10, 10)
-        maininput_sizer.Add(self.input_sizer, 0, wx.EXPAND)
-        self.input_panel.SetSizer(maininput_sizer)
+        self.maininput_sizer.Add(self.input_sizer, 0, wx.EXPAND)
+        self.input_panel.SetSizer(self.maininput_sizer)
 
         # Uptime panels, texts and sizers
         up_panel_left = wx.Panel(uptime_panel)
@@ -1184,7 +1130,8 @@ class StatsWindow(wx.Dialog):
             else:
                 # New input name, redraw input panel
                 self.input_boxes[name] = self.MakeInputStatBox(self.input_panel, " " + name + " ")
-                self.input_sizer.Add(self.input_boxes[name]['sizer'], 0, wx.EXPAND)
+                self.input_sizer.Add(self.input_boxes[name]['sizer'], 1, wx.EXPAND)
+                self.maininput_sizer.Layout()
                 self.SetSizerAndFit(self.mainsizer)
         # Set current time to LastUpdateTime
         self.LastUpdateTime = time.time()
@@ -1280,8 +1227,8 @@ class SetAlertsWindow(wx.Dialog):
         # Create static boxes
         wx.StaticBox(filter_panel, -1, _(" Filter "), pos=(3,5), size=(700,100))
         list_staticbox = wx.StaticBox(list_panel, -1, _(" List view "), pos=(3,5), size=(700,280))
-        wx.StaticBox(self.object_panel, -1, _(" Selected object "), pos=(3,5), size=(520,160))
-        wx.StaticBox(action_panel, -1, _(" Actions "), pos=(3,5), size=(170,160))
+        wx.StaticBox(self.object_panel, -1, _(" Selected object "), pos=(3,5), size=(570,160))
+        wx.StaticBox(action_panel, -1, _(" Actions "), pos=(3,5), size=(130,160))
 
         # Create objects on the filter panel
         wx.StaticText(filter_panel, -1, _("Filter using the checkboxes or by typing in the text box"), pos=(20,28))
@@ -1316,8 +1263,8 @@ class SetAlertsWindow(wx.Dialog):
         self.lc = self.List(list_panel, self)
 
         # Create buttons
-        wx.Button(action_panel, 20, _("&Insert new..."), pos=(20,40))
-        wx.Button(action_panel, 22, _("&Export list..."), pos=(20,80))
+        wx.Button(action_panel, 20, _("&Insert new..."), pos=(20,50))
+        wx.Button(action_panel, 22, _("&Export list..."), pos=(20,90))
         self.apply_button = wx.Button(self, 31, _("&Apply changes"))
         self.apply_button.Enable(False)
         self.save_button = wx.Button(self, 32, _("&Save changes"))
@@ -1712,7 +1659,7 @@ class SetAlertsWindow(wx.Dialog):
         def OnGetItemText(self, item, col):
             # Return the text in item, col
             mmsi = self.itemIndexMap[item]
-            string = unicode(self.itemDataMap[mmsi][col])
+            string = self.itemDataMap[mmsi][col]
             # If column with alerts, map 0, 1 and 2 to text strings
             if col == 4:
                 if string == '0': string = _("No")
@@ -1720,8 +1667,8 @@ class SetAlertsWindow(wx.Dialog):
                 elif string == '2': string = _("Yes/Sound")
             # If string is a Nonetype, replace with an empty string
             elif string == None:
-                string = unicode('')
-            return string
+                string = u''
+            return unicode(string)
 
         def SortItems(self,sorter=cmp):
             items = list(self.itemDataMap.keys())
@@ -2281,6 +2228,76 @@ class RawDataWindow(wx.Dialog):
         self.Destroy()
 
 
+class PositionConversion(object):
+    # Makes position conversions from position in a DD format
+    # to human-readable strings in DD, DM or DMS format
+    # Input must be of type decimal.Decimal
+    def __init__(self, lat, long):
+        self.latitude = lat
+        self.longitude = long
+
+    @property
+    def default(self):
+        # Extract the format we should use from configuration, and
+        # return the right function
+        format = config['position']['position_format'].lower()
+        if format == 'dms':
+            return self.dms
+        elif format == 'dm':
+            return self.dm
+        elif format == 'dd':
+            return self.dd
+
+    @property
+    def dd(self):
+        # Return a human-readable DD position
+        if self.latitude > 0:
+            lat = str(abs(self.latitude)) + u'°N'
+        elif self.latitude < 0:
+            lat = str(abs(self.latitude)) + u'°S'
+        if self.longitude > 0:
+            long = str(abs(self.longitude)) + u'°E'
+        elif self.longitude < 0:
+            long = str(abs(self.longitude)) + u'°W'
+        return lat, long
+
+    @property
+    def dm(self):
+        # Return a human-readable DM position
+        latdegree = int(self.latitude)
+        longdegree = int(self.longitude)
+        latmin = (self.latitude - latdegree) * 60
+        longmin = (self.longitude - longdegree) * 60
+        if self.latitude > 0:
+            lat = u"%(deg)02d° %(min)07.4f'N" %{'deg': abs(latdegree), 'min': abs(latmin)}
+        elif self.latitude < 0:
+            lat = u"%(deg)02d° %(min)07.4f'S" %{'deg': abs(latdegree), 'min': abs(latmin)}
+        if self.longitude > 0:
+            long = u"%(deg)03d° %(min)07.4f'E" %{'deg': abs(longdegree), 'min': abs(longmin)}
+        elif self.longitude < 0:
+            long = u"%(deg)03d° %(min)07.4f'W" %{'deg': abs(longdegree), 'min': abs(longmin)}
+        return lat, long
+
+    @property
+    def dms(self):
+        # Return a human-readable DMS position
+        latdegree = int(self.latitude)
+        longdegree = int(self.longitude)
+        latmin = (self.latitude - latdegree) * 60
+        longmin = (self.longitude - longdegree) * 60
+        latsec = (latmin - int(latmin)) * 60
+        longsec = (longmin - int(longmin)) * 60
+        if self.latitude > 0:
+            lat = u"%(deg)02d° %(min)02d' %(sec)05.2f''N" %{'deg': abs(latdegree), 'min': abs(latmin), 'sec': abs(latsec)}
+        elif self.latitude < 0:
+            lat = u"%(deg)02d° %(min)02d' %(sec)05.2f''S" %{'deg': abs(latdegree), 'min': abs(latmin), 'sec': abs(latsec)}
+        if self.longitude > 0:
+            long = u"%(deg)03d° %(min)02d' %(sec)05.2f''E" %{'deg': abs(longdegree), 'min': abs(longmin), 'sec': abs(longsec)}
+        elif self.longitude < 0:
+            long = u"%(deg)03d° %(min)02d' %(sec)05.2f''W" %{'deg': abs(longdegree), 'min': abs(longmin), 'sec': abs(longsec)}
+        return lat, long
+
+
 class GUI(wx.App):
     def OnInit(self):
         self.frame = MainWindow(None, -1, 'AIS Logger')
@@ -2296,96 +2313,73 @@ class SerialThread:
     # Define a queue for inserting data to send
     comqueue = Queue.Queue(500)
 
-    def reader(self):
-        # Set some empty variables
+    def reader(self, name, s):
+        # Set empty queueitem
         queueitem = ''
-        serial_ports = {}
-        remainder = {}
+        # Start loop
+        while True:
+            # See if we shall stop
+            try:
+                queueitem = self.queue.get_nowait()
+            # If no data in queue, sleep (prevents 100% CPU drain)
+            except Queue.Empty:
+                time.sleep(0.001)
+            if queueitem == 'stop':
+                s.close()
+                break
 
-        # See what ports we shall open and read from
-        # Get all entries in config starting with 'serial'
-        conf_ports = [ port for port in config.iterkeys()
-                  if port.find('serial') != -1 ]
-        # Iterate over ports and set port data
-        for port_data in conf_ports:
-            conf = config[port_data]
-            if 'serial_on' in conf and conf.as_bool('serial_on') and 'port' in conf:
-                # Try to get these values, if not, use standard
-                baudrate = 38400
-                rtscts = False
-                xonxoff = False
-                try:
-                    # Baudrate
-                    baudrate = conf.as_int('baudrate')
-                    # RTS/CTS
-                    rtscts = conf.as_bool('rtscts')
-                    # XON/XOFF
-                    xonxoff = conf.as_bool('xonxoff')
-                except: pass
-                # Create port name (the part after 'serial_')
-                portname = 'Serial port ' + port[7:] + ' (' + conf['port'] + ')'
-                # OK, try to open serial port, and add to serial_ports dict
-                #try:
-                serial_ports[portname] = serial.Serial(conf['port'], baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=1)
-                # FIXME: add something to logging and make user aware of failure
-                #except serial.SerialException:
-                #    # Oops, something went wrong... Close and continue
-                #    if portname in serial_ports:
-                #        serial_ports[portname].close()
-                #        del serial_ports[portname]
-                #    continue
+            data = ''
+            try:
+                # Try to read data from serial port
+                data = s.readline()
+            except serial.SerialException:
+                # On timeout or other errors, reopen port
+                logging.debug("%(port)s timed out" %{'port': name}, exc_info=True)
+                s.close()
+                s.open()
+                time.sleep(1)
+                continue
 
+            # If data contains raw data, pass it along
+            try:
+                if data[0] == '!' or data[0] == '$':
+                    # Put it in CommHubThread's queue
+                    comm_hub_thread.put([name,data])
+            except IndexError:
+                pass
+
+
+    def server(self):
         # See if we should act as a serial server
-        serial_server = None
         if config['serial_server'].as_bool('server_on'):
             port = config['serial_server']['port']
             baudrate = config['serial_server']['baudrate']
             rtscts = config['serial_server']['rtscts']
             xonxoff = config['serial_server']['xonxoff']
-            serial_server = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=2)
-            # FIXME: handle errors, of course...
-
+            try:
+                serial_server = serial.Serial(port, baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=5)
+            except serial.SerialException:
+                logging.error("Could not open serial port %(port)s to act as a serial server" %{'port': port}, exc_info=True)
+                return False
+        else:
+            # Server is not on, exit thread
+            return False
+        # Set empty queueitem
+        queueitem = ''
+        # Start loop
         while True:
+            # See if we shall stop
             try:
                 queueitem = self.queue.get_nowait()
             # If no data in queue, sleep (prevents 100% CPU drain)
             except Queue.Empty:
-                time.sleep(0.05)
+                time.sleep(0.1)
             if queueitem == 'stop':
-                for s in serial_ports.itervalues():
-                    s.close()
-                if serial_server:
-                    serial_server.flushOutput()
-                    serial_server.close()
+                serial_server.flushOutput()
+                serial_server.close()
                 break
-
-            # Iterate over serial ports
-            for (name, s) in serial_ports.iteritems():
-                try:
-                    # Try to read data from serial port
-                    data = s.read(65536).splitlines(True)
-                except:
-                    continue
-
-                # See if we have data left since last read
-                # If so, concat it with the first new data
-                if name in remainder:
-                    data[0] = remainder.pop(name) + data[0]
-
-                # See if the last data has a line break in it
-                # If not, pop it for use at next read
-                listlength = len(data)
-                if listlength > 0 and not data[listlength-1].endswith('\n'):
-                    remainder[name] = data.pop(listlength-1)
-
-                for indata in data:
-                    # If indata contains raw data, pass it along
-                    if indata[0] == '!' or indata[0] == '$':
-                        # Put it in CommHubThread's queue
-                        comm_hub_thread.put([name,indata])
-
-            # Is the serial server activated?
-            if serial_server:
+            # Do we have carrier?
+            if serial_server.getCD():
                 lines = []
                 # Try to get data from queue
                 while True:
@@ -2394,10 +2388,12 @@ class SerialThread:
                     except Queue.Empty:
                         break
                 # Write to port
-                for line in lines:
-                    serial_server.write(line)
-                # FIXME: handle errors
-
+                try:
+                    serial_server.write(''.join(lines))
+                except serial.SerialException:
+                    # Don't handle error, port should be open
+                    pass
+        
     def ReturnStats(self):
         return self.stats
 
@@ -2413,15 +2409,54 @@ class SerialThread:
 
     def start(self):
         try:
-            r = threading.Thread(target=self.reader)
-            r.setDaemon(1)
-            r.start()
+            # Fire off server thread
+            server = threading.Thread(target=self.server)
+            server.setDaemon(1)
+            server.start()
+
+            # See what reader threads we should start
+            # Get all entries in config starting with 'serial'
+            conf_ports = [ port for port in config.iterkeys()
+                      if port.find('serial') != -1 ]
+            # Iterate over ports and set port data
+            for port_data in conf_ports:
+                # Don't send serial data from server to itself...
+                if port_data == 'serial_server':
+                    continue
+                # Get config
+                conf = config[port_data]
+                # Ok, set up port
+                if 'serial_on' in conf and conf.as_bool('serial_on') and 'port' in conf:
+                    # Try to get these values, if not, use standard
+                    baudrate = 38400
+                    rtscts = False
+                    xonxoff = False
+                    try:
+                        # Baudrate
+                        baudrate = conf.as_int('baudrate')
+                        # RTS/CTS
+                        rtscts = conf.as_bool('rtscts')
+                        # XON/XOFF
+                        xonxoff = conf.as_bool('xonxoff')
+                    except: pass
+                    # Create port name (the part after 'serial_')
+                    portname = 'Serial port ' + port_data[7:] + ' (' + conf['port'] + ')'
+                    # OK, try to open serial port, and add to serial_ports dict
+                    try:
+                        s = serial.Serial(conf['port'], baudrate, rtscts=rtscts, xonxoff=xonxoff, timeout=60)
+                    except serial.SerialException:
+                        logging.error("Could not open serial port %(port)s to read data from" %{'port': conf['port']}, exc_info=True)
+                        continue
+                    # Fire off reader thread
+                    read = threading.Thread(target=self.reader, args=(portname, s))
+                    read.setDaemon(1)
+                    read.start()
             return True
         except:
             return False
 
     def stop(self):
-        for i in range(0,10):
+        for i in range(0,100):
             self.put('stop')
 
 
@@ -2463,8 +2498,11 @@ class NetworkServerThread:
         # Spawn network servers as clients request connection
         server_address = config['network']['server_address']
         server_port = config['network'].as_int('server_port')
-        server = SocketServer.ThreadingTCPServer((server_address, server_port), self.NetworkClientHandler)
-        server.serve_forever()
+        try:
+            server = SocketServer.ThreadingTCPServer((server_address, server_port), self.NetworkClientHandler)
+            server.serve_forever()
+        except:
+            logging.error("Could not start the network server on address %(address)s and port %(port)s" %{'address': server_address, 'port': server_port}, exc_info=True)
 
     def feeder(self):
         # This function tracks each server thread and feeds them
@@ -2500,12 +2538,12 @@ class NetworkServerThread:
 
     def start(self):
         try:
-            r2 = threading.Thread(target=self.feeder, name='NetworkFeeder')
-            r2.setDaemon(1)
-            r2.start()
-            r = threading.Thread(target=self.server, name='NetworkServer')
-            r.setDaemon(1)
-            r.start()
+            feeder = threading.Thread(target=self.feeder, name='NetworkFeeder')
+            feeder.setDaemon(1)
+            feeder.start()
+            server = threading.Thread(target=self.server, name='NetworkServer')
+            server.setDaemon(1)
+            server.start()
             return True
         except:
             return False
@@ -2551,6 +2589,7 @@ class NetworkClientThread:
                 # Oops, we timed out... Close and continue
                 connections[c].close()
                 del connections[c]
+                logging.error("The connection to the network server on address %(address)s and port %(port)s timed out." %{'address': params[0], 'port': params[1]}, exc_info=True)
                 continue
 
         while True:
@@ -2621,6 +2660,13 @@ class CommHubThread:
         message_parts = {}
         # Empty incoming queue
         incoming_item = ''
+        # Set the source to take position data from
+        position_source = config['position']['use_position_from']
+        if position_source.find('serial') != -1:
+            try:
+                position_source = 'Serial port ' + position_source[7:] + ' (' + config[position_source]['port'] + ')'
+            except KeyError:
+                logging.error("The serial port source used for GPS data (%(source)s) has no port associated with it" %{'source': position_source}, exc_info=True)
         while True:
             # Let's try to get some data in the queue
             try:
@@ -2703,11 +2749,13 @@ class CommHubThread:
                     # (see if 'decoded' is True)
                     if parser.get('decoded',True):
                         self.stats[source]['parsed'] += 1
-                elif 'ownlatitude' and 'ownlongitude' in parser:
-                    # Send data to main thread
-                    main_thread.put(parser)
-                    # Add to stats dict
-                    self.stats[source]['parsed'] += 1
+                # See if we have a position and if we should use it
+                elif 'ownlatitude' in parser and 'ownlongitude' in parser:
+                    if position_source == 'any' or position_source == source:
+                        # Send data to main thread
+                        main_thread.put(parser)
+                        # Add to stats dict
+                        self.stats[source]['parsed'] += 1
 
                 # Send raw data to the Raw Window queue
                 raw_mmsi = parser.get('mmsi','N/A')
@@ -3003,11 +3051,11 @@ class MainThread:
         message = {}
 
         # See if we need to use data from iddb
-        if object_info['imo'] is None and 'imo' in iddb:
+        if object_info['imo'] is None and 'imo' in iddb and iddb['imo'] =! 'None':
             object_info['imo'] = str(iddb['imo']) + "'"
-        if object_info['callsign'] is None and 'callsign' in iddb:
+        if object_info['callsign'] is None and 'callsign' in iddb and iddb['callsign'] =! 'None':
             object_info['callsign'] = iddb['callsign'] + "'"
-        if object_info['name'] is None and 'name' in iddb:
+        if object_info['name'] is None and 'name' in iddb and iddb['name'] =! 'None':
             object_info['name'] = iddb['name'] + "'"
 
         # Match against set alerts
@@ -3145,8 +3193,12 @@ class MainThread:
                 iddb = [ r for r in self.db_iddb ]
                 # Send a copy of the remark/alert dict
                 self.SendMsg({'iddb': iddb})
+            # If we should update our remark/alert dict
             elif 'update_remarkdict' in incoming:
                 self.remarkdict = incoming['update_remarkdict']
+            # If we should pass on an error to the GUI
+            elif 'error' in incoming:
+                self.SendMsg(incoming)
 
             # Remove or mark objects as old if last update time is above threshold
             if lastchecktime + 10 < time.time():
@@ -3290,7 +3342,7 @@ class MainThread:
             connection.close()
             # Put iddb_data in the memory db
             for ship in iddb_data:
-                self.db_iddb.insert(mmsi=int(ship[0]), imo=int(ship[1]), name=ship[2], callsign=ship[3])
+                self.db_iddb.insert(mmsi=int(ship[0]), imo=ship[1], name=ship[2], callsign=ship[3])
         except:
             logging.warning("Reading from IDDB file failed", exc_info=True)
 
@@ -3303,9 +3355,9 @@ class MainThread:
                 file = open(path, 'rb')
                 csv_reader = csv.reader(file)
                 for row in csv_reader:
-                    # Try to read line as ASCII/UTF-8, if error, try cp1252 (workaround for Windows)
+                    # Try to read line as ASCII/UTF-8, if error, try cp1252
                     try:
-                        temp[int(row[0])] = (unicode(row[1]), unicode(row[2]))
+                        temp[int(row[0])] = (unicode(row[1]), unicode(row[2], 'utf-8'))
                     except:
                         temp[int(row[0])] = (unicode(row[1]), unicode(row[2], 'cp1252'))
                 file.close()
@@ -3329,15 +3381,49 @@ class MainThread:
         self.put('stop')
 
 
-# Start and define threads
+# Initialize thread classes
 main_thread = MainThread()
-main_thread.start()
 comm_hub_thread = CommHubThread()
-comm_hub_thread.start()
 serial_thread = SerialThread()
-serial_thread.start()
 network_server_thread = NetworkServerThread()
 network_client_thread = NetworkClientThread()
+
+# Set up loggers and logging handling
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
+class GUIErrorHandler(logging.Handler):
+    def __init__(self):
+        logging.Handler.__init__(self)
+
+    def emit(self, record):
+        # Send to main thread
+        main_thread.put({'error': self.format(record)})
+
+if cmdlineoptions.nogui:
+    # Send logging to sys.stderr instead of to the GUI
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('\n%(asctime)s %(levelname)s %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+else:
+    # Set a logging handler for errors and send these to the GUI
+    gui_handler = GUIErrorHandler()
+    gui_formatter = logging.Formatter('%(levelname)s %(message)s')
+    gui_handler.setFormatter(gui_formatter)
+    gui_handler.setLevel(logging.ERROR)
+    logger.addHandler(gui_handler)
+
+# Set a logging handler for everything and save to file
+file_handler = logging.FileHandler(filename='except.log')
+file_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# Start threads
+main_thread.start()
+comm_hub_thread.start()
+serial_thread.start()
 if config['network'].as_bool('server_on'):
     network_server_thread.start()
 if config['network'].as_bool('client_on'):
@@ -3346,9 +3432,19 @@ if config['network'].as_bool('client_on'):
 # Start the GUI
 # Wait some time before initiating, to let the threads settle
 time.sleep(0.2)
-app = GUI(0)
-main_window = app.GetFrame()
-app.MainLoop()
+# See if we shall start the GUI
+if cmdlineoptions.nogui:
+    # Say hello
+    print "\nAIS Logger running without GUI."
+    print "Press any key to terminate program...\n"
+    # Wait for key press
+    raw_input()
+    print "Terminating program..."
+else:
+    # Start GUI
+    app = GUI(0)
+    main_window = app.GetFrame()
+    app.MainLoop()
 
 # Stop threads
 comm_hub_thread.stop()
