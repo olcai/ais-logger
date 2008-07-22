@@ -2655,7 +2655,7 @@ class NetworkClientThread:
 
 
 class CommHubThread:
-    incoming_queue = Queue.Queue()
+    incoming_queue = Queue.Queue(10000)
     raw_queue = Queue.Queue(500)
     stats = {}
 
@@ -2850,7 +2850,11 @@ class CommHubThread:
         return temp
             
     def put(self, item):
-        self.incoming_queue.put(item)
+        try:
+            self.incoming_queue.put_nowait(item)
+        except Queue.Full:
+            self.incoming_queue.get_nowait()
+            self.incoming_queue.put_nowait(item)
 
     def start(self):
         try:
@@ -2868,7 +2872,7 @@ class CommHubThread:
 class MainThread:
     # Create an incoming and an outgoing queue
     # Set a limit on how large the outgoing queue can get
-    queue = Queue.Queue()
+    queue = Queue.Queue(1000)
     outgoing = Queue.Queue(1000)
 
     def __init__(self):
@@ -3061,11 +3065,11 @@ class MainThread:
         message = {}
 
         # See if we need to use data from iddb
-        if object_info['imo'] is None and 'imo' in iddb and iddb['imo'] != 'None':
+        if object_info['imo'] is None and 'imo' in iddb and not iddb['imo'] is None:
             object_info['imo'] = str(iddb['imo']) + "'"
-        if object_info['callsign'] is None and 'callsign' in iddb and iddb['callsign'] != 'None':
+        if object_info['callsign'] is None and 'callsign' in iddb and not iddb['callsign'] is None:
             object_info['callsign'] = iddb['callsign'] + "'"
-        if object_info['name'] is None and 'name' in iddb and iddb['name'] != 'None':
+        if object_info['name'] is None and 'name' in iddb and not iddb['name'] is None:
             object_info['name'] = iddb['name'] + "'"
 
         # Match against set alerts
@@ -3376,7 +3380,11 @@ class MainThread:
                 logging.warning("Reading from remark file failed", exc_info=True)
 
     def put(self, item):
-        self.queue.put(item)
+        try:
+            self.queue.put_nowait(item)
+        except Queue.Full:
+            self.queue.get_nowait()
+            self.queue.put_nowait(item)
 
     def start(self):
         try:
@@ -3429,6 +3437,9 @@ file_handler = logging.FileHandler(filename='except.log')
 file_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)
+# Send everything to the exception file
+except_file = open('except.log', 'a')
+sys.stderr = except_file
 
 # Start threads
 main_thread.start()
