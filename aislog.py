@@ -584,6 +584,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnItemActivated)
         self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnItemSelected)
         self.Bind(wx.EVT_LIST_ITEM_DESELECTED, self.OnItemDeselected)
+        self.Bind(wx.EVT_KEY_UP, self.OnKey)
 
     def OnItemActivated(self, event):
         # Get the MMSI number associated with the row activated
@@ -599,6 +600,13 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
     def OnItemDeselected(self, event):
         self.selected = -1
+
+    def OnKey(self, event):
+        # Deselect all objects if escape is pressed
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            for i in range(self.GetItemCount()):
+                self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
+            self.selected = -1
 
     def OnUpdate(self, message):
         # See what message we should work with
@@ -2699,7 +2707,9 @@ class CommHubThread:
             # Check if message is split on several lines
             lineinfo = data.split(',')
             if lineinfo[0] == '!AIVDM':
-                nbr_of_lines = int(lineinfo[1])
+                try:
+                    nbr_of_lines = int(lineinfo[1])
+                except: continue
                 try:
                     line_nbr = int(lineinfo[2])
                     line_seq_id = int(lineinfo[3])
@@ -3051,11 +3061,11 @@ class MainThread:
         message = {}
 
         # See if we need to use data from iddb
-        if object_info['imo'] is None and 'imo' in iddb and iddb['imo'] =! 'None':
+        if object_info['imo'] is None and 'imo' in iddb and iddb['imo'] != 'None':
             object_info['imo'] = str(iddb['imo']) + "'"
-        if object_info['callsign'] is None and 'callsign' in iddb and iddb['callsign'] =! 'None':
+        if object_info['callsign'] is None and 'callsign' in iddb and iddb['callsign'] != 'None':
             object_info['callsign'] = iddb['callsign'] + "'"
-        if object_info['name'] is None and 'name' in iddb and iddb['name'] =! 'None':
+        if object_info['name'] is None and 'name' in iddb and iddb['name'] != 'None':
             object_info['name'] = iddb['name'] + "'"
 
         # Match against set alerts
