@@ -75,8 +75,8 @@ def telegramparser(inputstring):
     # If the sentence follows the SAAB TransponderTech standard:
     if telegram[0] == '$PAIS':
         # Check the checksum
-        #if not checksum(inputstring):
-        #    return
+        if not checksum(inputstring):
+            return
 
         # Get the source MMSI number
         mmsi = int(telegram[2],16)
@@ -222,7 +222,7 @@ def telegramparser(inputstring):
 
         # If the sentence contains message 0D - Standard Position,
         # aviation, or message 11 - SAR Standard Position
-        elif message == 'S0D' or 'S11':
+        elif message == 'S0D' or message == 'S11':
             # Latitude in decimal degrees (DD)
             latitude = calclatitude(tobin(int(telegram[3],16),27))
             # Longitude in decimal degrees (DD)

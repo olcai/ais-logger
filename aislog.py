@@ -84,7 +84,7 @@ gettext.install('aislogger', ".", unicode=False)
 # Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
 columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 110], 'longitude': [_("Longitude"), 115], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
-defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'showafterupdates': 3, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
+defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'showafterupdates': 3, 'updatetime': 2, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': '', 'logbasestations': False},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
@@ -116,6 +116,7 @@ config['common'].comments['showclassbstations'] = ['Enable display of AIS Class 
 config['common'].comments['showafterupdates'] = ['Number of updates to an object before displaying it']
 config['common'].comments['listcolumns'] = ['Define visible columns in list view using db column names']
 config['common'].comments['alertlistcolumns'] = ['Define visible columns in alert list view using db column names']
+config['common'].comments['updatetime'] = ['Number of s between updating the GUI with new data']
 config['logging'].comments['logging_on'] = ['Enable file logging']
 config['logging'].comments['logtime'] = ['Number of s between writes to log file']
 config['logging'].comments['logfile'] = ['Filename of log file']
@@ -236,7 +237,11 @@ class MainWindow(wx.Frame):
         # Start a timer to get new messages at a fixed interval
         self.timer = wx.Timer(self, -1)
         self.Bind(wx.EVT_TIMER, self.GetMessages, self.timer)
-        self.timer.Start(2000)
+        if config['common'].as_int('updatetime') >= 1:
+            updatetime = config['common'].as_int('updatetime') * 1000
+        else:
+            updatetime = 1000
+        self.timer.Start(updatetime)
 
         # Set some dlg pointers to None
         self.set_alerts_dlg = None
