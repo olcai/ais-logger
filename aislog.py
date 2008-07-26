@@ -3038,7 +3038,7 @@ class MainThread:
             iddb = iddb[0]
 
         # Return the updated object and the iddb entry
-        return self.db_main[main_record['__id__']], iddb, new
+        return self.db_main[main_record['__id__']].copy(), iddb.copy(), new
 
     def UpdateMsg(self, object_info, iddb, new=False, query=False):
         # See if we not should send message
@@ -3272,7 +3272,7 @@ class MainThread:
                 continue
             # If object is newer than threshold, get data
             if r['time'] > threshold:
-                data = [r['time'], r['mmsi'], r['latitude'],
+                data = [r['time'].replace(microsecond=0).isoformat(), r['mmsi'], r['latitude'],
                         r['longitude'], r['georef'], r['sog'],
                         r['cog']]
                 # Set all fields contaning value 'N/A' to Nonetype
@@ -3291,7 +3291,7 @@ class MainThread:
         for mmsi in update_mmsi:
             # Get only the first list (should be only one anyway)
             r = self.db_main._mmsi[mmsi][0]
-            data = [r['time'], r['mmsi'], r['imo'],
+            data = [r['time'].replace(microsecond=0).isoformat(), r['mmsi'], r['imo'],
                     r['name'], r['type'], r['callsign'],
                     r['destination'], r['eta'], r['length'],
                     r['width']]
