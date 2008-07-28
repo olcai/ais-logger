@@ -98,7 +98,7 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
                  'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []},
-                 'map': {'object_color': 'Yellow', 'selected_object_color': 'Pink', 'background_color': 'Dark slate blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
+                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'background_color': 'Dark slate blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -148,6 +148,7 @@ config['network'].comments['client_addresses'] = ['List of server:port to connec
 config['network'].comments['clients_to_serial'] = ['List of server:port to send data to serial out']
 config['network'].comments['clients_to_server'] = ['List of server:port to send data to network server']
 config['map'].comments['object_color'] = ['Color of map objects']
+config['map'].comments['old_object_color'] = ['Color of old (grey-outed) map objects']
 config['map'].comments['selected_object_color'] = ['Color of a selected map object']
 config['map'].comments['background_color'] = ['Color of map background']
 config['map'].comments['shoreline_color'] = ['Color of map shorelines']
@@ -556,10 +557,12 @@ class MapFrame(wx.Frame):
             self.box_mmsi = wx.StaticText(self.objectbox_panel, -1, _("MMSI:"), pos=(10,5))
             self.box_name = wx.StaticText(self.objectbox_panel, -1, _("Name:"), pos=(150,5))
             self.box_georef = wx.StaticText(self.objectbox_panel, -1, _("GEOREF:"), pos=(400,5))
+            self.box_bearing = wx.StaticText(self.objectbox_panel, -1, _("Bearing:"), pos=(540,5))
             self.box_lat = wx.StaticText(self.objectbox_panel, -1, _("Lat:"), pos=(10,25))
             self.box_long = wx.StaticText(self.objectbox_panel, -1, _("Long:"), pos=(150,25))
             self.box_course = wx.StaticText(self.objectbox_panel, -1, _("Course:"), pos=(310,25))
             self.box_sog = wx.StaticText(self.objectbox_panel, -1, _("Speed:"), pos=(400,25))
+            self.box_distance = wx.StaticText(self.objectbox_panel, -1, _("Distance:"), pos=(540,25))
             # Make window disabled
             self.ObjectWindow.Enable(False)
 
@@ -576,10 +579,16 @@ class MapFrame(wx.Frame):
             self.itemMap = {}
             # Set no selected object
             self.selected = None
+            # Set the selected object's color before the selection
+            self.selected_old_color = ''
             # Set variable to see if the map is loaded
             self.mapIsLoaded = False
             # Set 'workaround' variable to zoom to BB in next update
             self.zoomNext = False
+
+            # Set color variables after config settings
+            # (to speed up object updating)
+            self.object_color = config['map']['object_color']
 
             # Initialize
             self.Canvas.InitAll()
@@ -631,6 +640,8 @@ class MapFrame(wx.Frame):
                 self.DeselectObject()
             # Set selected to object
             self.selected = getattr(map_object, 'mmsi')
+            # Get object color before selecting
+            self.selected_old_color = self.itemMap[self.selected][1].LineColor
             # Mark object as selected with a different color
             self.itemMap[self.selected][0].SetColor(config['map']['selected_object_color'])
             self.itemMap[self.selected][1].SetLineColor(config['map']['selected_object_color'])
@@ -640,19 +651,21 @@ class MapFrame(wx.Frame):
             self.detail_button.Enable(True)
             # Update window
             self.UpdateObjectWindow(map_object)
+            map_object.DrawObject()
 
         def DeselectObject(self):
             # Deselect if we have a selected object
             if self.selected:
                 # Clear window
                 self.ClearObjectWindow()
-                # Mark object as deselected with standard color
-                self.itemMap[self.selected][0].SetColor(config['map']['object_color'])
-                self.itemMap[self.selected][1].SetLineColor(config['map']['object_color'])
+                # Mark object as deselected with the old object color
+                self.itemMap[self.selected][0].SetColor(self.selected_old_color)
+                self.itemMap[self.selected][1].SetLineColor(self.selected_old_color)
                 # Disable detail window button
                 self.detail_button.Enable(False)
                 # Deselect
                 self.selected = None
+                self.selected_old_color = ''
 
         def OpenDetailWindow(self, map_object=None):
             # See if we get a map object
@@ -689,6 +702,7 @@ class MapFrame(wx.Frame):
                 if mapdata and mmsi in self.itemMap:
                     self.UpdateObject(self.itemMap[mmsi], *mapdata)
                 # See if object is selected and if so send arrow data
+                # (contains heading, speed, position)
                 if self.selected and self.selected == mmsi:
                     self.UpdateObjectWindow(self.itemMap[mmsi][1])
             elif 'insert' in message:
@@ -705,7 +719,9 @@ class MapFrame(wx.Frame):
             elif 'old' in message:
                 # Get the MMSI number
                 mmsi = message['old']['mmsi']
-                # FIXME: What to do with old?
+                # Set old object color
+                self.itemMap[mmsi][0].SetColor(config['map']['old_object_color'])
+                self.itemMap[mmsi][1].SetLineColor(config['map']['old_object_color'])
             # See if we need to zoom to bounding box
             # (workaround after drawing map)
             if self.zoomNext:
@@ -723,6 +739,9 @@ class MapFrame(wx.Frame):
             long = data['longitude']
             if long is None or long == 'N/A' or lat is None or lat == 'N/A':
                 return False
+            # Extract distance and bearing
+            bearing = data['bearing']
+            distance = data['distance']
             # Extract cog, speed
             cog = data['cog']
             if cog is None or cog == 'N/A':
@@ -739,7 +758,7 @@ class MapFrame(wx.Frame):
             else:
                 basestation = False
             # Return values
-            return mmsi, name, lat, long, cog, sog, basestation
+            return mmsi, name, lat, long, bearing, distance, cog, sog, basestation
 
         def UpdateObjectWindow(self, map_object):
             # Set data in Object Window
@@ -749,12 +768,19 @@ class MapFrame(wx.Frame):
             course = getattr(map_object, 'Direction', None)
             sog = getattr(map_object, 'Length', None)
             pos = getattr(map_object, 'XY', None)
+            bearing = getattr(map_object, 'bearing', None)
+            distance = getattr(map_object, 'distance', None)
             # See if None, if so set strings to '-'
             if not name: name = '-'
             if not course or course == '0.0': course = '-'
             else: course = str(int(course)) + u'°'
             if not sog or sog == '0.0': sog = '-'
             else: sog = str(int(float(sog) / 1.5)) + ' kn'
+            if not bearing: bearing = '-'
+            else: bearing = str(bearing) + u'°'
+            if not distance: distance = '-'
+            else: distance = str(distance) + u' km'
+            # See if we can get position data
             try:
                 human_pos = PositionConversion(pos[1],pos[0]).default
                 lat = human_pos[0]
@@ -766,51 +792,52 @@ class MapFrame(wx.Frame):
             self.box_mmsi.SetLabel(_("MMSI: ") + str(mmsi))
             self.box_name.SetLabel(_("Name: ") + name)
             self.box_georef.SetLabel(_("GEOREF: ") + georef_v)
+            self.box_bearing.SetLabel(_("Bearing: ") + bearing)
             self.box_lat.SetLabel(_("Lat: ") + lat)
             self.box_long.SetLabel(_("Long: ") + long)
             self.box_course.SetLabel(_("Course: ") + course)
             self.box_sog.SetLabel(_("Speed: ") + sog)
+            self.box_distance.SetLabel(_("Distance: ") + distance)
 
         def ClearObjectWindow(self):
             # Set empty labels
             self.box_mmsi.SetLabel(_("MMSI: "))
             self.box_name.SetLabel(_("Name: "))
             self.box_georef.SetLabel(_("GEOREF: "))
+            self.box_bearing.SetLabel(_("Bearing: "))
             self.box_lat.SetLabel(_("Lat: "))
             self.box_long.SetLabel(_("Long: "))
             self.box_course.SetLabel(_("Course: "))
             self.box_sog.SetLabel(_("Speed: "))
+            self.box_distance.SetLabel(_("Distance:"))
             # Make window disabled
             self.ObjectWindow.Enable(False)
 
-        def CreateObject(self, mmsi, name, y, x, heading, speed, basestation):
+        def CreateObject(self, mmsi, name, y, x, bearing, distance, heading, speed, basestation):
             # Create a ship using data, return the objects
 
             Canvas = self.Canvas
             # Create a round point for non-base station transponders
             # or a squared point for base stations
             if basestation:
-                Point = Canvas.AddSquarePoint((x, y), Size=5, Color=config['map']['object_color'], InForeground=True)
+                Point = Canvas.AddSquarePoint((x, y), Size=5, Color=self.object_color, InForeground=True)
             else:
-                Point = Canvas.AddPoint((x, y), Diameter=4, Color=config['map']['object_color'], InForeground=True)
+                Point = Canvas.AddPoint((x, y), Diameter=4, Color=self.object_color, InForeground=True)
             # Create an arrow based on objects speed and heading
-            Arrow = Canvas.AddArrow((x, y), Length=speed, Direction=heading, LineColor=config['map']['object_color'], LineWidth=1, ArrowHeadSize=0, InForeground = True)
+            Arrow = Canvas.AddArrow((x, y), Length=speed, Direction=heading, LineColor=self.object_color, LineWidth=1, ArrowHeadSize=0, InForeground = True)
             # Make it possible to actually hit the object :-)
-            Point.HitLineWidth = 15
             Arrow.HitLineWidth = 15
             # Set events for clicking on object
-            Point.Bind(FloatCanvas.EVT_FC_LEFT_DOWN, self.OnObjectClick)
             Arrow.Bind(FloatCanvas.EVT_FC_LEFT_DOWN, self.OnObjectClick)
-            Point.Bind(FloatCanvas.EVT_FC_LEFT_DCLICK, self.OpenDetailWindow)
             Arrow.Bind(FloatCanvas.EVT_FC_LEFT_DCLICK, self.OpenDetailWindow)
             # Set extended attributes
-            setattr(Point, 'mmsi', mmsi)
             setattr(Arrow, 'mmsi', mmsi)
-            setattr(Point, 'name', name)
             setattr(Arrow, 'name', name)
+            setattr(Arrow, 'bearing', bearing)
+            setattr(Arrow, 'distance', distance)
             return (Point,Arrow)
 
-        def UpdateObject(self, Object, mmsi, name, y, x, heading, speed, basestation):
+        def UpdateObject(self, Object, mmsi, name, y, x, bearing, distance, heading, speed, basestation):
             # Update the Object with fresh data
 
             # Map objects
@@ -821,8 +848,13 @@ class MapFrame(wx.Frame):
             Point.SetPoint((x,y))
             Arrow.SetPoint((x,y))
             Arrow.SetLengthDirection(speed,heading)
-            setattr(Point, 'name', name)
+            # Set color
+            if not self.selected == mmsi:
+                Point.SetColor(self.object_color)
+                Arrow.SetLineColor(self.object_color)
             setattr(Arrow, 'name', name)
+            setattr(Arrow, 'bearing', bearing)
+            setattr(Arrow, 'distance', distance)
 
         def RemoveObject(self, Object):
             # Remove the Object
