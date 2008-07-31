@@ -1675,9 +1675,9 @@ class SetAlertsWindow(wx.Dialog):
             string = self.itemDataMap[mmsi][col]
             # If column with alerts, map 0, 1 and 2 to text strings
             if col == 4:
-                if string == '0': string = _("No")
-                elif string == '1': string = _("Yes")
-                elif string == '2': string = _("Yes/Sound")
+                if string == 0: string = _("No")
+                elif string == 1: string = _("Yes")
+                elif string == 2: string = _("Yes/Sound")
             # If string is a Nonetype, replace with an empty string
             elif string == None:
                 string = u''
