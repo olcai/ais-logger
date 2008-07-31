@@ -683,12 +683,16 @@ class MapFrame(wx.Frame):
         def DrawMap(self):
             # Only load data if we haven't done it before
             if not self.mapIsLoaded:
+                # Tell the user we're busy
+                wx.BusyCursor()
                 # Load shorelines from file
                 Shorelines = self.Read_MapGen(os.path.join(config['map']['mapfile']))
                 for segment in Shorelines:
                     self.Canvas.AddLine(segment, LineColor=config['map']['shoreline_color'])
                 # Set variable to map is loaded
                 self.mapIsLoaded = True
+                # Not busy any more
+                wx.BusyCursor()
                 # Set variable to zoom to bounding box in next update
                 # (workaround: ZoomToBB() wouldn't work directly)
                 self.zoomNext = True
@@ -1737,8 +1741,8 @@ class SetAlertsWindow(wx.Dialog):
         main_thread.put({'remarkdict_query': None})
         main_thread.put({'iddb_query': None})
 
-        # Show a dialog asking the user to wait
-        self.progress = wx.ProgressDialog(_("Please wait"), _("Populating list..."), parent=self)
+        # Tell the user that we're busy
+        wx.BusyCursor()
 
     def GetData(self, message):
         # Update the list ctrl dict with new data
@@ -1758,11 +1762,10 @@ class SetAlertsWindow(wx.Dialog):
                 row['callsign'] = object['callsign']
                 row['name'] = object['name']
                 self.list_data[mmsi] = row
-        # Destroy progress dialog
-        if self.progress:
-            self.progress.Destroy()
         # Update the listctrl
         self.lc.OnUpdate()
+        # We're not busy anymore
+        wx.BusyCursor()
 
     def PopulateObject(self, objectinfo):
         # Populate the objec_panel with info from the currently selected list row
