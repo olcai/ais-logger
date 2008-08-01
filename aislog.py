@@ -98,7 +98,7 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
                  'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []},
-                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'background_color': 'Dark slate blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
+                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Dark slate blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -150,6 +150,7 @@ config['network'].comments['clients_to_server'] = ['List of server:port to send 
 config['map'].comments['object_color'] = ['Color of map objects']
 config['map'].comments['old_object_color'] = ['Color of old (grey-outed) map objects']
 config['map'].comments['selected_object_color'] = ['Color of a selected map object']
+config['map'].comments['alerted_object_color'] = ['Color of a alerted map object']
 config['map'].comments['background_color'] = ['Color of map background']
 config['map'].comments['shoreline_color'] = ['Color of map shorelines']
 config['map'].comments['mapfile'] = ['Filename of map in MapGen format']
@@ -263,7 +264,7 @@ class MainWindow(wx.Frame):
         self.raw_data_dlg = None
 
         # Fire off the map
-        self.map = MapFrame(None, -1, "AIS Logger - Map", wx.DefaultPosition,(700,500))
+        self.map = MapFrame(self, -1, "AIS Logger - Map", wx.DefaultPosition,(700,500))
 
         # A dict for keeping track of open Detail Windows
         self.detailwindow_dict = {}
@@ -328,6 +329,9 @@ class MainWindow(wx.Frame):
             elif 'own_position' in message:
                 # Refresh status row with own_position
                 self.OnRefreshStatus(message['own_position'])
+                # Update map
+                if self.map:
+                    self.map.UpdateMap(message)
             elif 'query' in message:
                 # See if we should send to a detail window
                 if message['query']['mmsi'] in self.detailwindow_dict:
@@ -577,18 +581,16 @@ class MapFrame(wx.Frame):
 
             # Set empty object holder
             self.itemMap = {}
+            # Map MainWindow's grey_dict
+            self.grey_dict = parent.grey_dict
             # Set no selected object
             self.selected = None
-            # Set the selected object's color before the selection
-            self.selected_old_color = ''
+            # Set "own" object
+            self.own_object = None
             # Set variable to see if the map is loaded
             self.mapIsLoaded = False
             # Set 'workaround' variable to zoom to BB in next update
             self.zoomNext = False
-
-            # Set color variables after config settings
-            # (to speed up object updating)
-            self.object_color = config['map']['object_color']
 
             # Initialize
             self.Canvas.InitAll()
@@ -640,9 +642,9 @@ class MapFrame(wx.Frame):
                 self.DeselectObject()
             # Set selected to object
             self.selected = getattr(map_object, 'mmsi')
-            # Get object color before selecting
-            self.selected_old_color = self.itemMap[self.selected][1].LineColor
             # Mark object as selected with a different color
+            # (don't update the color attribute - we want to retain
+            # the original color)
             self.itemMap[self.selected][0].SetColor(config['map']['selected_object_color'])
             self.itemMap[self.selected][1].SetLineColor(config['map']['selected_object_color'])
             # Make window enabled
@@ -651,7 +653,6 @@ class MapFrame(wx.Frame):
             self.detail_button.Enable(True)
             # Update window
             self.UpdateObjectWindow(map_object)
-            map_object.DrawObject()
 
         def DeselectObject(self):
             # Deselect if we have a selected object
@@ -659,13 +660,16 @@ class MapFrame(wx.Frame):
                 # Clear window
                 self.ClearObjectWindow()
                 # Mark object as deselected with the old object color
-                self.itemMap[self.selected][0].SetColor(self.selected_old_color)
-                self.itemMap[self.selected][1].SetLineColor(self.selected_old_color)
+                obj_color = getattr(self.itemMap[self.selected][1], 'color')
+                # See if object is greyed-out
+                if self.selected in self.grey_dict:
+                    obj_color = config['map']['old_object_color']
+                self.itemMap[self.selected][0].SetColor(obj_color)
+                self.itemMap[self.selected][1].SetLineColor(obj_color)
                 # Disable detail window button
                 self.detail_button.Enable(False)
                 # Deselect
                 self.selected = None
-                self.selected_old_color = ''
 
         def OpenDetailWindow(self, map_object=None):
             # See if we get a map object
@@ -702,7 +706,8 @@ class MapFrame(wx.Frame):
             if 'update' in message:
                 data = message['update']
                 mmsi = data['mmsi']
-                mapdata = self.GetMessageData(mmsi, data)
+                alert = message.get('alert', False)
+                mapdata = self.GetMessageData(mmsi, data, alert)
                 if mapdata and mmsi in self.itemMap:
                     self.UpdateObject(self.itemMap[mmsi], *mapdata)
                 # See if object is selected and if so send arrow data
@@ -712,27 +717,37 @@ class MapFrame(wx.Frame):
             elif 'insert' in message:
                 data = message['insert']
                 mmsi = data['mmsi']
-                mapdata = self.GetMessageData(mmsi, data)
+                alert = message.get('alert', False)
+                mapdata = self.GetMessageData(mmsi, data, alert)
                 if mapdata:
                     self.itemMap[mmsi] = self.CreateObject(*mapdata)
             elif 'remove' in message:
                 # Get the MMSI number
                 mmsi = message['remove']
-                self.RemoveObject(self.itemMap[mmsi])
-                del self.itemMap[mmsi]
+                # If the object we want to remove is selected,
+                # deselect it
+                if self.selected == mmsi:
+                    self.DeselectObject()
+                # Remove object
+                if mmsi in self.itemMap:
+                    self.RemoveObject(self.itemMap[mmsi])
+                    del self.itemMap[mmsi]
             elif 'old' in message:
                 # Get the MMSI number
                 mmsi = message['old']['mmsi']
-                # Set old object color
-                self.itemMap[mmsi][0].SetColor(config['map']['old_object_color'])
-                self.itemMap[mmsi][1].SetLineColor(config['map']['old_object_color'])
+                # Don't update color now if selected or doesn't exist
+                if not self.selected == mmsi and mmsi in self.itemMap:
+                    self.itemMap[mmsi][0].SetColor(config['map']['old_object_color'])
+                    self.itemMap[mmsi][1].SetLineColor(config['map']['old_object_color'])
+            elif 'own_position' in message:
+                self.SetOwnObject(message['own_position'])
             # See if we need to zoom to bounding box
             # (workaround after drawing map)
             if self.zoomNext:
                 self.Canvas.ZoomToBB()
                 self.zoomNext = False
 
-        def GetMessageData(self, mmsi, data):
+        def GetMessageData(self, mmsi, data, alert):
             # Extract info from data and format it to be used
             # on the map.
             
@@ -762,7 +777,7 @@ class MapFrame(wx.Frame):
             else:
                 basestation = False
             # Return values
-            return mmsi, name, lat, long, bearing, distance, cog, sog, basestation
+            return mmsi, name, lat, long, bearing, distance, cog, sog, basestation, alert
 
         def UpdateObjectWindow(self, map_object):
             # Set data in Object Window
@@ -817,18 +832,23 @@ class MapFrame(wx.Frame):
             # Make window disabled
             self.ObjectWindow.Enable(False)
 
-        def CreateObject(self, mmsi, name, y, x, bearing, distance, heading, speed, basestation):
+        def CreateObject(self, mmsi, name, y, x, bearing, distance, heading, speed, basestation, alert):
             # Create a ship using data, return the objects
 
             Canvas = self.Canvas
+            # Set color based on alerted or not
+            if alert:
+                obj_color = config['map']['alerted_object_color']
+            else:
+                obj_color = config['map']['object_color']
             # Create a round point for non-base station transponders
             # or a squared point for base stations
             if basestation:
-                Point = Canvas.AddSquarePoint((x, y), Size=5, Color=self.object_color, InForeground=True)
+                Point = Canvas.AddSquarePoint((x, y), Size=5, Color=obj_color, InForeground=True)
             else:
-                Point = Canvas.AddPoint((x, y), Diameter=4, Color=self.object_color, InForeground=True)
+                Point = Canvas.AddPoint((x, y), Diameter=4, Color=obj_color, InForeground=True)
             # Create an arrow based on objects speed and heading
-            Arrow = Canvas.AddArrow((x, y), Length=speed, Direction=heading, LineColor=self.object_color, LineWidth=1, ArrowHeadSize=0, InForeground = True)
+            Arrow = Canvas.AddArrow((x, y), Length=speed, Direction=heading, LineColor=obj_color, LineWidth=1, ArrowHeadSize=0, InForeground = True)
             # Make it possible to actually hit the object :-)
             Arrow.HitLineWidth = 15
             # Set events for clicking on object
@@ -839,9 +859,10 @@ class MapFrame(wx.Frame):
             setattr(Arrow, 'name', name)
             setattr(Arrow, 'bearing', bearing)
             setattr(Arrow, 'distance', distance)
+            setattr(Arrow, 'color', obj_color)
             return (Point,Arrow)
 
-        def UpdateObject(self, Object, mmsi, name, y, x, bearing, distance, heading, speed, basestation):
+        def UpdateObject(self, Object, mmsi, name, y, x, bearing, distance, heading, speed, basestation, alert):
             # Update the Object with fresh data
 
             # Map objects
@@ -852,10 +873,12 @@ class MapFrame(wx.Frame):
             Point.SetPoint((x,y))
             Arrow.SetPoint((x,y))
             Arrow.SetLengthDirection(speed,heading)
-            # Set color
+            # Update color
             if not self.selected == mmsi:
-                Point.SetColor(self.object_color)
-                Arrow.SetLineColor(self.object_color)
+                obj_color = getattr(Arrow, 'color')
+                Point.SetColor(obj_color)
+                Arrow.SetLineColor(obj_color)
+            # Set new data
             setattr(Arrow, 'name', name)
             setattr(Arrow, 'bearing', bearing)
             setattr(Arrow, 'distance', distance)
@@ -870,6 +893,20 @@ class MapFrame(wx.Frame):
             # Remove
             self.Canvas.RemoveObject(Point)
             self.Canvas.RemoveObject(Arrow)
+
+        def SetOwnObject(self, owndata):
+            # Sets a square point at the own position
+            try:
+                y = owndata['ownlatitude']
+                x = owndata['ownlongitude']
+            except TypeError:
+                return None
+            # See if we have an old object
+            if self.own_object:
+                self.own_object.SetPoint((x,y))
+            else:
+                # Create object
+                self.own_object = self.Canvas.AddSquarePoint((x, y), Size=7, Color=config['map']['object_color'], InForeground=True)
 
         def Read_MapGen(self, filename):
             # Function for reading a MapGen Format file.
