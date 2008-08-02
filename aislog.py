@@ -533,10 +533,14 @@ class MapFrame(wx.Frame):
                                      Debug = 0,
                                      BackgroundColor = config['map']['background_color'])
 
-            self.Canvas = NC.Canvas # reference the contained FloatCanvas
+            # Reference the contained FloatCanvas
+            self.Canvas = NC.Canvas
 
             self.ObjectWindow = wx.Panel(self)
-            
+
+            # Reference the parent control
+            self.parent = parent
+
             # Create a sizer to manage the Canvas and object window
             MainSizer = wx.BoxSizer(wx.VERTICAL)
             MainSizer.Add(NC, 4, wx.EXPAND)
@@ -653,6 +657,9 @@ class MapFrame(wx.Frame):
             self.detail_button.Enable(True)
             # Update window
             self.UpdateObjectWindow(map_object)
+            # Try to select object in list views
+            self.parent.splist.list.SetSelected(self.selected, True)
+            self.parent.spalert.list.SetSelected(self.selected, True)
 
         def DeselectObject(self):
             # Deselect if we have a selected object
@@ -668,8 +675,16 @@ class MapFrame(wx.Frame):
                 self.itemMap[self.selected][1].SetLineColor(obj_color)
                 # Disable detail window button
                 self.detail_button.Enable(False)
-                # Deselect
+                # Set selected to None
                 self.selected = None
+                # Deselect all objects in list views
+                self.parent.splist.list.DeselectAll()
+                self.parent.spalert.list.DeselectAll()
+
+        def SetSelected(self, mmsi):
+            # Select MMSI on map
+            if mmsi in self.itemMap:
+                self.SelectObject(self.itemMap[mmsi][1])
 
         def OpenDetailWindow(self, map_object=None):
             # See if we get a map object
@@ -944,6 +959,9 @@ class ListWindow(wx.Panel):
         # For each item in the alertlistcolumns_as_list, extract the corresponding items from columnsetup and create a list
         used_columns = [ [x, columnsetup[x][0], columnsetup[x][1]] for x in alertlistcolumns_as_list ]
 
+        # Reference the parent control
+        self.parent = parent
+
         # Create the listctrl
         self.list = VirtualList(self, columns=used_columns)
 
@@ -977,6 +995,9 @@ class AlertWindow(wx.Panel):
         # A really complicated list comprehension... ;-)
         # For each item in the alertlistcolumns_as_list, extract the corresponding items from columnsetup and create a list
         used_columns = [ [x, columnsetup[x][0], columnsetup[x][1]] for x in alertlistcolumns_as_list ]
+
+        # Reference the parent control
+        self.parent = parent
 
         # Create the listctrl
         self.list = VirtualList(self, columns=used_columns)
@@ -1062,6 +1083,25 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
     def OnItemDeselected(self, event):
         self.selected = -1
+
+    def SetSelected(self, mmsi, ensurevisible=False):
+        # If MMSI in list, select it
+        if mmsi in self.itemDataMap:
+            # Find objects position in ctrl
+            new_position = self.FindItem(-1, unicode(mmsi))
+            # Set selected state
+            self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+            # Make sure object is visible if flag is set
+            if ensurevisible:
+                self.EnsureVisible(new_position)
+        # If not, deselect all objects
+        else:
+            self.DeselectAll()
+
+    def DeselectAll(self):
+        # Deselect all objects
+        for i in range(self.GetItemCount()):
+            self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
 
     def OnKey(self, event):
         # Deselect all objects if escape is pressed
@@ -1209,16 +1249,8 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # See if the previous selected row exists after the sort
         # If the MMSI number is found, set the new position as
         # selected. If not found, deselect all objects
-        try:
-            if self.selected in self.itemDataMap:
-                new_position = self.FindItem(-1, unicode(self.selected))
-                self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
-            else:
-                for i in range(self.GetItemCount()):
-                    self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
-                self.selected = -1
-        except: pass
-
+        if self.selected:
+            self.SetSelected(self.selected)
 
     # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
     def GetListCtrl(self):
