@@ -38,6 +38,12 @@ from pysqlite2 import dbapi2 as sqlite
 import pydblite
 import wx
 import wx.lib.mixins.listctrl as listmix
+
+import numpy
+from wx.lib.floatcanvas import NavCanvas, FloatCanvas, Resources
+import wx.lib.colourdb
+import time, random
+
 import gettext
 from configobj import ConfigObj
 
@@ -91,7 +97,8 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
-                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []}}
+                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []},
+                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Dark slate blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -109,6 +116,7 @@ config.comments['position'] = ['', 'Set manual position (overrides decoded own p
 config.comments['serial_a'] = ['', 'Settings for input from serial device A']
 config.comments['serial_server'] = ['', 'Settings for sending data through a serial port']
 config.comments['network'] = ['', 'Settings for sending/receiving data through a network connection']
+config.comments['map'] = ['', 'Map settings']
 config['common'].comments['listmakegreytime'] = ['Number of s between last update and greying out an item']
 config['common'].comments['deleteitemtime'] = ['Number of s between last update and removing an item from memory']
 config['common'].comments['showbasestations'] = ['Enable display of base stations']
@@ -137,9 +145,16 @@ config['network'].comments['server_on'] = ['Enable network server']
 config['network'].comments['server_address'] = ['Server hostname or IP (server side)']
 config['network'].comments['server_port'] = ['Server port (server side)']
 config['network'].comments['client_on'] = ['Enable network client']
-config['network'].comments['client_addresses'] =['List of server:port to connect and use data from']
-config['network'].comments['clients_to_serial'] =['List of server:port to send data to serial out']
-config['network'].comments['clients_to_server'] =['List of server:port to send data to network server']
+config['network'].comments['client_addresses'] = ['List of server:port to connect and use data from']
+config['network'].comments['clients_to_serial'] = ['List of server:port to send data to serial out']
+config['network'].comments['clients_to_server'] = ['List of server:port to send data to network server']
+config['map'].comments['object_color'] = ['Color of map objects']
+config['map'].comments['old_object_color'] = ['Color of old (grey-outed) map objects']
+config['map'].comments['selected_object_color'] = ['Color of a selected map object']
+config['map'].comments['alerted_object_color'] = ['Color of a alerted map object']
+config['map'].comments['background_color'] = ['Color of map background']
+config['map'].comments['shoreline_color'] = ['Color of map shorelines']
+config['map'].comments['mapfile'] = ['Filename of map in MapGen format']
 
 
 # Define global variables
@@ -147,9 +162,6 @@ mid = {}
 midfull = {}
 typecode = {}
 data = {}
-owndata = {}
-# Define collections
-rawdata = collections.deque()
 # Set start time to start_time
 start_time = datetime.datetime.now()
 
@@ -186,6 +198,9 @@ class MainWindow(wx.Frame):
         file.AppendItem(quit)
 
         view = wx.Menu()
+        showmap = wx.MenuItem(view, 200, _("Show map window\tF5"), _("Shows or hides the map window"))
+        view.AppendItem(showmap)
+
         showsplit = wx.MenuItem(view, 201, _("Show &alert view\tF8"), _("Shows or hides the alert view"))
         view.AppendItem(showsplit)
         view.AppendSeparator()
@@ -216,6 +231,8 @@ class MainWindow(wx.Frame):
 
         self.Bind(wx.EVT_MENU, self.OnLoadRawFile, id=103)
         self.Bind(wx.EVT_MENU, self.Quit, id=104)
+        self.Bind(wx.EVT_CLOSE, self.Quit)
+        self.Bind(wx.EVT_MENU, self.OnShowMap, id=200)
         self.Bind(wx.EVT_MENU, self.OnShowSplit, id=201)
         self.Bind(wx.EVT_MENU, self.OnShowRawdata, id=203)
         self.Bind(wx.EVT_MENU, self.OnStatistics, id=204)
@@ -247,6 +264,10 @@ class MainWindow(wx.Frame):
         self.set_alerts_dlg = None
         self.stats_dlg = None
         self.raw_data_dlg = None
+
+        # Fire off the map
+        self.map = MapFrame(self, -1, "AIS Logger - Map", wx.DefaultPosition,(700,500))
+
         # A dict for keeping track of open Detail Windows
         self.detailwindow_dict = {}
 
@@ -263,6 +284,9 @@ class MainWindow(wx.Frame):
                 # Update lists
                 self.splist.Update(message)
                 self.spalert.Update(message)
+                # Update map
+                if self.map:
+                    self.map.UpdateMap(message)
                 # See if we should send to a detail window
                 if message['update']['mmsi'] in self.detailwindow_dict:
                     self.detailwindow_dict[message['update']['mmsi']].DoUpdate(message['update'])
@@ -274,6 +298,9 @@ class MainWindow(wx.Frame):
                 # Update lists
                 self.splist.Update(message)
                 self.spalert.Update(message)
+                # Update map
+                if self.map:
+                    self.map.UpdateMap(message)
             elif 'old' in message:
                 # "Move" from active_set to grey_dict
                 distance = message['old'].get('distance', None)
@@ -285,6 +312,9 @@ class MainWindow(wx.Frame):
                 # Update lists
                 self.splist.Update(message)
                 self.spalert.Update(message)
+                # Update map
+                if self.map:
+                    self.map.UpdateMap(message)
             elif 'remove' in message:
                 # Remove from grey_dict (and active_set to be sure)
                 self.active_set.discard(message['remove'])
@@ -295,9 +325,15 @@ class MainWindow(wx.Frame):
                 # Update lists
                 self.splist.Update(message)
                 self.spalert.Update(message)
+                # Update map
+                if self.map:
+                    self.map.UpdateMap(message)
             elif 'own_position' in message:
                 # Refresh status row with own_position
                 self.OnRefreshStatus(message['own_position'])
+                # Update map
+                if self.map:
+                    self.map.UpdateMap(message)
             elif 'query' in message:
                 # See if we should send to a detail window
                 if message['query']['mmsi'] in self.detailwindow_dict:
@@ -316,6 +352,9 @@ class MainWindow(wx.Frame):
         # Refresh the listctrls (by sorting)
         self.splist.Refresh()
         self.spalert.Refresh()
+        # Update the map if shown
+        if self.map.IsShown():
+            self.map.Canvas.Draw()
         # See if we should fetch statistics data from CommHubThread
         # Also add data in grey_dict and nbr of items
         if self.stats_dlg:
@@ -456,10 +495,19 @@ class MainWindow(wx.Frame):
         progress.Destroy()
 
     def Quit(self, event):
+        self.map.Destroy()
         self.Destroy()
 
     def OnShowSplit(self, event):
         self.splitwindows(self.spalert)
+
+    def OnShowMap(self, event, zoomtobb=True):
+        # Toggle showing map
+        if self.map.IsShown():
+            self.map.Hide()
+        else:
+            self.map.DrawMap(zoomtobb)
+            self.map.Show()
 
     def OnAbout(self, event):
         aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2008\n\naislog.py\ndecode.py\nutil.py'
@@ -476,6 +524,459 @@ class MainWindow(wx.Frame):
         dlg.Show()
 
 
+class MapFrame(wx.Frame):
+    def __init__(self,parent, id, title, position, size):
+        wx.Frame.__init__(self,parent, id, title, position, size)
+
+        self.CreateStatusBar()
+
+        # Add the Canvas
+        NC = NavCanvas.NavCanvas(self,
+                                 Debug = 0,
+                                 BackgroundColor = config['map']['background_color'])
+
+        # Reference the contained FloatCanvas
+        self.Canvas = NC.Canvas
+
+        self.ObjectWindow = wx.Panel(self)
+
+        # Reference the parent control
+        self.parent = parent
+
+        # Create a sizer to manage the Canvas and object window
+        MainSizer = wx.BoxSizer(wx.VERTICAL)
+        MainSizer.Add(NC, 4, wx.EXPAND)
+        MainSizer.Add(self.ObjectWindow, 0, wx.EXPAND)
+
+        self.SetSizer(MainSizer)
+        self.Bind(wx.EVT_CLOSE, self.OnCloseWindow)
+
+        self.Canvas.Bind(FloatCanvas.EVT_MOTION, self.OnMove) 
+        self.Canvas.Bind(FloatCanvas.EVT_MOUSEWHEEL, self.OnWheel)
+        self.Canvas.Bind(FloatCanvas.EVT_LEFT_DOWN, self.OnCanvasClick)
+        self.Canvas.Bind(wx.EVT_KEY_UP, self.OnKey)
+
+        # Set up selected object box
+        box = wx.StaticBox(self.ObjectWindow,-1,_(" Selected object information "))
+        self.objectbox_panel = wx.Panel(self.ObjectWindow, -1)
+        self.objectbox_panel.SetMinSize((500,45))
+        self.objectbox_sizer = wx.StaticBoxSizer(box, wx.HORIZONTAL)
+        self.objectbox_sizer.Add(self.objectbox_panel, wx.EXPAND)
+        self.ObjectWindow.SetSizer(self.objectbox_sizer)
+        # Create text objects
+        self.box_mmsi = wx.StaticText(self.objectbox_panel, -1, _("MMSI:"), pos=(10,5))
+        self.box_name = wx.StaticText(self.objectbox_panel, -1, _("Name:"), pos=(150,5))
+        self.box_georef = wx.StaticText(self.objectbox_panel, -1, _("GEOREF:"), pos=(400,5))
+        self.box_bearing = wx.StaticText(self.objectbox_panel, -1, _("Bearing:"), pos=(540,5))
+        self.box_lat = wx.StaticText(self.objectbox_panel, -1, _("Lat:"), pos=(10,25))
+        self.box_long = wx.StaticText(self.objectbox_panel, -1, _("Long:"), pos=(150,25))
+        self.box_course = wx.StaticText(self.objectbox_panel, -1, _("Course:"), pos=(310,25))
+        self.box_sog = wx.StaticText(self.objectbox_panel, -1, _("Speed:"), pos=(400,25))
+        self.box_distance = wx.StaticText(self.objectbox_panel, -1, _("Distance:"), pos=(540,25))
+        # Make window disabled
+        self.ObjectWindow.Enable(False)
+
+        # Add button to toolbar
+        toolbar = NC.ToolBar
+        toolbar.AddSeparator()
+        self.detail_button = wx.Button(toolbar, label=_("Open selected in &Detail Window") + ' (F2)')
+        self.detail_button.Bind(wx.EVT_BUTTON, self.OpenDetailWindow)
+        self.detail_button.Enable(False)
+        toolbar.AddControl(self.detail_button)
+        toolbar.Realize()
+
+        # Set empty object holder
+        self.itemMap = {}
+        # Map MainWindow's grey_dict
+        self.grey_dict = parent.grey_dict
+        # Set no selected object
+        self.selected = None
+        # Set "own" object
+        self.own_object = None
+        # Set variable to see if the map is loaded
+        self.mapIsLoaded = False
+        # Set 'workaround' variable to zoom to BB in next update
+        self.zoomNext = False
+
+        # Initialize
+        self.Canvas.InitAll()
+        self.Canvas.SetProjectionFun("FlatEarth")
+
+    def OnWheel(self, event):
+        Rot = event.GetWheelRotation()
+        Rot = Rot / abs(Rot) * 0.1
+        if event.ControlDown(): # move left-right
+            self.Canvas.MoveImage( (Rot, 0), "Panel" )
+        else: # move up-down
+            self.Canvas.MoveImage( (0, Rot), "Panel" )
+
+    def OnMove(self, event):
+        # Get mouse coordinates
+        try:
+            long = event.Coords[0]
+            lat = event.Coords[1]
+            human_pos = PositionConversion(lat,long).default
+            # Try to get own position
+            if self.own_object:
+                ownpos = self.own_object.XY
+                dist = VincentyDistance((ownpos[1], ownpos[0]), (lat, long)).all
+            else:
+                dist['bearing'] = 0
+                dist['km'] = 0
+            # Set data tuple
+            pos = (human_pos[0], human_pos[1], georef(lat, long), dist['bearing'], dist['km'])
+            # Print status text
+            self.SetStatusText(_("Mouse position:") + u" Lat: %s   Long:%s   GEOREF: %s   Bearing: %.1f°   Distance %.1f km" %(pos))
+        except:
+            self.SetStatusText(_("Mouse position:") +u" %.4f, %.4f" %(tuple(event.Coords)))
+
+        event.Skip()
+
+    def OnKey(self, event):
+        # Deselect object if escape is pressed
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.DeselectObject()
+        # Open selected in Detail window
+        elif event.GetKeyCode() == wx.WXK_F2:
+            self.OpenDetailWindow()
+
+    def OnCanvasClick(self, event):
+        self.DeselectObject()
+
+    def OnObjectClick(self, event):
+        self.SelectObject(event)
+
+    def ZoomToFit(self,event):
+        self.Canvas.ZoomToBB()
+
+    def OnCloseWindow(self, event):
+        self.Hide()
+
+    def ZoomToObject(self, mmsi):
+        # Zooms to an object
+        if mmsi in self.itemMap:
+            # Get object position
+            pos = getattr(self.itemMap[mmsi][0], 'XY', None)
+            if not pos == None:
+                # Get x and y
+                x = pos[0]
+                y = pos[1]
+                # Create a bounding box that has it's corners 0.5
+                # degrees around the position
+                bbox = numpy.array([[x-0.5,y-0.5],[x+0.5,y+0.5]])
+                # Zoom to the bounding box
+                self.Canvas.ZoomToBB(bbox)
+
+    def SelectObject(self, map_object):
+        # See if we have a previous selected object
+        if self.selected:
+            self.DeselectObject()
+        # Set selected to object
+        self.selected = getattr(map_object, 'mmsi')
+        # Mark object as selected with a different color
+        # (don't update the color attribute - we want to retain
+        # the original color)
+        self.itemMap[self.selected][0].SetColor(config['map']['selected_object_color'])
+        self.itemMap[self.selected][1].SetLineColor(config['map']['selected_object_color'])
+        # Make window enabled
+        self.ObjectWindow.Enable(True)
+        # Enable detail window button
+        self.detail_button.Enable(True)
+        # Update window
+        self.UpdateObjectWindow(map_object)
+        # Try to select object in list views
+        self.parent.splist.list.SetSelected(self.selected, True)
+        self.parent.spalert.list.SetSelected(self.selected, True)
+
+    def DeselectObject(self):
+        # Deselect if we have a selected object
+        if self.selected:
+            # Clear window
+            self.ClearObjectWindow()
+            # Mark object as deselected with the old object color
+            obj_color = getattr(self.itemMap[self.selected][1], 'color')
+            # See if object is greyed-out
+            if self.selected in self.grey_dict:
+                obj_color = config['map']['old_object_color']
+            self.itemMap[self.selected][0].SetColor(obj_color)
+            self.itemMap[self.selected][1].SetLineColor(obj_color)
+            # Disable detail window button
+            self.detail_button.Enable(False)
+            # Set selected to None
+            self.selected = None
+            # Deselect all objects in list views
+            self.parent.splist.list.DeselectAll()
+            self.parent.spalert.list.DeselectAll()
+
+    def SetSelected(self, mmsi):
+        # Select MMSI on map
+        if mmsi in self.itemMap:
+            self.SelectObject(self.itemMap[mmsi][1])
+
+    def OpenDetailWindow(self, map_object=None):
+        # Try to get mmsi if a map object
+        mmsi = getattr(map_object, 'mmsi', None)
+        # If not, see if we have a selected object to use
+        if not mmsi and self.selected:
+            mmsi = self.selected
+        if mmsi:
+            # Open the detail window
+            frame = DetailWindow(self, -1, mmsi)
+            frame.Show()
+
+    def DrawMap(self, zoomtobb=True):
+        # Only load data if we haven't done it before
+        if not self.mapIsLoaded:
+            # Tell the user we're busy
+            wx.BusyCursor()
+            # Load shorelines from file
+            try:
+                Shorelines = self.Read_MapGen(os.path.join(config['map']['mapfile']))
+                for segment in Shorelines:
+                    i = self.Canvas.AddLine(segment, LineColor=config['map']['shoreline_color'])
+            except:
+                logging.error("Failed reading map data from file", exc_info=True)
+            # Set variable to map is loaded
+            self.mapIsLoaded = True
+            # Not busy any more
+            wx.BusyCursor()
+            # Set variable to zoom to bounding box in next update
+            # (workaround: ZoomToBB() wouldn't work directly)
+            if zoomtobb:
+                self.zoomNext = True
+
+    def UpdateMap(self, message):
+        # Update map with new data
+        if 'update' in message:
+            data = message['update']
+            mmsi = data['mmsi']
+            alert = message.get('alert', False)
+            mapdata = self.GetMessageData(mmsi, data, alert)
+            if mapdata and mmsi in self.itemMap:
+                self.UpdateObject(self.itemMap[mmsi], *mapdata)
+            # See if object is selected and if so send arrow data
+            # (contains heading, speed, position)
+            if self.selected and self.selected == mmsi:
+                self.UpdateObjectWindow(self.itemMap[mmsi][1])
+        elif 'insert' in message:
+            data = message['insert']
+            mmsi = data['mmsi']
+            alert = message.get('alert', False)
+            mapdata = self.GetMessageData(mmsi, data, alert)
+            if mapdata:
+                self.itemMap[mmsi] = self.CreateObject(*mapdata)
+        elif 'remove' in message:
+            # Get the MMSI number
+            mmsi = message['remove']
+            # If the object we want to remove is selected,
+            # deselect it
+            if self.selected == mmsi:
+                self.DeselectObject()
+            # Remove object
+            if mmsi in self.itemMap:
+                self.RemoveObject(self.itemMap[mmsi])
+                del self.itemMap[mmsi]
+        elif 'old' in message:
+            # Get the MMSI number
+            mmsi = message['old']['mmsi']
+            # Don't update color now if selected or doesn't exist
+            if not self.selected == mmsi and mmsi in self.itemMap:
+                self.itemMap[mmsi][0].SetColor(config['map']['old_object_color'])
+                self.itemMap[mmsi][1].SetLineColor(config['map']['old_object_color'])
+        elif 'own_position' in message:
+            self.SetOwnObject(message['own_position'])
+        # See if we need to zoom to bounding box
+        # (workaround after drawing map)
+        if self.zoomNext:
+            self.Canvas.ZoomToBB()
+            self.zoomNext = False
+
+    def GetMessageData(self, mmsi, data, alert):
+        # Extract info from data and format it to be used
+        # on the map.
+
+        # Get name
+        name = data.get('name', None)
+        # Extract position
+        lat = data['latitude']
+        long = data['longitude']
+        if long is None or long == 'N/A' or lat is None or lat == 'N/A':
+            return False
+        # Extract distance and bearing
+        bearing = data['bearing']
+        distance = data['distance']
+        # Extract cog, speed
+        cog = data['cog']
+        if cog is None or cog == 'N/A':
+            cog = 0
+        sog = data['sog']
+        if sog is None or sog == 'N/A':
+            sog = 0
+        else:
+            sog = int(sog * decimal.Decimal('1.5'))
+        # See what type of transponder we have
+        transponder_type = data['transponder_type']
+        if transponder_type and transponder_type == 'base':
+            basestation = True
+        else:
+            basestation = False
+        # Return values
+        return mmsi, name, lat, long, bearing, distance, cog, sog, basestation, alert
+
+    def UpdateObjectWindow(self, map_object):
+        # Set data in Object Window
+        # Get data from map_object
+        mmsi = getattr(map_object, 'mmsi', None)
+        name = getattr(map_object, 'name', None)
+        course = getattr(map_object, 'Direction', None)
+        sog = getattr(map_object, 'Length', None)
+        pos = getattr(map_object, 'XY', None)
+        bearing = getattr(map_object, 'bearing', None)
+        distance = getattr(map_object, 'distance', None)
+        # See if None, if so set strings to '-'
+        if not name: name = '-'
+        if not course or course == '0.0': course = '-'
+        else: course = str(int(course)) + u'°'
+        if not sog or sog == '0.0': sog = '-'
+        else: sog = str(int(float(sog) / 1.5)) + ' kn'
+        if not bearing: bearing = '-'
+        else: bearing = str(bearing) + u'°'
+        if not distance: distance = '-'
+        else: distance = str(distance) + u' km'
+        # See if we can get position data
+        try:
+            human_pos = PositionConversion(pos[1],pos[0]).default
+            lat = human_pos[0]
+            long = human_pos[1]
+            georef_v = georef(pos[1], pos[0])
+        except:
+            lat = '-'; long = '-'; georef_v = '-'
+        # Set labels
+        self.box_mmsi.SetLabel(_("MMSI: ") + str(mmsi))
+        self.box_name.SetLabel(_("Name: ") + name)
+        self.box_georef.SetLabel(_("GEOREF: ") + georef_v)
+        self.box_bearing.SetLabel(_("Bearing: ") + bearing)
+        self.box_lat.SetLabel(_("Lat: ") + lat)
+        self.box_long.SetLabel(_("Long: ") + long)
+        self.box_course.SetLabel(_("Course: ") + course)
+        self.box_sog.SetLabel(_("Speed: ") + sog)
+        self.box_distance.SetLabel(_("Distance: ") + distance)
+
+    def ClearObjectWindow(self):
+        # Set empty labels
+        self.box_mmsi.SetLabel(_("MMSI: "))
+        self.box_name.SetLabel(_("Name: "))
+        self.box_georef.SetLabel(_("GEOREF: "))
+        self.box_bearing.SetLabel(_("Bearing: "))
+        self.box_lat.SetLabel(_("Lat: "))
+        self.box_long.SetLabel(_("Long: "))
+        self.box_course.SetLabel(_("Course: "))
+        self.box_sog.SetLabel(_("Speed: "))
+        self.box_distance.SetLabel(_("Distance:"))
+        # Make window disabled
+        self.ObjectWindow.Enable(False)
+
+    def CreateObject(self, mmsi, name, y, x, bearing, distance, heading, speed, basestation, alert):
+        # Create a ship using data, return the objects
+
+        Canvas = self.Canvas
+        # Set color based on alerted or not
+        if alert:
+            obj_color = config['map']['alerted_object_color']
+        else:
+            obj_color = config['map']['object_color']
+        # Create a round point for non-base station transponders
+        # or a squared point for base stations
+        if basestation:
+            Point = Canvas.AddSquarePoint((x, y), Size=5, Color=obj_color, InForeground=True)
+        else:
+            Point = Canvas.AddPoint((x, y), Diameter=4, Color=obj_color, InForeground=True)
+        # Create an arrow based on objects speed and heading
+        Arrow = Canvas.AddArrow((x, y), Length=speed, Direction=heading, LineColor=obj_color, LineWidth=1, ArrowHeadSize=0, InForeground = True)
+        # Make it possible to actually hit the object :-)
+        Arrow.HitLineWidth = 15
+        # Set events for clicking on object
+        Arrow.Bind(FloatCanvas.EVT_FC_LEFT_DOWN, self.OnObjectClick)
+        Arrow.Bind(FloatCanvas.EVT_FC_LEFT_DCLICK, self.OpenDetailWindow)
+        # Set extended attributes
+        setattr(Arrow, 'mmsi', mmsi)
+        setattr(Arrow, 'name', name)
+        setattr(Arrow, 'bearing', bearing)
+        setattr(Arrow, 'distance', distance)
+        setattr(Arrow, 'color', obj_color)
+        return (Point,Arrow)
+
+    def UpdateObject(self, Object, mmsi, name, y, x, bearing, distance, heading, speed, basestation, alert):
+        # Update the Object with fresh data
+
+        # Map objects
+        Point = Object[0]
+        Arrow = Object[1]
+
+        # Update the data
+        Point.SetPoint((x,y))
+        Arrow.SetPoint((x,y))
+        Arrow.SetLengthDirection(speed,heading)
+        # Update color
+        if not self.selected == mmsi:
+            obj_color = getattr(Arrow, 'color')
+            Point.SetColor(obj_color)
+            Arrow.SetLineColor(obj_color)
+        # Set new data
+        setattr(Arrow, 'name', name)
+        setattr(Arrow, 'bearing', bearing)
+        setattr(Arrow, 'distance', distance)
+
+    def RemoveObject(self, Object):
+        # Remove the Object
+
+        # Map objects
+        Point = Object[0]
+        Arrow = Object[1]
+
+        # Remove
+        self.Canvas.RemoveObject(Point)
+        self.Canvas.RemoveObject(Arrow)
+
+    def SetOwnObject(self, owndata):
+        # Sets a square point at the own position
+        try:
+            y = owndata['ownlatitude']
+            x = owndata['ownlongitude']
+        except TypeError:
+            return None
+        # See if we have an old object
+        if self.own_object:
+            self.own_object.SetPoint((x,y))
+        else:
+            # Create object
+            self.own_object = self.Canvas.AddSquarePoint((x, y), Size=7, Color=config['map']['object_color'], InForeground=True)
+
+    def Read_MapGen(self, filename):
+        # Function for reading a MapGen Format file.
+        # It returns a list of NumPy arrays with the line segments
+        # in them.
+        # Shamelessly stolen from the FloatCanvas demo...
+
+        import string
+        file = open(filename,'rt')
+        data = file.readlines()
+        data = map(string.strip,data)
+
+        Shorelines = []
+        segment = []
+        for line in data:
+            if line:
+                if line == "# -b": #New segment beginning
+                    if segment: Shorelines.append(numpy.array(segment))
+                    segment = []
+                else:
+                    segment.append(map(float,string.split(line)))
+        if segment: Shorelines.append(numpy.array(segment))
+
+        return Shorelines
+
+
 class ListWindow(wx.Panel):
     def __init__(self, parent, id):
         wx.Panel.__init__(self, parent, id, style=wx.CLIP_CHILDREN)
@@ -486,6 +987,9 @@ class ListWindow(wx.Panel):
         # A really complicated list comprehension... ;-)
         # For each item in the alertlistcolumns_as_list, extract the corresponding items from columnsetup and create a list
         used_columns = [ [x, columnsetup[x][0], columnsetup[x][1]] for x in alertlistcolumns_as_list ]
+
+        # Reference the parent control
+        self.parent = parent
 
         # Create the listctrl
         self.list = VirtualList(self, columns=used_columns)
@@ -520,6 +1024,9 @@ class AlertWindow(wx.Panel):
         # A really complicated list comprehension... ;-)
         # For each item in the alertlistcolumns_as_list, extract the corresponding items from columnsetup and create a list
         used_columns = [ [x, columnsetup[x][0], columnsetup[x][1]] for x in alertlistcolumns_as_list ]
+
+        # Reference the parent control
+        self.parent = parent
 
         # Create the listctrl
         self.list = VirtualList(self, columns=used_columns)
@@ -585,18 +1092,33 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         self.alertitems = set()
         self.greyitems = set()
 
+        # Define popup menu
+        self.menu = wx.Menu()
+        self.menu.Append(1,_("&Show Detail window"))
+        self.menu.Append(2,_("&Zoom to object on map"))
+        # Set menu handlers
+        wx.EVT_MENU(self.menu, 1, self.OnItemActivated)
+        wx.EVT_MENU(self.menu, 2, self.ZoomToObject)
+
         # Define events
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnItemActivated)
+        self.Bind(wx.EVT_LIST_ITEM_RIGHT_CLICK, self.OnRightClick)
         self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnItemSelected)
         self.Bind(wx.EVT_LIST_ITEM_DESELECTED, self.OnItemDeselected)
         self.Bind(wx.EVT_KEY_UP, self.OnKey)
 
     def OnItemActivated(self, event):
         # Get the MMSI number associated with the row activated
-        itemmmsi = self.itemIndexMap[event.m_itemIndex]
+        if getattr(event, 'm_itemIndex', False):
+            itemmmsi = self.itemIndexMap[event.m_itemIndex]
+        # If no such attribute, get selected
+        elif self.selected != -1:
+            itemmmsi = self.selected
+        else:
+            return
         # Open the detail window
-        dlg = DetailWindow(None, -1, itemmmsi)
-        dlg.Show()
+        frame = DetailWindow(self, -1, itemmmsi)
+        frame.Show()
 
     def OnItemSelected(self, event):
         # When an object is selected, extract the MMSI number and
@@ -606,12 +1128,45 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
     def OnItemDeselected(self, event):
         self.selected = -1
 
+    def SetSelected(self, mmsi, ensurevisible=False):
+        # If MMSI in list, select it
+        if mmsi in self.itemDataMap:
+            # Find objects position in ctrl
+            new_position = self.FindItem(-1, unicode(mmsi))
+            # Set selected state
+            self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+            # Make sure object is visible if flag is set
+            if ensurevisible:
+                self.EnsureVisible(new_position)
+        # If not, deselect all objects
+        else:
+            self.DeselectAll()
+
+    def DeselectAll(self):
+        # Deselect all objects
+        for i in range(self.GetItemCount()):
+            self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
+
+    def ZoomToObject(self, event):
+        if self.selected != -1:
+            # Show map if not shown
+            if not app.frame.map.IsShown():
+                app.frame.OnShowMap(None, zoomtobb=False)
+            # Zoom to object on map
+            app.frame.map.ZoomToObject(self.selected)
+            # Set object as selected
+            app.frame.map.SetSelected(self.selected)
+
     def OnKey(self, event):
         # Deselect all objects if escape is pressed
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             for i in range(self.GetItemCount()):
                 self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
             self.selected = -1
+
+    def OnRightClick(self, event):
+        # Call PopupMenu at the position of mouse
+        self.PopupMenu(self.menu, event.GetPoint())
 
     def OnUpdate(self, message):
         # See what message we should work with
@@ -752,16 +1307,8 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # See if the previous selected row exists after the sort
         # If the MMSI number is found, set the new position as
         # selected. If not found, deselect all objects
-        try:
-            if self.selected in self.itemDataMap:
-                new_position = self.FindItem(-1, unicode(self.selected))
-                self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
-            else:
-                for i in range(self.GetItemCount()):
-                    self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
-                self.selected = -1
-        except: pass
-
+        if self.selected:
+            self.SetSelected(self.selected)
 
     # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
     def GetListCtrl(self):
@@ -772,13 +1319,13 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         return (self.sm_dn, self.sm_up)
 
 
-class DetailWindow(wx.Dialog):
+class DetailWindow(wx.Frame):
     def __init__(self, parent, id, itemmmsi):
         # Set self.itemmmsi to itemmmsi
         self.itemmmsi = itemmmsi
 
         # Define the dialog
-        wx.Dialog.__init__(self, parent, id, title=str(itemmmsi)+' - '+_("Detail window"))
+        wx.Frame.__init__(self, parent, id, title=str(itemmmsi)+' - '+_("Detail window"))
         # Create panels
         shipdata_panel = wx.Panel(self, -1)
         voyagedata_panel = wx.Panel(self, -1)
@@ -865,9 +1412,11 @@ class DetailWindow(wx.Dialog):
         main_thread.put({'query': itemmmsi})
 
         # Buttons & events
-        closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
+        zoombutton = wx.Button(self,1,_("&Zoom to object on map"))
+        closebutton = wx.Button(self,10,_("&Close"))
         closebutton.SetFocus()
-        self.Bind(wx.EVT_BUTTON, self.OnClose, id=1)
+        self.Bind(wx.EVT_BUTTON, self.OnZoom, id=1)
+        self.Bind(wx.EVT_BUTTON, self.OnClose, id=10)
         self.Bind(wx.EVT_KEY_UP, self.OnKey)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
@@ -886,6 +1435,8 @@ class DetailWindow(wx.Dialog):
         sizer1.Add(objinfo_panel, 0)
         mainsizer.Add(sizer1)
         mainsizer.AddSpacer((0,10))
+        sizer_button.Add(zoombutton, 0)
+        sizer_button.AddSpacer((50,0))
         sizer_button.Add(closebutton, 0)
         mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
         self.SetSizerAndFit(mainsizer)
@@ -894,6 +1445,15 @@ class DetailWindow(wx.Dialog):
         # Close dialog if escape is pressed
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             self.OnClose(event)
+
+    def OnZoom(self, event):
+        # Show map if not shown
+        if not app.frame.map.IsShown():
+            app.frame.OnShowMap(None, zoomtobb=False)
+        # Zoom to object on map
+        app.frame.map.ZoomToObject(self.itemmmsi)
+        # Set object as selected
+        app.frame.map.SetSelected(self.itemmmsi)
 
     def DoUpdate(self, data):
         # Set ship data
@@ -1251,7 +1811,7 @@ class SetAlertsWindow(wx.Dialog):
         self.textctrl_filtertext = wx.TextCtrl(filter_panel, -1, pos=(415,60),size=(250,-1))
 
         # Define class-wide variable containing current filtering
-        # If filter_query is empty, no SQL-filter is set
+        # If filter_query is empty, no filter is set
         # If filter_alerts is true, only show rows where alerts are set.
         # If filter_rermarks is true, only show rows where remarks are set.
         self.current_filter = {}
@@ -1321,8 +1881,8 @@ class SetAlertsWindow(wx.Dialog):
         main_thread.put({'remarkdict_query': None})
         main_thread.put({'iddb_query': None})
 
-        # Show a dialog asking the user to wait
-        self.progress = wx.ProgressDialog(_("Please wait"), _("Populating list..."), parent=self)
+        # Tell the user that we're busy
+        wx.BusyCursor()
 
     def GetData(self, message):
         # Update the list ctrl dict with new data
@@ -1342,14 +1902,14 @@ class SetAlertsWindow(wx.Dialog):
                 row['callsign'] = object['callsign']
                 row['name'] = object['name']
                 self.list_data[mmsi] = row
-        # Destroy progress dialog
-        if self.progress:
-            self.progress.Destroy()
         # Update the listctrl
         self.lc.OnUpdate()
+        # We're not busy anymore
+        wx.BusyCursor()
 
     def PopulateObject(self, objectinfo):
-        # Populate the objec_panel with info from the currently selected list row
+        # Populate the object_panel with info from the currently
+        # selected list row
         if objectinfo:
             self.object_panel.Enable(True)
             self.update_button.Enable(False)
@@ -1410,7 +1970,8 @@ class SetAlertsWindow(wx.Dialog):
         self.textctrl_remark.ChangeValue(remark_box)
 
     def OnFilter(self, event):
-        # Read values from the filter controls and set appropriate values in self.current_filter
+        # Read values from the filter controls and set appropriate
+        # values in self.current_filter
         self.current_filter["filter_alerts"] = self.checkbox_filteralerts.GetValue()
         self.current_filter["filter_remarks"] = self.checkbox_filterremarks.GetValue()
         # If the text control contains text, set a query from the value
@@ -1431,7 +1992,7 @@ class SetAlertsWindow(wx.Dialog):
         wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert:"), pos=(20,10), size=(260,30))
         textbox = wx.TextCtrl(dlg, -1, pos=(20,40), size=(150,-1))
         buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
-        buttonsizer.SetDimension(110, 80, 150, 40)
+        buttonsizer.SetDimension(80, 80, 120, 40)
         textbox.SetFocus()
         # If user press OK, check that the textbox only contains digits,
         # check if the number already exists and if not, create object
