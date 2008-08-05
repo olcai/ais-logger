@@ -499,12 +499,12 @@ class MainWindow(wx.Frame):
     def OnShowSplit(self, event):
         self.splitwindows(self.spalert)
 
-    def OnShowMap(self, event):
+    def OnShowMap(self, event, zoomtobb=True):
         # Toggle showing map
         if self.map.IsShown():
             self.map.Hide()
         else:
-            self.map.DrawMap()
+            self.map.DrawMap(zoomtobb)
             self.map.Show()
 
     def OnAbout(self, event):
@@ -640,6 +640,21 @@ class MapFrame(wx.Frame):
         def OnCloseWindow(self, event):
             self.Hide()
 
+        def ZoomToObject(self, mmsi):
+            # Zooms to an object
+            if mmsi in self.itemMap:
+                # Get object position
+                pos = getattr(self.itemMap[mmsi][0], 'XY', None)
+                if not pos == None:
+                    # Get x and y
+                    x = pos[0]
+                    y = pos[1]
+                    # Create a bounding box that has it's corners 0.5
+                    # degrees around the position
+                    bbox = numpy.array([[x-0.5,y-0.5],[x+0.5,y+0.5]])
+                    # Zoom to the bounding box
+                    self.Canvas.ZoomToBB(bbox)
+
         def SelectObject(self, map_object):
             # See if we have a previous selected object
             if self.selected:
@@ -687,34 +702,36 @@ class MapFrame(wx.Frame):
                 self.SelectObject(self.itemMap[mmsi][1])
 
         def OpenDetailWindow(self, map_object=None):
-            # See if we get a map object
-            if map_object:
-                mmsi = getattr(map_object, 'mmsi')
+            # Try to get mmsi if a map object
+            mmsi = getattr(map_object, 'mmsi', None)
             # If not, see if we have a selected object to use
-            elif self.selected:
+            if not mmsi and self.selected:
                 mmsi = self.selected
-            else:
-                return
-            # Open the detail window
-            dlg = DetailWindow(None, -1, mmsi)
-            dlg.Show()
+            if mmsi:
+                # Open the detail window
+                frame = DetailWindow(self, -1, mmsi)
+                frame.Show()
 
-        def DrawMap(self):
+        def DrawMap(self, zoomtobb=True):
             # Only load data if we haven't done it before
             if not self.mapIsLoaded:
                 # Tell the user we're busy
                 wx.BusyCursor()
                 # Load shorelines from file
-                Shorelines = self.Read_MapGen(os.path.join(config['map']['mapfile']))
-                for segment in Shorelines:
-                    self.Canvas.AddLine(segment, LineColor=config['map']['shoreline_color'])
+                try:
+                    Shorelines = self.Read_MapGen(os.path.join(config['map']['mapfile']))
+                    for segment in Shorelines:
+                        self.Canvas.AddLine(segment, LineColor=config['map']['shoreline_color'])
+                except:
+                    logging.error("Failed reading map data from file", exc_info=True)
                 # Set variable to map is loaded
                 self.mapIsLoaded = True
                 # Not busy any more
                 wx.BusyCursor()
                 # Set variable to zoom to bounding box in next update
                 # (workaround: ZoomToBB() wouldn't work directly)
-                self.zoomNext = True
+                if zoomtobb:
+                    self.zoomNext = True
 
         def UpdateMap(self, message):
             # Update map with new data
@@ -1063,18 +1080,33 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         self.alertitems = set()
         self.greyitems = set()
 
+        # Define popup menu
+        self.menu = wx.Menu()
+        self.menu.Append(1,_("&Show Detail window"))
+        self.menu.Append(2,_("&Zoom to object on map"))
+        # Set menu handlers
+        wx.EVT_MENU(self.menu, 1, self.OnItemActivated)
+        wx.EVT_MENU(self.menu, 2, self.ZoomToObject)
+
         # Define events
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnItemActivated)
+        self.Bind(wx.EVT_LIST_ITEM_RIGHT_CLICK, self.OnRightClick)
         self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnItemSelected)
         self.Bind(wx.EVT_LIST_ITEM_DESELECTED, self.OnItemDeselected)
         self.Bind(wx.EVT_KEY_UP, self.OnKey)
 
     def OnItemActivated(self, event):
         # Get the MMSI number associated with the row activated
-        itemmmsi = self.itemIndexMap[event.m_itemIndex]
+        if getattr(event, 'm_itemIndex', False):
+            itemmmsi = self.itemIndexMap[event.m_itemIndex]
+        # If no such attribute, get selected
+        elif self.selected != -1:
+            itemmmsi = self.selected
+        else:
+            return
         # Open the detail window
-        dlg = DetailWindow(None, -1, itemmmsi)
-        dlg.Show()
+        frame = DetailWindow(self, -1, itemmmsi)
+        frame.Show()
 
     def OnItemSelected(self, event):
         # When an object is selected, extract the MMSI number and
@@ -1103,12 +1135,26 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         for i in range(self.GetItemCount()):
             self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
 
+    def ZoomToObject(self, event):
+        if self.selected != -1:
+            # Show map if not shown
+            if not app.frame.map.IsShown():
+                app.frame.OnShowMap(None, zoomtobb=False)
+            # Zoom to object on map
+            app.frame.map.ZoomToObject(self.selected)
+            # Set object as selected
+            app.frame.map.SetSelected(self.selected)
+
     def OnKey(self, event):
         # Deselect all objects if escape is pressed
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             for i in range(self.GetItemCount()):
                 self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
             self.selected = -1
+
+    def OnRightClick(self, event):
+        # Call PopupMenu at the position of mouse
+        self.PopupMenu(self.menu, event.GetPoint())
 
     def OnUpdate(self, message):
         # See what message we should work with
@@ -1261,13 +1307,13 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         return (self.sm_dn, self.sm_up)
 
 
-class DetailWindow(wx.Dialog):
+class DetailWindow(wx.Frame):
     def __init__(self, parent, id, itemmmsi):
         # Set self.itemmmsi to itemmmsi
         self.itemmmsi = itemmmsi
 
         # Define the dialog
-        wx.Dialog.__init__(self, parent, id, title=str(itemmmsi)+' - '+_("Detail window"))
+        wx.Frame.__init__(self, parent, id, title=str(itemmmsi)+' - '+_("Detail window"))
         # Create panels
         shipdata_panel = wx.Panel(self, -1)
         voyagedata_panel = wx.Panel(self, -1)
@@ -1354,9 +1400,11 @@ class DetailWindow(wx.Dialog):
         main_thread.put({'query': itemmmsi})
 
         # Buttons & events
-        closebutton = wx.Button(self,1,_("&Close"),pos=(490,438))
+        zoombutton = wx.Button(self,1,_("&Zoom to object on map"))
+        closebutton = wx.Button(self,10,_("&Close"))
         closebutton.SetFocus()
-        self.Bind(wx.EVT_BUTTON, self.OnClose, id=1)
+        self.Bind(wx.EVT_BUTTON, self.OnZoom, id=1)
+        self.Bind(wx.EVT_BUTTON, self.OnClose, id=10)
         self.Bind(wx.EVT_KEY_UP, self.OnKey)
         self.Bind(wx.EVT_CLOSE, self.OnClose)
 
@@ -1375,6 +1423,8 @@ class DetailWindow(wx.Dialog):
         sizer1.Add(objinfo_panel, 0)
         mainsizer.Add(sizer1)
         mainsizer.AddSpacer((0,10))
+        sizer_button.Add(zoombutton, 0)
+        sizer_button.AddSpacer((50,0))
         sizer_button.Add(closebutton, 0)
         mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
         self.SetSizerAndFit(mainsizer)
@@ -1383,6 +1433,15 @@ class DetailWindow(wx.Dialog):
         # Close dialog if escape is pressed
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             self.OnClose(event)
+
+    def OnZoom(self, event):
+        # Show map if not shown
+        if not app.frame.map.IsShown():
+            app.frame.OnShowMap(None, zoomtobb=False)
+        # Zoom to object on map
+        app.frame.map.ZoomToObject(self.itemmmsi)
+        # Set object as selected
+        app.frame.map.SetSelected(self.itemmmsi)
 
     def DoUpdate(self, data):
         # Set ship data
