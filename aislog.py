@@ -161,9 +161,6 @@ mid = {}
 midfull = {}
 typecode = {}
 data = {}
-owndata = {}
-# Define collections
-rawdata = collections.deque()
 # Set start time to start_time
 start_time = datetime.datetime.now()
 
@@ -1809,7 +1806,7 @@ class SetAlertsWindow(wx.Dialog):
         self.textctrl_filtertext = wx.TextCtrl(filter_panel, -1, pos=(415,60),size=(250,-1))
 
         # Define class-wide variable containing current filtering
-        # If filter_query is empty, no SQL-filter is set
+        # If filter_query is empty, no filter is set
         # If filter_alerts is true, only show rows where alerts are set.
         # If filter_rermarks is true, only show rows where remarks are set.
         self.current_filter = {}
@@ -1906,7 +1903,8 @@ class SetAlertsWindow(wx.Dialog):
         wx.BusyCursor()
 
     def PopulateObject(self, objectinfo):
-        # Populate the objec_panel with info from the currently selected list row
+        # Populate the object_panel with info from the currently
+        # selected list row
         if objectinfo:
             self.object_panel.Enable(True)
             self.update_button.Enable(False)
@@ -1967,7 +1965,8 @@ class SetAlertsWindow(wx.Dialog):
         self.textctrl_remark.ChangeValue(remark_box)
 
     def OnFilter(self, event):
-        # Read values from the filter controls and set appropriate values in self.current_filter
+        # Read values from the filter controls and set appropriate
+        # values in self.current_filter
         self.current_filter["filter_alerts"] = self.checkbox_filteralerts.GetValue()
         self.current_filter["filter_remarks"] = self.checkbox_filterremarks.GetValue()
         # If the text control contains text, set a query from the value
@@ -1988,7 +1987,7 @@ class SetAlertsWindow(wx.Dialog):
         wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert:"), pos=(20,10), size=(260,30))
         textbox = wx.TextCtrl(dlg, -1, pos=(20,40), size=(150,-1))
         buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
-        buttonsizer.SetDimension(110, 80, 150, 40)
+        buttonsizer.SetDimension(80, 80, 120, 40)
         textbox.SetFocus()
         # If user press OK, check that the textbox only contains digits,
         # check if the number already exists and if not, create object
