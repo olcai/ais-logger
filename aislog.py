@@ -508,6 +508,7 @@ class MainWindow(wx.Frame):
         else:
             self.map.DrawMap(zoomtobb)
             self.map.Show()
+            self.map.Canvas.SetFocus()
 
     def OnAbout(self, event):
         aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2008\n\naislog.py\ndecode.py\nutil.py'
@@ -629,14 +630,13 @@ class MapFrame(wx.Frame):
             self.SetStatusText(_("Mouse position:") + u" Lat: %s   Long:%s   GEOREF: %s   Bearing: %.1f°   Distance %.1f km" %(pos))
         except:
             self.SetStatusText(_("Mouse position:") +u" %.4f, %.4f" %(tuple(event.Coords)))
-
         event.Skip()
 
     def OnKey(self, event):
         # Deselect object if escape is pressed
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             self.DeselectObject()
-        # Open selected in Detail window
+        # Open selected in Detail window if F2 is pressed
         elif event.GetKeyCode() == wx.WXK_F2:
             self.OpenDetailWindow()
 
@@ -1094,8 +1094,8 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
         # Define popup menu
         self.menu = wx.Menu()
-        self.menu.Append(1,_("&Show Detail window"))
-        self.menu.Append(2,_("&Zoom to object on map"))
+        self.menu.Append(1,_("&Show in Detail window")+"\tF2")
+        self.menu.Append(2,_("&Zoom to object on map")+"\tF3")
         # Set menu handlers
         wx.EVT_MENU(self.menu, 1, self.OnItemActivated)
         wx.EVT_MENU(self.menu, 2, self.ZoomToObject)
@@ -1163,6 +1163,12 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             for i in range(self.GetItemCount()):
                 self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
             self.selected = -1
+        # Show Detail window if F2 is pressed
+        elif event.GetKeyCode() == wx.WXK_F2:
+            self.OnItemActivated(None)
+        # Zoom to object on map if F3 is pressed
+        elif event.GetKeyCode() == wx.WXK_F3:
+            self.ZoomToObject(None)
 
     def OnRightClick(self, event):
         # Call PopupMenu at the position of mouse
@@ -1412,7 +1418,7 @@ class DetailWindow(wx.Frame):
         main_thread.put({'query': itemmmsi})
 
         # Buttons & events
-        zoombutton = wx.Button(self,1,_("&Zoom to object on map"))
+        zoombutton = wx.Button(self,1,_("&Zoom to object on map")+"\tF3")
         closebutton = wx.Button(self,10,_("&Close"))
         closebutton.SetFocus()
         self.Bind(wx.EVT_BUTTON, self.OnZoom, id=1)
@@ -1445,6 +1451,9 @@ class DetailWindow(wx.Frame):
         # Close dialog if escape is pressed
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             self.OnClose(event)
+        # Zoom to object on map if F3 is pressed
+        elif event.GetKeyCode() == wx.WXK_F3:
+            self.OnZoom(None)
 
     def OnZoom(self, event):
         # Show map if not shown
