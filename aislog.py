@@ -98,7 +98,7 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
                  'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []},
-                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Dark slate blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
+                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Cornflower blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -1418,8 +1418,9 @@ class DetailWindow(wx.Frame):
         main_thread.put({'query': itemmmsi})
 
         # Buttons & events
-        zoombutton = wx.Button(self,1,_("&Zoom to object on map")+"\tF3")
-        closebutton = wx.Button(self,10,_("&Close"))
+        button_panel = wx.Panel(self, -1)
+        zoombutton = wx.Button(button_panel,1,_("&Zoom to object on map (F3)"))
+        closebutton = wx.Button(button_panel,10,_("&Close"))
         closebutton.SetFocus()
         self.Bind(wx.EVT_BUTTON, self.OnZoom, id=1)
         self.Bind(wx.EVT_BUTTON, self.OnClose, id=10)
@@ -1432,19 +1433,21 @@ class DetailWindow(wx.Frame):
         sizer2 = wx.BoxSizer(wx.VERTICAL)
         sizer_button = wx.BoxSizer(wx.HORIZONTAL)
         # Sizer1 is the sizer positioning the different panels (and static boxes)
-        # Sizer2 is an inner sizer for th transponder data panel and remark panel
-        sizer1.Add(shipdata_panel, 1, wx.EXPAND, 0)
+        # Sizer2 is an inner sizer for the transponder data panel and remark panel
+        # Sizer_button is a sizer for the buttons in the bottom
+        sizer1.Add(shipdata_panel, 1, wx.EXPAND)
         sizer1.Add(voyagedata_panel, 0)
         sizer2.Add(transponderdata_panel, 0)
         sizer2.Add(self.remark_panel, 0)
-        sizer1.Add(sizer2)
+        sizer1.Add(sizer2, 0)
         sizer1.Add(objinfo_panel, 0)
-        mainsizer.Add(sizer1)
-        mainsizer.AddSpacer((0,10))
-        sizer_button.Add(zoombutton, 0)
-        sizer_button.AddSpacer((50,0))
+        sizer_button.AddStretchSpacer()
+        sizer_button.Add(zoombutton, 0, wx.ALIGN_RIGHT)
+        sizer_button.AddSpacer((80,0))
         sizer_button.Add(closebutton, 0)
-        mainsizer.Add(sizer_button, flag=wx.ALIGN_RIGHT)
+        button_panel.SetSizer(sizer_button)
+        mainsizer.Add(sizer1, 0, wx.EXPAND)
+        mainsizer.Add(button_panel, 1, wx.EXPAND)
         self.SetSizerAndFit(mainsizer)
 
     def OnKey(self, event):
@@ -1997,11 +2000,11 @@ class SetAlertsWindow(wx.Dialog):
 
     def OnInsertNew(self, event):
         # Create a dialog with a textctrl, a checkbox and two buttons
-        dlg = wx.Dialog(self, -1, _("Insert new MMSI number"), size=(280,130))
-        wx.StaticText(dlg, -1, _("Fill in the MMSI number you want to insert:"), pos=(20,10), size=(260,30))
+        dlg = wx.Dialog(self, -1, _("Insert new MMSI number"), size=(250,130))
+        wx.StaticText(dlg, -1, _("Enter the MMSI number to insert:"), pos=(20,10), size=(200,30))
         textbox = wx.TextCtrl(dlg, -1, pos=(20,40), size=(150,-1))
         buttonsizer = dlg.CreateStdDialogButtonSizer(wx.CANCEL|wx.OK)
-        buttonsizer.SetDimension(80, 80, 120, 40)
+        buttonsizer.SetDimension(80, 70, 120, 40)
         textbox.SetFocus()
         # If user press OK, check that the textbox only contains digits,
         # check if the number already exists and if not, create object
