@@ -97,7 +97,7 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
-                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'client_on': False, 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []},
+                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'clients_on': [], 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []},
                  'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Cornflower blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
@@ -144,7 +144,7 @@ config['position'].comments['use_position_from'] = ['Define the source to get GP
 config['network'].comments['server_on'] = ['Enable network server']
 config['network'].comments['server_address'] = ['Server hostname or IP (server side)']
 config['network'].comments['server_port'] = ['Server port (server side)']
-config['network'].comments['client_on'] = ['Enable network client']
+config['network'].comments['clients_on'] = ['List of server:port to enable reading from']
 config['network'].comments['client_addresses'] = ['List of server:port to connect and use data from']
 config['network'].comments['clients_to_serial'] = ['List of server:port to send data to serial out']
 config['network'].comments['clients_to_server'] = ['List of server:port to send data to network server']
@@ -2307,100 +2307,115 @@ class SettingsWindow(wx.Dialog):
         alert_panel = wx.Panel(notebook, -1)
         listview_panel = wx.Panel(notebook, -1)
         alertlistview_panel = wx.Panel(notebook, -1)
+        map_panel = wx.Panel(notebook, -1)
 
         # Populate panel for common options
-        # Common list settings
+        # Common GUI settings
         commonlist_panel = wx.Panel(common_panel, -1)
-        wx.StaticBox(commonlist_panel, -1, _(" General view settings "), pos=(10,5), size=(450,140))
+        wx.StaticBox(commonlist_panel, -1, _(" General GUI settings "), pos=(10,5), size=(450,225))
         wx.StaticText(commonlist_panel, -1, _("Threshold for greying-out objects (s):"), pos=(20,35))
-        self.commonlist_greytime = wx.SpinCtrl(commonlist_panel, -1, pos=(250,30), min=10, max=604800)
+        self.commonlist_greytime = wx.SpinCtrl(commonlist_panel, -1, pos=(320,30), min=10, max=604800)
         wx.StaticText(commonlist_panel, -1, _("Threshold for removal of objects (s):"), pos=(20,72))
-        self.commonlist_deletetime = wx.SpinCtrl(commonlist_panel, -1, pos=(250,65), min=10, max=604800)
-        wx.StaticText(commonlist_panel, -1, _("Time between view refreshes (ms):"), pos=(20,107))
-        self.commonlist_refreshtime = wx.SpinCtrl(commonlist_panel, -1, pos=(250,100), min=1000, max=600000)
-        # Manual position config
+        self.commonlist_deletetime = wx.SpinCtrl(commonlist_panel, -1, pos=(320,65), min=10, max=604800)
+        wx.StaticText(commonlist_panel, -1, _("Time between updating GUI with new data (s):"), pos=(20,107))
+        self.commonlist_updatetime = wx.SpinCtrl(commonlist_panel, -1, pos=(320,100), min=1, max=604800)
+        wx.StaticText(commonlist_panel, -1, _("Number of updates to an object before displaying:"), pos=(20,144))
+        self.commonlist_showafterupdates = wx.SpinCtrl(commonlist_panel, -1, pos=(320,135), min=1, max=100000)
+        self.commonlist_classbtoggle = wx.CheckBox(commonlist_panel, -1, _("Enable display of Class B stations"), pos=(20,174))
+        self.commonlist_basestationtoggle = wx.CheckBox(commonlist_panel, -1, _("Enable display of base stations"), pos=(20,199))
+        # Position config
         manualpos_panel = wx.Panel(common_panel, -1)
-        wx.StaticBox(manualpos_panel, -1, _(" Manual position settings "), pos=(10,-1), size=(450,140))
-        self.manualpos_overridetoggle = wx.CheckBox(manualpos_panel, -1, _("Use the supplied manual position and ignore position messages"), pos=(20,23))
-        wx.StaticText(manualpos_panel, -1, _("Latitude:"), pos=(20,60))
-        self.manualpos_latdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,54), size=(55,-1), min=0, max=90)
-        wx.StaticText(manualpos_panel, -1, _("deg"), pos=(145,60))
-        self.manualpos_latmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,54), size=(55,-1), min=0, max=60)
-        wx.StaticText(manualpos_panel, -1, _("min"), pos=(235,60))
-        self.manualpos_latdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,54), size=(55,-1), min=0, max=100)
-        wx.StaticText(manualpos_panel, -1, _("dec min"), pos=(325,60))
-        self.manualpos_latquad = wx.ComboBox(manualpos_panel, -1, pos=(390,54), size=(55,-1), choices=('N', 'S'), style=wx.CB_READONLY)
-        wx.StaticText(manualpos_panel, -1, _("Longitude:"), pos=(20,100))
-        self.manualpos_longdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,94), size=(55,-1), min=0, max=180)
-        wx.StaticText(manualpos_panel, -1, _("deg"), pos=(145,100))
-        self.manualpos_longmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,94), size=(55,-1), min=0.0, max=60)
-        wx.StaticText(manualpos_panel, -1, _("min"), pos=(235,100))
-        self.manualpos_longdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,94), size=(55,-1), min=0, max=100)
-        wx.StaticText(manualpos_panel, -1, _("dec min"), pos=(325,100))
-        self.manualpos_longquad = wx.ComboBox(manualpos_panel, -1, pos=(390,94), size=(55,-1), choices=('E', 'W'), style=wx.CB_READONLY)
+        wx.StaticBox(manualpos_panel, -1, _(" Position settings "), pos=(10,5), size=(450,210))
+        self.manualpos_format = wx.RadioBox(manualpos_panel, -1, _(" Position display format "), pos=(20,20), choices=(u"DD (0.0°)", u"DM (0° 00')", u"DMS (0° 00' 00'')"))
+        wx.StaticText(manualpos_panel, -1, _("Use position data from source: "), pos=(20,75))
+        self.manualpos_datasource = wx.ComboBox(manualpos_panel, -1, pos=(210,70), size=(230,-1), value='Any')
+        self.manualpos_overridetoggle = wx.CheckBox(manualpos_panel, -1, _("Use the supplied manual position and ignore position messages:"), pos=(20,103))
+        wx.StaticText(manualpos_panel, -1, _("Latitude:"), pos=(20,140))
+        self.manualpos_latdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,134), size=(55,-1), min=0, max=90)
+        wx.StaticText(manualpos_panel, -1, _("deg"), pos=(150,140))
+        self.manualpos_latmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,134), size=(55,-1), min=0, max=60)
+        wx.StaticText(manualpos_panel, -1, _("min"), pos=(240,140))
+        self.manualpos_latdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,134), size=(55,-1), min=0, max=100)
+        wx.StaticText(manualpos_panel, -1, _("sec"), pos=(330,140))
+        self.manualpos_latquad = wx.ComboBox(manualpos_panel, -1, pos=(370,134), size=(55,-1), choices=('N', 'S'), style=wx.CB_READONLY)
+        wx.StaticText(manualpos_panel, -1, _("Longitude:"), pos=(20,180))
+        self.manualpos_longdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,174), size=(55,-1), min=0, max=180)
+        wx.StaticText(manualpos_panel, -1, _("deg"), pos=(150,180))
+        self.manualpos_longmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,174), size=(55,-1), min=0.0, max=60)
+        wx.StaticText(manualpos_panel, -1, _("min"), pos=(240,180))
+        self.manualpos_longdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,174), size=(55,-1), min=0, max=100)
+        wx.StaticText(manualpos_panel, -1, _("sec"), pos=(330,180))
+        self.manualpos_longquad = wx.ComboBox(manualpos_panel, -1, pos=(370,174), size=(55,-1), choices=('E', 'W'), style=wx.CB_READONLY)
         # Add panels to main sizer
         common_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         common_panel_sizer.Add(commonlist_panel, 0)
         common_panel_sizer.Add(manualpos_panel, 0)
         common_panel.SetSizer(common_panel_sizer)
 
-        # Populate panel for serial input config
-        # Port A config
-        porta_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(porta_panel, -1, _(" Settings for a primary serial port "), pos=(10,5), size=(450,125))
-        self.porta_serialon = wx.CheckBox(porta_panel, -1, _("Activate reading from the primary serial port"), pos=(20,28))
-        wx.StaticText(porta_panel, -1, _("Port: "), pos=(20,60))
-        self.porta_port = wx.ComboBox(porta_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
-        wx.StaticText(porta_panel, -1, _("Speed: "), pos=(20,95))
-        self.porta_speed = wx.ComboBox(porta_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
-        self.porta_xonxoff = wx.CheckBox(porta_panel, -1, _("Software flow control:"), pos=(240,60), style=wx.ALIGN_RIGHT)
-        self.porta_rtscts = wx.CheckBox(porta_panel, -1, _("RTS/CTS flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
-        # Port B config
-        portb_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(portb_panel, -1, _(" Settings for a secondary serial port "), pos=(10,-1), size=(450,125))
-        self.portb_serialon = wx.CheckBox(portb_panel, -1, _("Activate reading from the secondary serial port"), pos=(20,28))
-        wx.StaticText(portb_panel, -1, _("Port: "), pos=(20,60))
-        self.portb_port = wx.ComboBox(portb_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
-        wx.StaticText(portb_panel, -1, _("Speed: "), pos=(20,95))
-        self.portb_speed = wx.ComboBox(portb_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
-        self.portb_xonxoff = wx.CheckBox(portb_panel, -1, _("Software flow control:"), pos=(240,60), style=wx.ALIGN_RIGHT)
-        self.portb_rtscts = wx.CheckBox(portb_panel, -1, _("RTS/CTS flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
-        # Port C config
-        portc_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(portc_panel, -1, _(" Settings for a tertiary serial port "), pos=(10,-1), size=(450,125))
-        self.portc_serialon = wx.CheckBox(portc_panel, -1, _("Activate reading from the tertiary serial port"), pos=(20,28))
-        wx.StaticText(portc_panel, -1, _("Port: "), pos=(20,60))
-        self.portc_port = wx.ComboBox(portc_panel, -1, pos=(110,60), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
-        wx.StaticText(portc_panel, -1, _("Speed: "), pos=(20,95))
-        self.portc_speed = wx.ComboBox(portc_panel, -1, pos=(110,90), size=(100,-1), choices=('9600', '38400'))
-        self.portc_xonxoff = wx.CheckBox(portc_panel, -1, _("Software flow control:"), pos=(240,60), style=wx.ALIGN_RIGHT)
-        self.portc_rtscts = wx.CheckBox(portc_panel, -1, _("RTS/CTS flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
+        # Populate panel for serial port config
+        # Choose port to config
+        serialchoose_panel = wx.Panel(serial_panel, -1)
+        wx.StaticBox(serialchoose_panel, -1, _(" Choose serial port to configure "), pos=(10,5), size=(450,125))
+        self.serialchoose_port = wx.ListBox(serialchoose_panel, -1, pos=(25,30), size=(220,80), style=wx.LB_SINGLE|wx.LB_SORT)
+        self.serialchoose_remove = wx.Button(serialchoose_panel, -1, _("&Remove port"), pos=(280,35))
+        self.serialchoose_insert = wx.Button(serialchoose_panel, -1, _("&Insert new port..."), pos=(280,80))
+        # Serial port config
+        port_panel = wx.Panel(serial_panel, -1)
+        wx.StaticBox(port_panel, -1, _(" Serial port settings "), pos=(10,5), size=(450,160))
+        self.port_serialon = wx.CheckBox(port_panel, -1, _("Activate reading data from this serial port"), pos=(20,20))
+        self.port_sendtoserial = wx.CheckBox(port_panel, -1, _("Send data to serial server"), pos=(20,40))
+        self.port_sendtonetwork = wx.CheckBox(port_panel, -1, _("Send data to network server"), pos=(20,60))
+        wx.StaticText(port_panel, -1, _("Port: "), pos=(20,95))
+        self.port_port = wx.ComboBox(port_panel, -1, pos=(110,90), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
+        wx.StaticText(port_panel, -1, _("Speed: "), pos=(20,125))
+        self.port_speed = wx.ComboBox(port_panel, -1, pos=(110,120), size=(100,-1), choices=('9600', '38400'))
+        self.port_xonxoff = wx.CheckBox(port_panel, -1, _("Software flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
+        self.port_rtscts = wx.CheckBox(port_panel, -1, _("RTS/CTS flow control:"), pos=(240,125), style=wx.ALIGN_RIGHT)
+        # Serial server config
+        serialserver_panel = wx.Panel(serial_panel, -1)
+        wx.StaticBox(serialserver_panel, -1, _(" Settings for acting as a serial server "), pos=(10,5), size=(450,115))
+        self.serialserver_serialon = wx.CheckBox(serialserver_panel, -1, _("Activate serial server (relay incoming data)"), pos=(20,20))
+        wx.StaticText(serialserver_panel, -1, _("Port: "), pos=(20,55))
+        self.serialserver_port = wx.ComboBox(serialserver_panel, -1, pos=(110,50), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
+        wx.StaticText(serialserver_panel, -1, _("Speed: "), pos=(20,85))
+        self.serialserver_speed = wx.ComboBox(serialserver_panel, -1, pos=(110,80), size=(100,-1), choices=('9600', '38400'))
+        self.serialserver_xonxoff = wx.CheckBox(serialserver_panel, -1, _("Software flow control:"), pos=(240,55), style=wx.ALIGN_RIGHT)
+        self.serialserver_rtscts = wx.CheckBox(serialserver_panel, -1, _("RTS/CTS flow control:"), pos=(240,85), style=wx.ALIGN_RIGHT)
         # Add panels to main sizer
         serial_panel_sizer = wx.BoxSizer(wx.VERTICAL)
-        serial_panel_sizer.Add(porta_panel, 0)
-        serial_panel_sizer.Add(portb_panel, 0)
-        serial_panel_sizer.Add(portc_panel, 0)
+        serial_panel_sizer.Add(serialchoose_panel, 0)
+        serial_panel_sizer.Add(port_panel, 0)
+        serial_panel_sizer.Add(serialserver_panel, 0)
         serial_panel.SetSizer(serial_panel_sizer)
 
         # Populate panel for network config
+        # Choose server to config
+        networkchoose_panel = wx.Panel(network_panel, -1)
+        wx.StaticBox(networkchoose_panel, -1, _(" Choose network server to configure "), pos=(10,5), size=(450,125))
+        self.networkchoose_server = wx.ListBox(networkchoose_panel, -1, pos=(25,30), size=(220,80), style=wx.LB_SINGLE|wx.LB_SORT)
+        self.networkchoose_remove = wx.Button(networkchoose_panel, -1, _("&Remove server"), pos=(280,35))
+        self.networkchoose_insert = wx.Button(networkchoose_panel, -1, _("&Insert new server..."), pos=(280,80))
         # Network receive config
         netrec_panel = wx.Panel(network_panel, -1)
-        wx.StaticBox(netrec_panel, -1, _(" Settings for reading from a network server "), pos=(10,5), size=(450,135))
-        self.netrec_clienton = wx.CheckBox(netrec_panel, -1, _("Activate reading from server"), pos=(20,28))
-        wx.StaticText(netrec_panel, -1, _("Address of streaming host (IP):"), pos=(20,65))
-        self.netrec_clientaddress = wx.TextCtrl(netrec_panel, -1, pos=(230,58), size=(175,-1))
-        wx.StaticText(netrec_panel, -1, _("Port of streaming host:"), pos=(20,100))
-        self.netrec_clientport = wx.SpinCtrl(netrec_panel, -1, pos=(230,93), min=0, max=65535)
+        wx.StaticBox(netrec_panel, -1, _(" Settings for reading from a network server "), pos=(10,5), size=(450,155))
+        self.netrec_clienton = wx.CheckBox(netrec_panel, -1, _("Activate reading data from this network server"), pos=(20,20))
+        self.netrec_sendtoserial = wx.CheckBox(netrec_panel, -1, _("Send data to serial server"), pos=(20,40))
+        self.netrec_sendtonetwork = wx.CheckBox(netrec_panel, -1, _("Send data to network server"), pos=(20,60))
+        wx.StaticText(netrec_panel, -1, _("Address of streaming host (IP):"), pos=(20,95))
+        self.netrec_clientaddress = wx.TextCtrl(netrec_panel, -1, pos=(230,90), size=(165,-1))
+        wx.StaticText(netrec_panel, -1, _("Port of streaming host:"), pos=(20,130))
+        self.netrec_clientport = wx.SpinCtrl(netrec_panel, -1, pos=(230,125), min=0, max=65535)
         # Network send config
         netsend_panel = wx.Panel(network_panel, -1)
-        wx.StaticBox(netsend_panel, -1, _(" Settings for acting as a network server "), pos=(10,-1), size=(450,140))
-        self.netsend_serveron = wx.CheckBox(netsend_panel, -1, _("Activate streaming network server (relay serial port data)"), pos=(20,28))
-        wx.StaticText(netsend_panel, -1, _("Server address (this server) (IP):"), pos=(20,65))
-        self.netsend_serveraddress = wx.TextCtrl(netsend_panel, -1, pos=(220,58), size=(175,-1))
-        wx.StaticText(netsend_panel, -1, _("Server port (this server):"), pos=(20,100))
-        self.netsend_serverport = wx.SpinCtrl(netsend_panel, -1, pos=(220,93), min=0, max=65535)
+        wx.StaticBox(netsend_panel, -1, _(" Settings for acting as a network server "), pos=(10,5), size=(450,120))
+        self.netsend_serveron = wx.CheckBox(netsend_panel, -1, _("Activate network server (relay incoming data)"), pos=(20,20))
+        wx.StaticText(netsend_panel, -1, _("Server address (this server) (IP):"), pos=(20,55))
+        self.netsend_serveraddress = wx.TextCtrl(netsend_panel, -1, pos=(220,48), size=(175,-1))
+        wx.StaticText(netsend_panel, -1, _("Server port (this server):"), pos=(20,90))
+        self.netsend_serverport = wx.SpinCtrl(netsend_panel, -1, pos=(220,83), min=0, max=65535)
         # Add panels to main sizer
         network_panel_sizer = wx.BoxSizer(wx.VERTICAL)
+        network_panel_sizer.Add(networkchoose_panel, 0)
         network_panel_sizer.Add(netrec_panel, 0)
         network_panel_sizer.Add(netsend_panel, 0)
         network_panel.SetSizer(network_panel_sizer)
@@ -2408,13 +2423,14 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for log config
         # Log config
         filelog_panel = wx.Panel(logging_panel, -1)
-        wx.StaticBox(filelog_panel, -1, _(" Logging to file "), pos=(10,5), size=(450,140))
+        wx.StaticBox(filelog_panel, -1, _(" Logging to file "), pos=(10,5), size=(450,160))
         self.filelog_logtoggle = wx.CheckBox(filelog_panel, -1, _("Activate logging to database file"), pos=(20,28))
-        wx.StaticText(filelog_panel, -1, _("Time between loggings (s):"), pos=(20,65))
-        self.filelog_logtime = wx.SpinCtrl(filelog_panel, -1, pos=(230,60), min=1, max=604800)
-        wx.StaticText(filelog_panel, -1, _("Log file"), pos=(20,105))
-        self.filelog_logfile = wx.TextCtrl(filelog_panel, -1, pos=(75,99), size=(275,-1))
-        self.filelog_logfileselect = wx.Button(filelog_panel, -1, _("&Browse..."), pos=(365,95))
+        self.filelog_logbasestationstoggle = wx.CheckBox(filelog_panel, -1, _("Enable logging of base stations"), pos=(20,53))
+        wx.StaticText(filelog_panel, -1, _("Time between loggings (s):"), pos=(20,85))
+        self.filelog_logtime = wx.SpinCtrl(filelog_panel, -1, pos=(230,80), min=1, max=604800)
+        wx.StaticText(filelog_panel, -1, _("Log file"), pos=(20,125))
+        self.filelog_logfile = wx.TextCtrl(filelog_panel, -1, pos=(75,119), size=(275,-1))
+        self.filelog_logfileselect = wx.Button(filelog_panel, -1, _("&Browse..."), pos=(365,115))
         self.Bind(wx.EVT_BUTTON, self.OnLogFileDialog, self.filelog_logfileselect)
         # Identification DB config
         iddblog_panel = wx.Panel(logging_panel, -1)
@@ -2435,32 +2451,23 @@ class SettingsWindow(wx.Dialog):
         # Populate panel for alert config
         # Alert file config
         alertfile_panel = wx.Panel(alert_panel, -1)
-        wx.StaticBox(alertfile_panel, -1, _(" Alert file "), pos=(10,5), size=(450,100))
-        self.alertfile_toggle = wx.CheckBox(alertfile_panel, -1, _("Read alert file at program startup"), pos=(20,28))
-        wx.StaticText(alertfile_panel, -1, _("Alert file:"), pos=(20,65))
-        self.alertfile_file = wx.TextCtrl(alertfile_panel, -1, pos=(105,59), size=(250,-1))
+        wx.StaticBox(alertfile_panel, -1, _(" Alert/remark file "), pos=(10,5), size=(450,100))
+        self.alertfile_toggle = wx.CheckBox(alertfile_panel, -1, _("Read alert/remark file at program startup"), pos=(20,28))
+        wx.StaticText(alertfile_panel, -1, _("Alert/remark file:"), pos=(20,65))
+        self.alertfile_file = wx.TextCtrl(alertfile_panel, -1, pos=(125,61), size=(220,-1))
         self.alertfile_fileselect = wx.Button(alertfile_panel, -1, _("&Browse..."), pos=(365,55))
         self.Bind(wx.EVT_BUTTON, self.OnAlertFileDialog, self.alertfile_fileselect)
-        # Remark file config
-        remarkfile_panel = wx.Panel(alert_panel, -1)
-        wx.StaticBox(remarkfile_panel, -1, _(" Remark file "), pos=(10,5), size=(450,100))
-        self.remarkfile_toggle = wx.CheckBox(remarkfile_panel, -1, _("Read remark file at program startup"), pos=(20,28))
-        wx.StaticText(remarkfile_panel, -1, _("Remark file:"), pos=(20,65))
-        self.remarkfile_file = wx.TextCtrl(remarkfile_panel, -1, pos=(105,59), size=(250,-1))
-        self.remarkfile_fileselect = wx.Button(remarkfile_panel, -1, _("&Browse..."), pos=(365,55))
-        self.Bind(wx.EVT_BUTTON, self.OnRemarkFileDialog, self.remarkfile_fileselect)
         # Alert sound file config
         alertsoundfile_panel = wx.Panel(alert_panel, -1)
-        wx.StaticBox(alertsoundfile_panel, -1, _(" Sound alert settings "), pos=(10,-1), size=(450,100))
+        wx.StaticBox(alertsoundfile_panel, -1, _(" Sound alert settings "), pos=(10,5), size=(450,100))
         self.alertsoundfile_toggle = wx.CheckBox(alertsoundfile_panel, -1, _("Activate sound alert"), pos=(20,23))
         wx.StaticText(alertsoundfile_panel, -1, _("Sound alert file:"), pos=(20,60))
-        self.alertsoundfile_file = wx.TextCtrl(alertsoundfile_panel, -1, pos=(105,54), size=(250,-1))
+        self.alertsoundfile_file = wx.TextCtrl(alertsoundfile_panel, -1, pos=(125,56), size=(220,-1))
         self.alertsoundfile_fileselect = wx.Button(alertsoundfile_panel, -1, _("&Browse..."), pos=(365,50))
         self.Bind(wx.EVT_BUTTON, self.OnAlertSoundFileDialog, self.alertsoundfile_fileselect)
         # Add panels to main sizer
         alert_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         alert_panel_sizer.Add(alertfile_panel, 0)
-        alert_panel_sizer.Add(remarkfile_panel, 0)
         alert_panel_sizer.Add(alertsoundfile_panel, 0)
         alert_panel.SetSizer(alert_panel_sizer)
 
@@ -2498,6 +2505,35 @@ class SettingsWindow(wx.Dialog):
         alertlistview_panel_sizer.Add(alertlistcolumn_panel, 0)
         alertlistview_panel.SetSizer(alertlistview_panel_sizer)
 
+        # Populate panel for map config
+        # Map file config
+        mapfile_panel = wx.Panel(map_panel, -1)
+        wx.StaticBox(mapfile_panel, -1, _(" Map file "), pos=(10,5), size=(450,70))
+        wx.StaticText(mapfile_panel, -1, _("Map file:"), pos=(20,35))
+        self.mapfile_file = wx.TextCtrl(mapfile_panel, -1, pos=(125,31), size=(220,-1))
+        self.mapfile_fileselect = wx.Button(mapfile_panel, -1, _("&Browse..."), pos=(365,25))
+        self.Bind(wx.EVT_BUTTON, self.OnMapFileDialog, self.mapfile_fileselect)
+        # Map color config
+        mapcolor_panel = wx.Panel(map_panel, -1)
+        wx.StaticBox(mapcolor_panel, -1, _(" Map color setup "), pos=(10,5), size=(450,275))
+        wx.StaticText(mapcolor_panel, -1, _("Map background color:"), pos=(20,38))
+        self.mapcolor_background = wx.ColourPickerCtrl(mapcolor_panel, -1, 'White', pos=(200,30), size=(80,30))
+        wx.StaticText(mapcolor_panel, -1, _("Map shoreline color:"), pos=(20,78))
+        self.mapcolor_shoreline = wx.ColourPickerCtrl(mapcolor_panel, -1, 'White', pos=(200,70), size=(80,30))
+        wx.StaticText(mapcolor_panel, -1, _("Map object color:"), pos=(20,118))
+        self.mapcolor_object = wx.ColourPickerCtrl(mapcolor_panel, -1, 'White', pos=(200,110), size=(80,30))
+        wx.StaticText(mapcolor_panel, -1, _("Map old object color:"), pos=(20,158))
+        self.mapcolor_old = wx.ColourPickerCtrl(mapcolor_panel, -1, 'White', pos=(200,150), size=(80,30))
+        wx.StaticText(mapcolor_panel, -1, _("Map selected object color:"), pos=(20,198))
+        self.mapcolor_selected = wx.ColourPickerCtrl(mapcolor_panel, -1, 'White', pos=(200,190), size=(80,30))
+        wx.StaticText(mapcolor_panel, -1, _("Map alerted object color:"), pos=(20,238))
+        self.mapcolor_alerted = wx.ColourPickerCtrl(mapcolor_panel, -1, 'White', pos=(200,230), size=(80,30))
+        # Add panels to main sizer
+        map_panel_sizer = wx.BoxSizer(wx.VERTICAL)
+        map_panel_sizer.Add(mapfile_panel, 0)
+        map_panel_sizer.Add(mapcolor_panel, 0)
+        map_panel.SetSizer(map_panel_sizer)
+
         # Dialog buttons
         but1 = wx.Button(self,1,_("&Save"))
         but2 = wx.Button(self,2,_("&Apply"))
@@ -2510,9 +2546,10 @@ class SettingsWindow(wx.Dialog):
         notebook.AddPage(serial_panel, _("Serial ports"))
         notebook.AddPage(network_panel, _("Network"))
         notebook.AddPage(logging_panel, _("Logging"))
-        notebook.AddPage(alert_panel, _("Alerts"))
+        notebook.AddPage(alert_panel, _("Alerts/remarks"))
         notebook.AddPage(listview_panel, _("List view"))
         notebook.AddPage(alertlistview_panel, _("Alert view"))
+        notebook.AddPage(map_panel, _("Map"))
         sizer.Add(notebook, 1, wx.EXPAND, 0)
         sizer.AddSpacer((0,10))
         sizer.Add(sizer2, flag=wx.ALIGN_RIGHT)
@@ -2538,7 +2575,7 @@ class SettingsWindow(wx.Dialog):
         self.Bind(wx.EVT_CLOSE, self.OnAbort)
 
         # Get values and update controls
-        self.GetConfig()
+        #self.GetConfig()
 
     def GetConfig(self):
         # Get values from ConfigObj and set corresponding values in the controls
@@ -2675,15 +2712,15 @@ class SettingsWindow(wx.Dialog):
         except: return
 
     def OnAlertFileDialog(self, event):
-        try: self.alertfile_file.SetValue(self.FileDialog(_("Choose alert file"), _("Alert file (*.alt)|*.alt|All files (*)|*")))
-        except: return
-
-    def OnRemarkFileDialog(self, event):
-        try: self.remarkfile_file.SetValue(self.FileDialog(_("Choose remark file"), _("Remark file (*.key)|*.key|All files (*)|*")))
+        try: self.alertfile_file.SetValue(self.FileDialog(_("Choose alert/remark file"), _("Alert file (*.alt)|*.alt|All files (*)|*")))
         except: return
 
     def OnAlertSoundFileDialog(self, event):
         try: self.alertsoundfile_file.SetValue(self.FileDialog(_("Choose sound alert file"), _("Wave file (*.wav)|*.wav|All files (*)|*")))
+        except: return
+
+    def OnMapFileDialog(self, event):
+        try: self.mapfile_file.SetValue(self.FileDialog(_("Choose map file"), _("MapGen file (*.dat)|*.dat|All files (*)|*")))
         except: return
 
     def FileDialog(self, label, wc):
@@ -3154,13 +3191,24 @@ class NetworkClientThread:
         queueitem = ''
         # Get config data and set empty dicts
         connection_params = config['network']['client_addresses']
+        connection_enabled = config['network']['clients_on']
+        connection_list = []
         connections = {}
         remainder = {}
+        # If one of the config lists is empty, return
+        if not connection_params or not connection_enabled:
+            return
         # See if we only will have one connection
         if not type(connection_params) == list:
             connection_params = [connection_params]
+        # See if we only have one enabled connection
+        if not type(connection_enabled) == list:
+            connection_enabled = [connection_enabled]
+        # Build list of connections to use
+        for enabled in connection_enabled:
+            connection_list.extend([c for c in connection_params if enabled == c])
         # Open all connections
-        for c in connection_params:
+        for c in connection_list:
             # Split and put address in params[0] and port in params[1]
             params = c.split(':')
             # Connect
@@ -4025,8 +4073,7 @@ comm_hub_thread.start()
 serial_thread.start()
 if config['network'].as_bool('server_on'):
     network_server_thread.start()
-if config['network'].as_bool('client_on'):
-    network_client_thread.start()
+network_client_thread.start()
 
 # Start the GUI
 # Wait some time before initiating, to let the threads settle
