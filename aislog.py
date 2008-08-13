@@ -97,8 +97,8 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
-                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'clients_on': [], 'client_addresses': [], 'clients_to_serial': [], 'clients_to_server': []},
-                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Cornflower blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
+                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'clients_on': "", 'client_addresses': "", 'clients_to_serial': "", 'clients_to_server': ""},
+                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Cornflower blue', 'shoreline_color': 'White', 'mapfile': ''}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
@@ -2658,7 +2658,7 @@ class SettingsWindow(wx.Dialog):
         clients_to_serial = config['network']['clients_to_serial'].replace(' ', '').split(',')
         clients_to_server = config['network']['clients_to_server'].replace(' ', '').split(',')
         # If one of the config lists is empty, don't continue
-        if clients:
+        if not clients == ['']:
             for client in clients:
                 if client in clients_enabled: status = True
                 else: status = False
@@ -3546,7 +3546,7 @@ class NetworkClientThread:
         connections = {}
         remainder = {}
         # If one of the config lists is empty, return
-        if not connection_params or not connection_enabled:
+        if connection_params == [''] or connection_enabled == ['']:
             return
         # Build list of connections to use
         for enabled in connection_enabled:
