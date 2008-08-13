@@ -30,7 +30,7 @@ import sys, os, optparse, logging
 import time, datetime
 import threading, Queue, collections
 import socket, SocketServer
-import pickle, codecs, csv
+import pickle, codecs, csv, string
 import md5
 import decimal
 
@@ -97,7 +97,7 @@ defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'sh
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
-                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'clients_on': [], 'client_addresses': ['localhost:23000'], 'clients_to_serial': [], 'clients_to_server': []},
+                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'clients_on': [], 'client_addresses': [], 'clients_to_serial': [], 'clients_to_server': []},
                  'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Cornflower blue', 'shoreline_color': 'White', 'mapfile': '../new/world.dat'}}
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
@@ -2328,22 +2328,22 @@ class SettingsWindow(wx.Dialog):
         wx.StaticBox(manualpos_panel, -1, _(" Position settings "), pos=(10,5), size=(450,210))
         self.manualpos_format = wx.RadioBox(manualpos_panel, -1, _(" Position display format "), pos=(20,20), choices=(u"DD (0.0°)", u"DM (0° 00')", u"DMS (0° 00' 00'')"))
         wx.StaticText(manualpos_panel, -1, _("Use position data from source: "), pos=(20,75))
-        self.manualpos_datasource = wx.ComboBox(manualpos_panel, -1, pos=(210,70), size=(230,-1), value='Any')
+        self.manualpos_datasource = wx.ComboBox(manualpos_panel, -1, pos=(210,70), size=(230,-1), value='Any', style=wx.CB_READONLY)
         self.manualpos_overridetoggle = wx.CheckBox(manualpos_panel, -1, _("Use the supplied manual position and ignore position messages:"), pos=(20,103))
         wx.StaticText(manualpos_panel, -1, _("Latitude:"), pos=(20,140))
-        self.manualpos_latdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,134), size=(55,-1), min=0, max=90)
+        self.manualpos_latdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,134), size=(55,-1), min=0, max=89)
         wx.StaticText(manualpos_panel, -1, _("deg"), pos=(150,140))
-        self.manualpos_latmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,134), size=(55,-1), min=0, max=60)
+        self.manualpos_latmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,134), size=(55,-1), min=0, max=59)
         wx.StaticText(manualpos_panel, -1, _("min"), pos=(240,140))
-        self.manualpos_latdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,134), size=(55,-1), min=0, max=100)
+        self.manualpos_latsec = wx.SpinCtrl(manualpos_panel, -1, pos=(270,134), size=(55,-1), min=0, max=59)
         wx.StaticText(manualpos_panel, -1, _("sec"), pos=(330,140))
         self.manualpos_latquad = wx.ComboBox(manualpos_panel, -1, pos=(370,134), size=(55,-1), choices=('N', 'S'), style=wx.CB_READONLY)
         wx.StaticText(manualpos_panel, -1, _("Longitude:"), pos=(20,180))
-        self.manualpos_longdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,174), size=(55,-1), min=0, max=180)
+        self.manualpos_longdeg = wx.SpinCtrl(manualpos_panel, -1, pos=(90,174), size=(55,-1), min=0, max=179)
         wx.StaticText(manualpos_panel, -1, _("deg"), pos=(150,180))
-        self.manualpos_longmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,174), size=(55,-1), min=0.0, max=60)
+        self.manualpos_longmin = wx.SpinCtrl(manualpos_panel, -1, pos=(180,174), size=(55,-1), min=0.0, max=59)
         wx.StaticText(manualpos_panel, -1, _("min"), pos=(240,180))
-        self.manualpos_longdecmin = wx.SpinCtrl(manualpos_panel, -1, pos=(270,174), size=(55,-1), min=0, max=100)
+        self.manualpos_longsec = wx.SpinCtrl(manualpos_panel, -1, pos=(270,174), size=(55,-1), min=0, max=59)
         wx.StaticText(manualpos_panel, -1, _("sec"), pos=(330,180))
         self.manualpos_longquad = wx.ComboBox(manualpos_panel, -1, pos=(370,174), size=(55,-1), choices=('E', 'W'), style=wx.CB_READONLY)
         # Add panels to main sizer
@@ -2356,21 +2356,23 @@ class SettingsWindow(wx.Dialog):
         # Choose port to config
         serialchoose_panel = wx.Panel(serial_panel, -1)
         wx.StaticBox(serialchoose_panel, -1, _(" Choose serial port to configure "), pos=(10,5), size=(450,125))
-        self.serialchoose_port = wx.ListBox(serialchoose_panel, -1, pos=(25,30), size=(220,80), style=wx.LB_SINGLE|wx.LB_SORT)
-        self.serialchoose_remove = wx.Button(serialchoose_panel, -1, _("&Remove port"), pos=(280,35))
-        self.serialchoose_insert = wx.Button(serialchoose_panel, -1, _("&Insert new port..."), pos=(280,80))
+        self.serialchoose_port = wx.ListBox(serialchoose_panel, -1, pos=(25,30), size=(220,80), style=wx.LB_SINGLE)
+        self.serialchoose_remove = wx.Button(serialchoose_panel, 20, _("&Remove port"), pos=(280,35))
+        self.serialchoose_insert = wx.Button(serialchoose_panel, 21, _("&Insert new port"), pos=(280,80))
+        self.serialchoose_remove.Enable(False)
         # Serial port config
-        port_panel = wx.Panel(serial_panel, -1)
-        wx.StaticBox(port_panel, -1, _(" Serial port settings "), pos=(10,5), size=(450,160))
-        self.port_serialon = wx.CheckBox(port_panel, -1, _("Activate reading data from this serial port"), pos=(20,20))
-        self.port_sendtoserial = wx.CheckBox(port_panel, -1, _("Send data to serial server"), pos=(20,40))
-        self.port_sendtonetwork = wx.CheckBox(port_panel, -1, _("Send data to network server"), pos=(20,60))
-        wx.StaticText(port_panel, -1, _("Port: "), pos=(20,95))
-        self.port_port = wx.ComboBox(port_panel, -1, pos=(110,90), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
-        wx.StaticText(port_panel, -1, _("Speed: "), pos=(20,125))
-        self.port_speed = wx.ComboBox(port_panel, -1, pos=(110,120), size=(100,-1), choices=('9600', '38400'))
-        self.port_xonxoff = wx.CheckBox(port_panel, -1, _("Software flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
-        self.port_rtscts = wx.CheckBox(port_panel, -1, _("RTS/CTS flow control:"), pos=(240,125), style=wx.ALIGN_RIGHT)
+        self.port_panel = wx.Panel(serial_panel, -1)
+        self.port_name = wx.StaticBox(self.port_panel, -1, _(" Serial port settings "), pos=(10,5), size=(450,160))
+        self.port_serialon = wx.CheckBox(self.port_panel, -1, _("Activate reading data from this serial port"), pos=(20,20))
+        self.port_sendtoserial = wx.CheckBox(self.port_panel, -1, _("Send data to serial server"), pos=(20,40))
+        self.port_sendtonetwork = wx.CheckBox(self.port_panel, -1, _("Send data to network server"), pos=(20,60))
+        wx.StaticText(self.port_panel, -1, _("Port: "), pos=(20,95))
+        self.port_port = wx.ComboBox(self.port_panel, -1, pos=(110,90), size=(100,-1), choices=('Com1', 'Com2', 'Com3', 'Com4'))
+        wx.StaticText(self.port_panel, -1, _("Speed: "), pos=(20,125))
+        self.port_speed = wx.ComboBox(self.port_panel, -1, pos=(110,120), size=(100,-1), choices=('9600', '38400'))
+        self.port_xonxoff = wx.CheckBox(self.port_panel, -1, _("Software flow control:"), pos=(240,95), style=wx.ALIGN_RIGHT)
+        self.port_rtscts = wx.CheckBox(self.port_panel, -1, _("RTS/CTS flow control:"), pos=(240,125), style=wx.ALIGN_RIGHT)
+        self.port_panel.Enable(False)
         # Serial server config
         serialserver_panel = wx.Panel(serial_panel, -1)
         wx.StaticBox(serialserver_panel, -1, _(" Settings for acting as a serial server "), pos=(10,5), size=(450,115))
@@ -2384,7 +2386,7 @@ class SettingsWindow(wx.Dialog):
         # Add panels to main sizer
         serial_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         serial_panel_sizer.Add(serialchoose_panel, 0)
-        serial_panel_sizer.Add(port_panel, 0)
+        serial_panel_sizer.Add(self.port_panel, 0)
         serial_panel_sizer.Add(serialserver_panel, 0)
         serial_panel.SetSizer(serial_panel_sizer)
 
@@ -2392,19 +2394,21 @@ class SettingsWindow(wx.Dialog):
         # Choose server to config
         networkchoose_panel = wx.Panel(network_panel, -1)
         wx.StaticBox(networkchoose_panel, -1, _(" Choose network server to configure "), pos=(10,5), size=(450,125))
-        self.networkchoose_server = wx.ListBox(networkchoose_panel, -1, pos=(25,30), size=(220,80), style=wx.LB_SINGLE|wx.LB_SORT)
-        self.networkchoose_remove = wx.Button(networkchoose_panel, -1, _("&Remove server"), pos=(280,35))
-        self.networkchoose_insert = wx.Button(networkchoose_panel, -1, _("&Insert new server..."), pos=(280,80))
+        self.networkchoose_server = wx.ListBox(networkchoose_panel, -1, pos=(25,30), size=(250,80), style=wx.LB_SINGLE)
+        self.networkchoose_remove = wx.Button(networkchoose_panel, 30, _("&Remove server"), pos=(310,35))
+        self.networkchoose_insert = wx.Button(networkchoose_panel, 31, _("&Insert new server"), pos=(310,80))
+        self.networkchoose_remove.Enable(False)
         # Network receive config
-        netrec_panel = wx.Panel(network_panel, -1)
-        wx.StaticBox(netrec_panel, -1, _(" Settings for reading from a network server "), pos=(10,5), size=(450,155))
-        self.netrec_clienton = wx.CheckBox(netrec_panel, -1, _("Activate reading data from this network server"), pos=(20,20))
-        self.netrec_sendtoserial = wx.CheckBox(netrec_panel, -1, _("Send data to serial server"), pos=(20,40))
-        self.netrec_sendtonetwork = wx.CheckBox(netrec_panel, -1, _("Send data to network server"), pos=(20,60))
-        wx.StaticText(netrec_panel, -1, _("Address of streaming host (IP):"), pos=(20,95))
-        self.netrec_clientaddress = wx.TextCtrl(netrec_panel, -1, pos=(230,90), size=(165,-1))
-        wx.StaticText(netrec_panel, -1, _("Port of streaming host:"), pos=(20,130))
-        self.netrec_clientport = wx.SpinCtrl(netrec_panel, -1, pos=(230,125), min=0, max=65535)
+        self.netrec_panel = wx.Panel(network_panel, -1)
+        wx.StaticBox(self.netrec_panel, -1, _(" Settings for reading from a network server "), pos=(10,5), size=(450,155))
+        self.netrec_clienton = wx.CheckBox(self.netrec_panel, -1, _("Activate reading data from this network server"), pos=(20,20))
+        self.netrec_sendtoserial = wx.CheckBox(self.netrec_panel, -1, _("Send data to serial server"), pos=(20,40))
+        self.netrec_sendtonetwork = wx.CheckBox(self.netrec_panel, -1, _("Send data to network server"), pos=(20,60))
+        wx.StaticText(self.netrec_panel, -1, _("Address of streaming host (IP):"), pos=(20,95))
+        self.netrec_clientaddress = wx.TextCtrl(self.netrec_panel, -1, pos=(230,90), size=(165,-1))
+        wx.StaticText(self.netrec_panel, -1, _("Port of streaming host:"), pos=(20,130))
+        self.netrec_clientport = wx.SpinCtrl(self.netrec_panel, -1, pos=(230,125), min=0, max=65535)
+        self.netrec_panel.Enable(False)
         # Network send config
         netsend_panel = wx.Panel(network_panel, -1)
         wx.StaticBox(netsend_panel, -1, _(" Settings for acting as a network server "), pos=(10,5), size=(450,120))
@@ -2416,7 +2420,7 @@ class SettingsWindow(wx.Dialog):
         # Add panels to main sizer
         network_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         network_panel_sizer.Add(networkchoose_panel, 0)
-        network_panel_sizer.Add(netrec_panel, 0)
+        network_panel_sizer.Add(self.netrec_panel, 0)
         network_panel_sizer.Add(netsend_panel, 0)
         network_panel.SetSizer(network_panel_sizer)
 
@@ -2564,6 +2568,12 @@ class SettingsWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnSave, id=1)
         self.Bind(wx.EVT_BUTTON, self.OnApply, id=2)
         self.Bind(wx.EVT_BUTTON, self.OnAbort, id=3)
+        self.Bind(wx.EVT_BUTTON, self.OnSerialRemove, id=20)
+        self.Bind(wx.EVT_BUTTON, self.OnSerialInsert, id=21)
+        self.serialchoose_port.Bind(wx.EVT_LISTBOX, self.PopulateSerialConfig)
+        self.Bind(wx.EVT_BUTTON, self.OnNetworkRemove, id=30)
+        self.Bind(wx.EVT_BUTTON, self.OnNetworkInsert, id=31)
+        self.networkchoose_server.Bind(wx.EVT_LISTBOX, self.PopulateNetworkConfig)
         self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=50)
         self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=51)
         self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=52)
@@ -2574,72 +2584,334 @@ class SettingsWindow(wx.Dialog):
         self.Bind(wx.EVT_BUTTON, self.OnColumnChange, id=63)
         self.Bind(wx.EVT_CLOSE, self.OnAbort)
 
+        # Set lists for holding serial and network data
+        self.seriallist = []
+        self.networklist = []
+        # Set variables to hold current selection
+        self.serialselected = -1
+        self.networkselected = -1
+
         # Get values and update controls
-        #self.GetConfig()
+        self.GetConfig()
 
     def GetConfig(self):
         # Get values from ConfigObj and set corresponding values in the controls
-        # Settings for serial port A
-        self.porta_serialon.SetValue(config['serial_a'].as_bool('serial_on'))
-        self.porta_port.SetValue(config['serial_a']['port'])
-        self.porta_speed.SetValue(config['serial_a']['baudrate'])
-        self.porta_xonxoff.SetValue(config['serial_a'].as_bool('xonxoff'))
-        self.porta_rtscts.SetValue(config['serial_a'].as_bool('rtscts'))
-        # Settings for serial port B
-        self.portb_serialon.SetValue(config['serial_b'].as_bool('serial_on'))
-        self.portb_port.SetValue(config['serial_b']['port'])
-        self.portb_speed.SetValue(config['serial_b']['baudrate'])
-        self.portb_xonxoff.SetValue(config['serial_b'].as_bool('xonxoff'))
-        self.portb_rtscts.SetValue(config['serial_b'].as_bool('rtscts'))
-        # Settings for serial port C
-        self.portc_serialon.SetValue(config['serial_c'].as_bool('serial_on'))
-        self.portc_port.SetValue(config['serial_c']['port'])
-        self.portc_speed.SetValue(config['serial_c']['baudrate'])
-        self.portc_xonxoff.SetValue(config['serial_c'].as_bool('xonxoff'))
-        self.portc_rtscts.SetValue(config['serial_c'].as_bool('rtscts'))
         # Common list settings
         self.commonlist_greytime.SetValue(config['common'].as_int('listmakegreytime'))
         self.commonlist_deletetime.SetValue(config['common'].as_int('deleteitemtime'))
-        self.commonlist_refreshtime.SetValue(config['common'].as_int('refreshlisttimer'))
+        self.commonlist_updatetime.SetValue(config['common'].as_int('updatetime'))
+        self.commonlist_showafterupdates.SetValue(config['common'].as_int('showafterupdates'))
+        self.commonlist_classbtoggle.SetValue(config['common'].as_bool('showclassbstations'))
+        self.commonlist_basestationtoggle.SetValue(config['common'].as_bool('showbasestations'))
         # Manual position settings
+        if config['position']['position_format'].lower() == 'dd':
+            self.manualpos_format.SetSelection(0)
+        elif config['position']['position_format'].lower() == 'dm':
+            self.manualpos_format.SetSelection(1)
+        else:
+            self.manualpos_format.SetSelection(2)
         self.manualpos_overridetoggle.SetValue(config['position'].as_bool('override_on'))
-        # Take bits out of a string like '67;23.19;N' and set values
-        self.manualpos_latdeg.SetValue(int(config['position']['latitude'].split(';')[0]))
-        self.manualpos_latmin.SetValue(int(config['position']['latitude'].split(';')[1].split('.')[0]))
-        self.manualpos_latdecmin.SetValue(int(config['position']['latitude'].split(';')[1].split('.')[1]))
-        self.manualpos_latquad.SetValue(config['position']['latitude'].split(';')[2])
-        self.manualpos_longdeg.SetValue(int(config['position']['longitude'].split(';')[0]))
-        self.manualpos_longmin.SetValue(int(config['position']['longitude'].split(';')[1].split('.')[0]))
-        self.manualpos_longdecmin.SetValue(int(config['position']['longitude'].split(';')[1].split('.')[1]))
-        self.manualpos_longquad.SetValue(config['position']['longitude'].split(';')[2])
+        # Calculate position
+        latitude = float(config['position']['latitude'])
+        longitude = float(config['position']['longitude'])
+        latdeg = int(latitude)
+        longdeg = int(longitude)
+        latmin = (latitude - latdeg) * 60
+        longmin = (longitude - longdeg) * 60
+        latsec = (latmin - int(latmin)) * 60
+        longsec = (longmin - int(longmin)) * 60
+        if latitude > 0: latquad = 'N'
+        else: latquad = 'S'
+        if longitude > 0: longquad = 'E'
+        else: longquad = 'W'
+        # Set position
+        self.manualpos_latdeg.SetValue(abs(latdeg))
+        self.manualpos_latmin.SetValue(abs(latmin))
+        self.manualpos_latsec.SetValue(abs(latsec))
+        self.manualpos_latquad.SetValue(latquad)
+        self.manualpos_longdeg.SetValue(abs(longdeg))
+        self.manualpos_longmin.SetValue(abs(longmin))
+        self.manualpos_longsec.SetValue(abs(longsec))
+        self.manualpos_longquad.SetValue(longquad)
+        # Set serial port list
+        # Get all ports starting with serial
+        ports = [ port for port in config.iterkeys()
+                  if port.find('serial') != -1 ]
+        # Iterate over ports
+        for port in ports:
+            if port == 'serial_server': continue
+            # Get config
+            conf = config[port]
+            # Append to list
+            self.seriallist.append([port, conf])
+        # Update listbox
+        self.UpdateSerialList()
+        # Settings for serial server
+        self.serialserver_serialon.SetValue(config['serial_server'].as_bool('server_on'))
+        self.serialserver_port.SetValue(config['serial_server']['port'])
+        self.serialserver_speed.SetValue(config['serial_server']['baudrate'])
+        self.serialserver_xonxoff.SetValue(config['serial_server'].as_bool('xonxoff'))
+        self.serialserver_rtscts.SetValue(config['serial_server'].as_bool('rtscts'))
+        # Network settings
+        clients = config['network']['client_addresses'].replace(' ', '').split(',')
+        clients_enabled = config['network']['clients_on'].replace(' ', '').split(',')
+        clients_to_serial = config['network']['clients_to_serial'].replace(' ', '').split(',')
+        clients_to_server = config['network']['clients_to_server'].replace(' ', '').split(',')
+        # If one of the config lists is empty, don't continue
+        if clients:
+            for client in clients:
+                if client in clients_enabled: status = True
+                else: status = False
+                if client in clients_to_serial: serial = True
+                else: serial = False
+                if client in clients_to_server: server = True
+                else: server = False
+                client_data = client.split(':')
+                # Append IP, port, status, serial, network to list
+                self.networklist.append([client_data[0], int(client_data[1]), status, serial, server])
+        # Update listbox
+        self.UpdateNetworkList()
+        # Network server settings
+        self.netsend_serveron.SetValue(config['network'].as_bool('server_on'))
+        self.netsend_serveraddress.SetValue(config['network']['server_address'])
+        self.netsend_serverport.SetValue(config['network'].as_int('server_port'))
         # Log settings
         self.filelog_logtoggle.SetValue(config['logging'].as_bool('logging_on'))
+        self.filelog_logbasestationstoggle.SetValue(config['logging'].as_bool('logbasestations'))
         self.filelog_logtime.SetValue(config['logging'].as_int('logtime'))
         self.filelog_logfile.SetValue(config['logging']['logfile'])
         # IDDB log settings
         self.iddblog_logtoggle.SetValue(config['iddb_logging'].as_bool('logging_on'))
         self.iddblog_logtime.SetValue(config['iddb_logging'].as_int('logtime'))
         self.iddblog_logfile.SetValue(config['iddb_logging']['logfile'])
-        # Alert settings
-        self.alertfile_toggle.SetValue(config['alert'].as_bool('alertfile_on'))
-        self.alertfile_file.SetValue(config['alert']['alertfile'])
-        self.remarkfile_toggle.SetValue(config['alert'].as_bool('remarkfile_on'))
-        self.remarkfile_file.SetValue(config['alert']['remarkfile'])
+        # Alert/remark settings
+        self.alertfile_toggle.SetValue(config['alert'].as_bool('remarkfile_on'))
+        self.alertfile_file.SetValue(config['alert']['remarkfile'])
         self.alertsoundfile_toggle.SetValue(config['alert'].as_bool('alertsound_on'))
         self.alertsoundfile_file.SetValue(config['alert']['alertsoundfile'])
-        # Alert view column settings
+        # List views column settings
         # Extract as list from comma separated list from dict
         self.listcolumns_as_list = config['common']['listcolumns'].replace(' ','').split(',')
         self.alertlistcolumns_as_list = config['common']['alertlistcolumns'].replace(' ', '').split(',')
         self.UpdateListColumns()
         self.UpdateAlertListColumns()
-        # Network settings
-        self.netrec_clienton.SetValue(config['network'].as_bool('client_on'))
-        self.netrec_clientaddress.SetValue(config['network']['client_address'])
-        self.netrec_clientport.SetValue(config['network'].as_int('client_port'))
-        self.netsend_serveron.SetValue(config['network'].as_bool('server_on'))
-        self.netsend_serveraddress.SetValue(config['network']['server_address'])
-        self.netsend_serverport.SetValue(config['network'].as_int('server_port'))
+        # Map settings
+        self.mapfile_file.SetValue(config['map']['mapfile'])
+        self.mapcolor_background.SetColour(config['map']['background_color'])
+        self.mapcolor_shoreline.SetColour(config['map']['shoreline_color'])
+        self.mapcolor_object.SetColour(config['map']['object_color'])
+        self.mapcolor_old.SetColour(config['map']['old_object_color'])
+        self.mapcolor_selected.SetColour(config['map']['selected_object_color'])
+        self.mapcolor_alerted.SetColour(config['map']['alerted_object_color'])
+        # GPS data source
+        self.manualpos_datasource.Append('Any')
+        for s in self.seriallist:
+            self.manualpos_datasource.Append(s[0])
+        self.manualpos_datasource.SetValue(config['position']['use_position_from'])
+
+    def UpdateSerialList(self):
+        # Update the serial reader's listbox with data from
+        # self.seriallist
+        portlist = []
+        for entry in self.seriallist:
+            # Get enabled/disabled status
+            if self.getConfigBool(entry[1], 'serial_on'): status = 'On'
+            else: status = 'Off'
+            portlist.append(entry[0] + " on port " + entry[1]['port'] + " (" + status + ")")
+        self.serialchoose_port.Set(portlist)
+
+    def UpdateNetworkList(self):
+        # Update the network client's listbox with data from
+        # self.networklist
+        clientlist = []
+        for entry in self.networklist:
+            if entry[2]: status = 'On'
+            else: status = 'Off'
+            clientlist.append(entry[0] + " on port " + str(entry[1]) + " (" + status + ")")
+        self.networkchoose_server.Set(clientlist)
+
+    def PopulateSerialConfig(self, event, empty=False):
+        # Populates the serial config panel
+        # See if we have a previous selected item
+        if self.serialselected != -1:
+            self.SetSerialConfig()
+        # See if we empty the panel
+        if empty:
+            # Disable panel
+            self.port_panel.Enable(False)
+            # Disable remove button
+            self.serialchoose_remove.Enable(False)
+            # Set empty data
+            data = ' '
+            conf = {'port': '', 'baudrate': ''}
+        else:
+            # Enable panel
+            self.port_panel.Enable(True)
+            # Enable remove button
+            self.serialchoose_remove.Enable(True)
+            # Set selection
+            self.serialselected = event.GetSelection()
+            self.serialchoose_port.SetSelection(self.serialselected)
+            # Get list item data
+            try:
+                data = self.seriallist[event.GetSelection()]
+                conf = data[1]
+            except IndexError:
+                # Index not in self.seriallist
+                return
+        # Try to get config values, set default ones if missing
+        enabled = self.getConfigBool(conf, 'serial_on')
+        to_serial = self.getConfigBool(conf, 'send_to_serial_server')
+        to_network= self.getConfigBool(conf, 'send_to_network_server')
+        baudrate = conf.get('baudrate', '38400')
+        xonxoff = self.getConfigBool(conf, 'xonxoff')
+        rtscts = self.getConfigBool(conf, 'rtscts')
+        # Update controls
+        self.port_name.SetLabel(_(" Serial port ") + data[0] + _(" settings"))
+        self.port_serialon.SetValue(enabled)
+        self.port_sendtoserial.SetValue(to_serial)
+        self.port_sendtonetwork.SetValue(to_network)
+        self.port_port.SetValue(conf['port'])
+        self.port_speed.SetValue(baudrate)
+        self.port_xonxoff.SetValue(xonxoff)
+        self.port_rtscts.SetValue(rtscts)
+
+    def PopulateNetworkConfig(self, event, empty=False):
+        # Populates the serial config panel
+        # See if we have a previous selected item
+        if self.networkselected != -1:
+            self.SetNetworkConfig()
+        # See if we empty the panel
+        if empty:
+            # Disable panel
+            self.netrec_panel.Enable(False)
+            # Disable remove button
+            self.networkchoose_remove.Enable(False)
+            # Set empty data
+            data = ['', 0, False, False, False]
+        else:
+            # Enable panel
+            self.netrec_panel.Enable(True)
+            # Enable remove button
+            self.networkchoose_remove.Enable(True)
+            # Set selection
+            self.networkselected = event.GetSelection()
+            self.networkchoose_server.SetSelection(self.networkselected)
+            # Get list item data
+            try:
+                data = self.networklist[event.GetSelection()]
+            except IndexError:
+                # Index not in self.networklist
+                return
+        # Update controls
+        self.netrec_clienton.SetValue(data[2])
+        self.netrec_sendtoserial.SetValue(data[3])
+        self.netrec_sendtonetwork.SetValue(data[4])
+        self.netrec_clientaddress.SetValue(data[0])
+        self.netrec_clientport.SetValue(data[1])
+
+    def SetSerialConfig(self):
+        # Reads data in the serial conf widget and sets self.seriallist
+        # Set temp dict
+        temp = {}
+        # Get data from controls
+        temp['serial_on'] = self.port_serialon.GetValue()
+        temp['send_to_serial_server'] = self.port_sendtoserial.GetValue()
+        temp['send_to_network_server'] = self.port_sendtonetwork.GetValue()
+        temp['port'] = self.port_port.GetValue()
+        temp['baudrate'] = self.port_speed.GetValue()
+        temp['xonxoff'] = self.port_xonxoff.GetValue()
+        temp['rtscts'] = self.port_rtscts.GetValue()
+        # Update list
+        self.seriallist[self.serialselected][1] = temp.copy()
+        # Update listbox
+        self.UpdateSerialList()
+        
+    def SetNetworkConfig(self):
+        # Reads data in the network client conf widget and sets
+        # self.networklist
+        # Set temp list
+        temp = [False, False, False, False, False]
+        # Get data from controls
+        temp[2] = self.netrec_clienton.GetValue()
+        temp[3] = self.netrec_sendtoserial.GetValue()
+        temp[4] = self.netrec_sendtonetwork.GetValue()
+        temp[0] = self.netrec_clientaddress.GetValue()
+        temp[1] = self.netrec_clientport.GetValue()
+        # Update list
+        self.networklist[self.networkselected] = temp
+        # Update listbox
+        self.UpdateNetworkList()
+
+    def OnSerialRemove(self, event):
+        # Removes an item in the serial listbox
+        # Ask user if he/she insits
+        dlg = wx.MessageDialog(self, _("Are you sure you want to remove the selected serial port entry?"), _("Confirm removal"), wx.YES_NO | wx.ICON_QUESTION)
+        if dlg.ShowModal() == wx.ID_YES:
+            # Remove port from list
+            del self.seriallist[self.serialselected]
+            # Set no selection
+            self.serialselected = -1
+            # Update listbox
+            self.UpdateSerialList()
+            # Set panel to empty
+            self.PopulateSerialConfig(None, empty=True)
+        dlg.Destroy()
+
+    def OnNetworkRemove(self, event):
+        # Removes an item in the network listbox
+        # Ask user if he/she insits
+        dlg = wx.MessageDialog(self, _("Are you sure you want to remove the selected server entry?"), _("Confirm removal"), wx.YES_NO | wx.ICON_QUESTION)
+        if dlg.ShowModal() == wx.ID_YES:
+            # Remove server from list
+            del self.networklist[self.networkselected]
+            # Set no selection
+            self.networkselected = -1
+            # Update listbox
+            self.UpdateNetworkList()
+            # Set panel to empty
+            self.PopulateNetworkConfig(None, empty=True)
+        dlg.Destroy()
+
+    def OnSerialInsert(self, event):
+        # Inserts an item in the serial listbox
+        # See if we have a previous selected item
+        if self.serialselected != -1:
+            self.SetSerialConfig()
+        # Get current port names in self.seriallist
+        ports = [port[0] for port in self.seriallist]
+        # Iterate over alphabet, compare to current port names and
+        # set nextchr to next available
+        for c in string.lowercase:
+            if not 'serial_' + c in ports:
+                nextchr = c
+                break
+        # Insert new item in list
+        self.seriallist.append(['serial_'+c, {'serial_on': True, 'port': '', 'send_to_serial_server': True, 'send_to_network_server': True}])
+        # Set selection to empty
+        self.serialselected = -1
+        # Update listbox
+        self.UpdateSerialList()
+        # Set selected to new port (ugly hack)
+        evt = wx.CommandEvent(wx.wxEVT_COMMAND_LISTBOX_SELECTED, -1)
+        evt.GetSelection = lambda: len(self.seriallist) - 1
+        self.PopulateSerialConfig(evt)
+
+    def OnNetworkInsert(self, event):
+        # Inserts an item in the network listbox
+        # See if we have a previous selected item
+        if self.networkselected != -1:
+            self.SetNetworkConfig()
+        # Insert new item in list
+        self.networklist.append(['', 0, True, True, True])
+        # Set selection to empty
+        self.networkselected = -1
+        # Update listbox
+        self.UpdateNetworkList()
+        # Set selected to new port (ugly hack)
+        evt = wx.CommandEvent(wx.wxEVT_COMMAND_LISTBOX_SELECTED, -1)
+        evt.GetSelection = lambda: len(self.networklist) - 1
+        self.PopulateNetworkConfig(evt)
 
     def UpdateListColumns(self):
         # Take all possible columns from columnsetup
@@ -2732,67 +3004,145 @@ class SettingsWindow(wx.Dialog):
 
     def UpdateConfig(self):
         # Update the config dictionary with data from the window
-        config['serial_a']['serial_on'] = self.porta_serialon.GetValue()
-        config['serial_a']['port'] = self.porta_port.GetValue()
-        config['serial_a']['baudrate'] = self.porta_speed.GetValue()
-        config['serial_a']['xonxoff'] = self.porta_xonxoff.GetValue()
-        config['serial_a']['rtscts'] = self.porta_rtscts.GetValue()
-        config['serial_b']['serial_on'] = self.portb_serialon.GetValue()
-        config['serial_b']['port'] = self.portb_port.GetValue()
-        config['serial_b']['baudrate'] = self.portb_speed.GetValue()
-        config['serial_b']['xonxoff'] = self.portb_xonxoff.GetValue()
-        config['serial_b']['rtscts'] = self.portb_rtscts.GetValue()
-        config['serial_c']['serial_on'] = self.portc_serialon.GetValue()
-        config['serial_c']['port'] = self.portc_port.GetValue()
-        config['serial_c']['baudrate'] = self.portc_speed.GetValue()
-        config['serial_c']['xonxoff'] = self.portc_xonxoff.GetValue()
-        config['serial_c']['rtscts'] = self.portc_rtscts.GetValue()
         config['common']['listmakegreytime'] =  self.commonlist_greytime.GetValue()
         config['common']['deleteitemtime'] =  self.commonlist_deletetime.GetValue()
-        config['common']['refreshlisttimer'] = self.commonlist_refreshtime.GetValue()
+        config['common']['updatetime'] = self.commonlist_updatetime.GetValue()
+        config['common']['showafterupdates'] =  self.commonlist_showafterupdates.GetValue()
+        config['common']['showclassbstations'] = self.commonlist_classbtoggle.GetValue()
+        config['common']['showbasestations'] = self.commonlist_basestationtoggle.GetValue()
+        if self.manualpos_format.GetSelection() == 0:
+            config['position']['position_format'] = 'dd'
+        elif self.manualpos_format.GetSelection() == 1:
+            config['position']['position_format'] = 'dm'
+        else:
+            config['position']['position_format'] = 'dms'
+        config['position']['use_position_from'] = self.manualpos_datasource.GetValue()
         config['position']['override_on'] = self.manualpos_overridetoggle.GetValue()
-        latitude = str(self.manualpos_latdeg.GetValue()).zfill(2) + ";" + str(self.manualpos_latmin.GetValue()).zfill(2) + "." + str(self.manualpos_latdecmin.GetValue()).zfill(2) + ";" + self.manualpos_latquad.GetValue()
-        longitude = str(self.manualpos_longdeg.GetValue()).zfill(3) + ";" + str(self.manualpos_longmin.GetValue()).zfill(2) + "." + str(self.manualpos_longdecmin.GetValue()).zfill(2) + ";" + self.manualpos_longquad.GetValue()
-        config['position']['latitude'] = str(latitude)
-        config['position']['longitude'] = str(longitude)
+        # Get own position
+        latdeg = self.manualpos_latdeg.GetValue()
+        latmin = self.manualpos_latmin.GetValue()
+        latsec = self.manualpos_latsec.GetValue()
+        if self.manualpos_latquad.GetValue() == 'N':
+            lat = "%.5f" %(float(latdeg) + float(latmin) / 60 + float(latsec) / 3600)
+        elif self.manualpos_latquad.GetValue() == 'S':
+            lat = "%.5f" %(-float(latdeg) - float(latmin) / 60 - float(latsec) / 3600)
+        longdeg = self.manualpos_longdeg.GetValue()
+        longmin = self.manualpos_longmin.GetValue()
+        longsec = self.manualpos_longsec.GetValue()
+        if self.manualpos_longquad.GetValue() == 'E':
+            long = "%.5f" %(float(longdeg) + float(longmin) / 60 + float(longsec) / 3600)
+        elif self.manualpos_longquad.GetValue() == 'W':
+            long = "%.5f" %(-float(longdeg) - float(longmin) / 60 - float(longsec) / 3600)
+        config['position']['latitude'] = lat
+        config['position']['longitude'] = long
         config['common']['listcolumns'] = ', '.join(self.listcolumns_as_list)
         config['common']['alertlistcolumns'] = ', '.join(self.alertlistcolumns_as_list)
+        # Serial client config
+        # Get all ports currently starting with serial
+        ports = [ port for port in config.iterkeys()
+                  if port.find('serial') != -1 ]
+        # Iterate over ports and delete them all
+        for port in ports:
+            if port == 'serial_server': continue
+            del config[port]
+        # Iterate over ports in self.seriallist and set config
+        for port in self.seriallist:
+            config[port[0]] = port[1]
+        # Network client config
+        client_addresses = []; clients_enabled = []; clients_to_serial = []; clients_to_server = []
+        for client in self.networklist:
+            address = client[0]+':'+str(client[1])
+            client_addresses.append(address)
+            if client[2]: clients_enabled.append(address)
+            if client[3]: clients_to_serial.append(address)
+            if client[4]: clients_to_server.append(address)
+        config['network']['client_addresses'] = ','.join(client_addresses)
+        config['network']['clients_on'] = ','.join(clients_enabled)
+        config['network']['clients_to_serial'] = ','.join(clients_to_serial)
+        config['network']['clients_to_server'] = ','.join(clients_to_server)
+        config['network']['server_on'] = self.netsend_serveron.GetValue()
+        config['network']['server_address'] = self.netsend_serveraddress.GetValue()
+        config['network']['server_port'] = self.netsend_serverport.GetValue()
         config['logging']['logging_on'] = self.filelog_logtoggle.GetValue()
+        config['logging']['logbasestations'] = self.filelog_logbasestationstoggle.GetValue()
         config['logging']['logtime'] = self.filelog_logtime.GetValue()
         config['logging']['logfile'] = self.filelog_logfile.GetValue()
         config['iddb_logging']['logging_on'] = self.iddblog_logtoggle.GetValue()
         config['iddb_logging']['logtime'] = self.iddblog_logtime.GetValue()
         config['iddb_logging']['logfile'] = self.iddblog_logfile.GetValue()
-        config['alert']['alertfile_on'] = self.alertfile_toggle.GetValue()
-        config['alert']['alertfile'] = self.alertfile_file.GetValue()
-        config['alert']['remarkfile_on'] = self.remarkfile_toggle.GetValue()
-        config['alert']['remarkfile'] = self.remarkfile_file.GetValue()
+        config['alert']['remarkfile_on'] = self.alertfile_toggle.GetValue()
+        config['alert']['remarkfile'] = self.alertfile_file.GetValue()
         config['alert']['alertsound_on'] = self.alertsoundfile_toggle.GetValue()
         config['alert']['alertsoundfile'] = self.alertsoundfile_file.GetValue()
-        config['network']['client_on'] = self.netrec_clienton.GetValue()
-        config['network']['client_address'] = self.netrec_clientaddress.GetValue()
-        config['network']['client_port'] = self.netrec_clientport.GetValue()
-        config['network']['server_on'] = self.netsend_serveron.GetValue()
-        config['network']['server_address'] = self.netsend_serveraddress.GetValue()
-        config['network']['server_port'] = self.netsend_serverport.GetValue()
+        config['map']['mapfile'] = self.mapfile_file.GetValue()
+        config['map']['background_color'] = self.mapcolor_background.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
+        config['map']['shoreline_color'] = self.mapcolor_shoreline.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
+        config['map']['object_color'] = self.mapcolor_object.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
+        config['map']['old_object_color'] = self.mapcolor_old.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
+        config['map']['selected_object_color'] = self.mapcolor_selected.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
+        config['map']['alerted_object_color'] = self.mapcolor_alerted.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
 
     def OnSave(self, event):
+        # Ensure good config state
+        self.BeforeSerialAndNetworkSave()
+        # Update and save program config
         self.UpdateConfig()
-        config.filename = configfile
-        config.write()
+        try:
+            config.filename = configfile
+            config.write()
+        except:
+            logging.error("Could not save config to config file", exc_info=True)
+            return
         dlg = wx.MessageDialog(self, _("Your settings have been saved, but the program can only make use of some changed settings when running.\n\nPlease restart the program to be able to use all the updated settings."), 'Please restart', wx.OK | wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
 
     def OnApply(self, event):
+        # Ensure good config state
+        self.BeforeSerialAndNetworkSave()
+        # Update program config
         self.UpdateConfig()
         dlg = wx.MessageDialog(self, _("The program can only make use of some changed settings when running.\n\nPlease save your changes and restart the program to be able to use all the updated settings."), 'WARNING', wx.OK | wx.ICON_WARNING)
         dlg.ShowModal()
         dlg.Destroy()
 
+    def BeforeSerialAndNetworkSave(self):
+        # This function ensures that the config options currently
+        # displayed is used and clears the serial and network
+        # config windows
+        # Update serial
+        # See if we have a selected item
+        if self.serialselected != -1:
+            self.SetSerialConfig()
+        # Set no selection
+        self.serialselected = -1
+        # Update listbox
+        self.UpdateSerialList()
+        # Set panel to empty
+        self.PopulateSerialConfig(None, empty=True)
+        # Update network
+        # See if we have a selected item
+        if self.networkselected != -1:
+            self.SetNetworkConfig()
+        # Set no selection
+        self.networkselected = -1
+        # Update listbox
+        self.UpdateNetworkList()
+        # Set panel to empty
+        self.PopulateNetworkConfig(None, empty=True)
+
     def OnAbort(self, event):
         self.Destroy()
 
+    def getConfigBool(self, conf, key):
+        # Try to get a particular config key as a bool, return
+        # False if the key doesn't exist
+        try:
+            return conf.as_bool(key)
+        except AttributeError:
+            return conf.get(key, False)
+        except:
+            return False
 
 class RawDataWindow(wx.Dialog):
     def __init__(self, parent, id):
@@ -3190,20 +3540,14 @@ class NetworkClientThread:
         # Set empty queueitem
         queueitem = ''
         # Get config data and set empty dicts
-        connection_params = config['network']['client_addresses']
-        connection_enabled = config['network']['clients_on']
+        connection_params = config['network']['client_addresses'].replace(' ', '').split(',')
+        connection_enabled = config['network']['clients_on'].replace(' ', '').split(',')
         connection_list = []
         connections = {}
         remainder = {}
         # If one of the config lists is empty, return
         if not connection_params or not connection_enabled:
             return
-        # See if we only will have one connection
-        if not type(connection_params) == list:
-            connection_params = [connection_params]
-        # See if we only have one enabled connection
-        if not type(connection_enabled) == list:
-            connection_enabled = [connection_enabled]
         # Build list of connections to use
         for enabled in connection_enabled:
             connection_list.extend([c for c in connection_params if enabled == c])
@@ -3387,7 +3731,7 @@ class CommHubThread:
                         self.stats[source]['parsed'] += 1
                 # See if we have a position and if we should use it
                 elif 'ownlatitude' in parser and 'ownlongitude' in parser:
-                    if position_source == 'any' or position_source == source:
+                    if position_source.lowercase() == 'any' or position_source == source:
                         # Send data to main thread
                         main_thread.put(parser)
                         # Add to stats dict
@@ -3413,14 +3757,8 @@ class CommHubThread:
         matrix = {}
 
         # Get network config options
-        clients_to_serial = config['network']['clients_to_serial']
-        clients_to_server = config['network']['clients_to_server']
-
-        # See if we only will have one in the send list
-        if not type(clients_to_serial) == list:
-            clients_to_serial = [clients_to_serial]
-        if not type(clients_to_server) == list:
-            clients_to_server = [clients_to_server]
+        clients_to_serial = config['network']['clients_to_serial'].replace(' ', '').split(',')
+        clients_to_server = config['network']['clients_to_server'].replace(' ', '').split(',')
 
         # Add to matrix
         for network_source in clients_to_serial:
