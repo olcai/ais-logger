@@ -627,7 +627,7 @@ class MapFrame(wx.Frame):
             # Set data tuple
             pos = (human_pos[0], human_pos[1], georef(lat, long), dist['bearing'], dist['km'])
             # Print status text
-            self.SetStatusText(_("Mouse position:") + u" Lat: %s   Long:%s   GEOREF: %s   Bearing: %.1f°   Distance %.1f km" %(pos))
+            self.SetStatusText(_("Mouse position:") + u" Lat: %s   Long: %s   GEOREF: %s   Bearing: %.1f°   Distance %.1f km" %(pos))
         except:
             self.SetStatusText(_("Mouse position:") +u" %.4f, %.4f" %(tuple(event.Coords)))
         event.Skip()
