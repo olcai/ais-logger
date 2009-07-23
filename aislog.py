@@ -1042,8 +1042,8 @@ class AlertWindow(wx.Panel):
         self.Layout()
 
     def Update(self, message):
-        # See if we should update
-        if message.get('alert', False):
+        # Pass on update if alert type or old/remove message
+        if message.get('alert', False) or message.get('old', False) or message.get('remove', False):
             # Update the underlying listctrl data with message
             self.list.OnUpdate(message)
         # Sound an alert for selected objects
