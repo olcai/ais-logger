@@ -31,7 +31,7 @@ import time, datetime
 import threading, Queue, collections
 import socket, SocketServer
 import pickle, codecs, csv, string
-import md5
+import hashlib
 import decimal
 
 from pysqlite2 import dbapi2 as sqlite
@@ -4211,7 +4211,8 @@ class MainThread:
                                   r['callsign'], r['destination'],
                                   r['eta'], r['length'], r['width']))
                 # Add info in dict as {mmsi: MD5-hash}
-                newhashdict[r['mmsi']] = md5.new(infostring).digest()
+                hash = hashlib.md5()
+                newhashdict[r['mmsi']] = hash.update(infostring).digest()
         # Check what objects we should update in the metadata table
         update_mmsi = []
         for (key, value) in newhashdict.iteritems():
