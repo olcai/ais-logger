@@ -93,7 +93,7 @@ columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO
 defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'showafterupdates': 3, 'updatetime': 2, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False, 'logtime': '600', 'logfile': '', 'logbasestations': False},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
-                 'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': ''},
+                 'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': '', 'maxdistance_on': False, 'maxdistance': '0'},
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
                  'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
                  'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
@@ -136,6 +136,8 @@ config['alert'].comments['remarkfile_on'] = ['Enable loading of remark file at p
 config['alert'].comments['remarkfile'] = ['Filename of remark file']
 config['alert'].comments['alertsound_on'] = ['Enable audio alert']
 config['alert'].comments['alertsoundfile'] = ['Filename of wave sound file for audio alert']
+config['alert'].comments['maxdistance_on'] = ['Enable use of maximum distance for alerts']
+config['alert'].comments['maxdistance'] = ['The maximum distance to an object before marking it']
 config['position'].comments['override_on'] = ['Enable manual position override']
 config['position'].comments['position_format'] = ['Define the position presentation format in DD, DM or DMS']
 config['position'].comments['latitude'] = ['Latitude in decimal degrees (DD)']
@@ -1041,10 +1043,29 @@ class AlertWindow(wx.Panel):
         self.SetSizer(box)
         self.Layout()
 
+        # Create a set to keep track of alerted objects
+        self.alertitems = set()
+
     def Update(self, message):
-        # Pass on update if alert type or old/remove message
-        if message.get('alert', False) or message.get('old', False) or message.get('remove', False):
-            # Update the underlying listctrl data with message
+        # Match on message type and pass on relevant messages
+        if 'update' in message:
+            mmsi = message['update']['mmsi']
+            if message.get('alert', False):
+                # The object is alerted
+                self.alertitems.add(mmsi)
+                self.list.OnUpdate(message)
+            elif mmsi in self.alertitems:
+                # The object is not alerted but has been
+                self.alertitems.discard(mmsi)
+                self.list.OnUpdate({'remove': mmsi})
+        elif 'insert' in message and message.get('alert', False):
+            # The new object is alerted
+            self.alertitems.add(message['insert']['mmsi'])
+            self.list.OnUpdate(message)
+        elif 'old' in message:
+            self.list.OnUpdate(message)
+        elif 'remove' in message:
+            self.alertitems.discard(message['remove'])
             self.list.OnUpdate(message)
         # Sound an alert for selected objects
         if message.get('soundalert', False):
@@ -1178,13 +1199,20 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # See what message we should work with
         if 'update' in message:
             data = message['update']
+            mmsi = data['mmsi']
+            # See if object is not in list
+            if not mmsi in self.itemDataMap:
+                # Set a new item count in the listctrl
+                self.SetItemCount(self.GetItemCount()+1)
             # Remove object from grey item set
-            self.greyitems.discard(data['mmsi'])
+            self.greyitems.discard(mmsi)
             # If alert, put it in alert item set
             if message.get('alert', False):
-                self.alertitems.add(data['mmsi'])
+                self.alertitems.add(mmsi)
+            else:
+                self.alertitems.discard(mmsi)
             # Get the data formatted
-            self.itemDataMap[data['mmsi']] = self.FormatData(data)
+            self.itemDataMap[mmsi] = self.FormatData(data)
         elif 'insert' in message:
             # Set a new item count in the listctrl
             self.SetItemCount(self.GetItemCount()+1)
@@ -3873,7 +3901,7 @@ class MainThread:
                          'width', 'draught', 'rot',
                          'navstatus', 'posacc', 'distance',
                          'bearing', 'source', 'transponder_type'
-                         'old')
+                         'old', 'soundalerted')
         self.db_main.create(*self.dbfields)
         self.db_main.create_index('mmsi')
 
@@ -4038,19 +4066,40 @@ class MainThread:
 
         # Match against set alerts
         remarks = self.remarkdict.get(object_info['mmsi'], [])
+        # Set initial values to False
+        message['alert'] = False
+        message['soundalert'] = False
+        # Check if we have silent alerts or sound alerts
         if len(remarks) == 2 and remarks[0] == 'A':
-            message['alert'] = True
-            message['soundalert'] = False
-        elif len(remarks) == 2 and remarks[0] == 'AS':
-            message['alert'] = True
-            # If new object, set sound alert, otherwise don't
-            if new:
-                message['soundalert'] = True
+            # See if we need to compare the distance to the object
+            if config['alert'].as_bool('maxdistance_on'):
+                if object_info['distance'] and object_info['distance'] <= config['alert'].as_int('maxdistance'):
+                    message['alert'] = True
             else:
-                message['soundalert'] = False
-        else:
-            message['alert'] = False
-            message['soundalert'] = False
+                message['alert'] = True
+        elif len(remarks) == 2 and remarks[0] == 'AS':
+            # See if we need to compare the distance to the object
+            if config['alert'].as_bool('maxdistance_on'):
+                if object_info['distance'] and object_info['distance'] <= config['alert'].as_int('maxdistance'):
+                    message['alert'] = True
+                else:
+                    # Update the DB with soundalerted flag set to false -
+                    # we want it to alert the next time the object is within range
+                    main_record = self.db_main._mmsi[object_info['mmsi']][0]
+                    self.db_main.update(main_record,soundalerted=False)
+                if not object_info['soundalerted']:
+                    message['soundalert'] = True
+                    # Update the DB with soundalerted flag
+                    main_record = self.db_main._mmsi[object_info['mmsi']][0]
+                    self.db_main.update(main_record,soundalerted=True)
+            else:
+                message['alert'] = True
+                # If new object, set sound alert,
+                if new:
+                    message['soundalert'] = True
+                    # Update the DB with soundalerted flag
+                    main_record = self.db_main._mmsi[object_info['mmsi']][0]
+                    self.db_main.update(main_record,soundalerted=True)
 
         # Match against set remarks
         if len(remarks) == 2 and len(remarks[1]):
