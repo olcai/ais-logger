@@ -2497,10 +2497,17 @@ class SettingsWindow(wx.Dialog):
         self.alertsoundfile_file = wx.TextCtrl(alertsoundfile_panel, -1, pos=(125,56), size=(220,-1))
         self.alertsoundfile_fileselect = wx.Button(alertsoundfile_panel, -1, _("&Browse..."), pos=(365,50))
         self.Bind(wx.EVT_BUTTON, self.OnAlertSoundFileDialog, self.alertsoundfile_fileselect)
+        # Maximum alert distance config
+        alertdistance_panel = wx.Panel(alert_panel, -1)
+        wx.StaticBox(alertdistance_panel, -1, _(" Maximum distance for alert objects "), pos=(10,5), size=(450,100))
+        self.alertdistance_toggle = wx.CheckBox(alertdistance_panel, -1, _("Activate maximum distance"), pos=(20,23))
+        wx.StaticText(alertdistance_panel, -1, _("Maximum distance to alert object (km):"), pos=(20,60))
+        self.alertdistance_distance = wx.SpinCtrl(alertdistance_panel, -1, pos=(305,56), min=1, max=100000)
         # Add panels to main sizer
         alert_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         alert_panel_sizer.Add(alertfile_panel, 0)
         alert_panel_sizer.Add(alertsoundfile_panel, 0)
+        alert_panel_sizer.Add(alertdistance_panel, 0)
         alert_panel.SetSizer(alert_panel_sizer)
 
         # Populate panel for list view column setup
@@ -2717,6 +2724,8 @@ class SettingsWindow(wx.Dialog):
         self.alertfile_file.SetValue(config['alert']['remarkfile'])
         self.alertsoundfile_toggle.SetValue(config['alert'].as_bool('alertsound_on'))
         self.alertsoundfile_file.SetValue(config['alert']['alertsoundfile'])
+        self.alertdistance_toggle.SetValue(config['alert'].as_bool('maxdistance_on'))
+        self.alertdistance_distance.SetValue(config['alert'].as_int('maxdistance'))
         # List views column settings
         # Extract as list from comma separated list from dict
         self.listcolumns_as_list = config['common']['listcolumns'].replace(' ','').split(',')
@@ -3102,6 +3111,8 @@ class SettingsWindow(wx.Dialog):
         config['alert']['remarkfile'] = self.alertfile_file.GetValue()
         config['alert']['alertsound_on'] = self.alertsoundfile_toggle.GetValue()
         config['alert']['alertsoundfile'] = self.alertsoundfile_file.GetValue()
+        config['alert']['maxdistance_on'] = self.alertdistance_toggle.GetValue()
+        config['alert']['maxdistance'] = self.alertdistance_distance.GetValue()
         config['map']['mapfile'] = self.mapfile_file.GetValue()
         config['map']['background_color'] = self.mapcolor_background.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
         config['map']['shoreline_color'] = self.mapcolor_shoreline.GetColour().GetAsString(wx.C2S_CSS_SYNTAX)
