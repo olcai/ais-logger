@@ -4031,6 +4031,13 @@ class MainThread:
                 update_dict['bearing'] = decimal.Decimal(str(dist['bearing'])).quantize(decimal.Decimal('0.1'))
             except: pass
 
+        # Filter destination field for numbers
+        if 'destination' in incoming_packet:
+            update_dict['destination'] = ''
+            for letter in incoming_packet['destination']:
+                if not letter.isdigit():
+                    update_dict['destination'] += letter
+
         # Update the DB with new data
         self.db_main.update(main_record,old=False,**update_dict)
 
