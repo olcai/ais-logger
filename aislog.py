@@ -47,6 +47,9 @@ import time, random
 import gettext
 from configobj import ConfigObj
 
+# Find the real full path to the program directory
+fullpath = os.path.abspath(os.path.dirname(sys.argv[0]))
+
 import decode
 from util import *
 if os.name == 'nt':
@@ -60,7 +63,7 @@ else:
 
 ### Fetch command line arguments
 # Define standard config file
-configfile = 'config.ini'
+configfile = os.path.join(fullpath, 'config.ini')
 
 # Create optparse object
 cmdlineparser = optparse.OptionParser()
@@ -476,7 +479,7 @@ class MainWindow(wx.Frame):
     def readmid(self):
         # Read a list from MID to nation from file mid.lst
         try:
-            f = open('mid.lst', 'r')
+            f = open(os.path.join(fullpath, 'mid.lst'), 'r')
         except:
                 logging.error("Could not read data from MID file", exc_info=True)
                 return
@@ -494,7 +497,7 @@ class MainWindow(wx.Frame):
     def readtype(self):
         # Read a list with ship type codes from typecode.lst
         try:
-            f = open('typecode.lst', 'r')
+            f = open(os.path.join(fullpath, 'typecode.lst'), 'r')
         except:
                 logging.error("Could not read data from type code file", exc_info=True)
                 return
@@ -821,7 +824,7 @@ class MapFrame(wx.Frame):
             wx.BusyCursor()
             # Load shorelines from file
             try:
-                Shorelines = self.Read_MapGen(os.path.join(config['map']['mapfile']))
+                Shorelines = self.Read_MapGen(os.path.join(fullpath, config['map']['mapfile']))
                 for segment in Shorelines:
                     i = self.Canvas.AddLine(segment, LineColor=config['map']['shoreline_color'])
             except:
@@ -2170,7 +2173,7 @@ class SetAlertsWindow(wx.Dialog):
             if len(remark_file) > 0:
                 try:
                     # Open file
-                    output = codecs.open(remark_file, 'w', encoding='cp1252')
+                    output = codecs.open(os.path.join(fullpath, remark_file), 'w', encoding='cp1252')
                     # Loop over data
                     for mmsi, entry in self.list_data.iteritems():
                         # Get alert
@@ -4433,7 +4436,7 @@ class MainThread:
         # Open the file and log
         try:
             # Open file with filename in config['logging']['logfile']
-            connection = sqlite.connect(config['logging']['logfile'])
+            connection = sqlite.connect(os.path.join(fullpath, config['logging']['logfile']))
             cursor = connection.cursor()
             # Create tables if they don't exist
             cursor.execute("CREATE TABLE IF NOT EXISTS position (time, mmsi, latitude, longitude, georef, sog, cog);")
@@ -4455,7 +4458,7 @@ class MainThread:
         # Open the file and log
         try:
             # Open file with filename in config['iddb_logging']['logfile']
-            connection = sqlite.connect(config['iddb_logging']['logfile'])
+            connection = sqlite.connect(os.path.join(fullpath, config['iddb_logging']['logfile']))
             cursor = connection.cursor()
             # Create table if it doesn't exist
             cursor.execute("CREATE TABLE IF NOT EXISTS iddb (mmsi PRIMARY KEY, imo, name, callsign);")
@@ -4470,12 +4473,12 @@ class MainThread:
     def loadiddb(self):
         # See if an iddb logfile exists, if not, return
         try:
-            dbfile = open(config['iddb_logging']['logfile'])
+            dbfile = open(os.path.join(fullpath, config['iddb_logging']['logfile']))
             dbfile.close()
         except: return
         try:
             # Open the db
-            connection = sqlite.connect(config['iddb_logging']['logfile'])
+            connection = sqlite.connect(os.path.join(fullpath, config['iddb_logging']['logfile']))
             cursor = connection.cursor()
             # Select data from table iddb
             cursor.execute("SELECT * FROM iddb;",())
@@ -4494,7 +4497,7 @@ class MainThread:
         if config['alert'].as_bool('remarkfile_on') and len(path) > 0:
             try:
                 temp = {}
-                file = open(path, 'rb')
+                file = open(os.path.join(fullpath, path), 'rb')
                 csv_reader = csv.reader(file)
                 for row in csv_reader:
                     # Try to read line as ASCII/UTF-8, if error, try cp1252
@@ -4562,12 +4565,12 @@ else:
 
 # Set a logging handler for everything and save to file
 if config['logging'].as_bool('logexceptions'):
-    file_handler = logging.FileHandler(filename='except.log')
+    file_handler = logging.FileHandler(filename=os.path.join(fullpath, 'except.log'))
     file_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
     # Send everything to the exception file
-    except_file = open('except.log', 'a')
+    except_file = open(os.path.join(fullpath, 'except.log'), 'a')
     sys.stderr = except_file
 else:
     sys.stderr = open(os.devnull)
