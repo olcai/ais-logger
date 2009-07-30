@@ -378,7 +378,7 @@ class MainWindow(wx.Frame):
             traceback = messagelist[-1]
         else:
             traceback = ''
-        dlg = wx.MessageDialog(self, "\n" +message+ "\n" +traceback, style=wx.OK|wx.ICON_ERROR)
+        dlg = wx.MessageDialog(self, "\n" +message+ "\n" +traceback, caption="Error", style=wx.OK|wx.ICON_ERROR)
         dlg.ShowModal()
 
     def AddDetailWindow(self, window, mmsi):
@@ -395,7 +395,11 @@ class MainWindow(wx.Frame):
 
     def readmid(self):
         # Read a list from MID to nation from file mid.lst
-        f = open('mid.lst', 'r')
+        try:
+            f = open('mid.lst', 'r')
+        except:
+                logging.error("Could not read data from MID file", exc_info=True)
+                return
         for line in f:
             # For each line, strip any whitespace and then split the data using ','
             row = line.strip().split(',')
@@ -409,7 +413,11 @@ class MainWindow(wx.Frame):
 
     def readtype(self):
         # Read a list with ship type codes from typecode.lst
-        f = open('typecode.lst', 'r')
+        try:
+            f = open('typecode.lst', 'r')
+        except:
+                logging.error("Could not read data from type code file", exc_info=True)
+                return
         for line in f:
             # For each line, strip any whitespace and then split the data using ','
             row = line.strip().split(',')
