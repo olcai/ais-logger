@@ -4,7 +4,7 @@
 # aislog.py (part of "AIS Logger")
 # Simple AIS logging and display software
 #
-# Copyright (c) 2006-2008 Erik I.J. Olsson <olcai@users.sourceforge.net>
+# Copyright (c) 2006-2009 Erik I.J. Olsson <olcai@users.sourceforge.net>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
