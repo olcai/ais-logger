@@ -33,6 +33,7 @@
 238,HR,Croatia (Republic of)
 239,GR,Greece
 240,GR,Greece
+241,GR,Greece
 242,MA,Morocco (Kingdom of)
 243,HU,Hungary (Republic of)
 244,NL,Netherlands (Kingdom of the)
@@ -52,6 +53,7 @@
 258,NO,Norway
 259,NO,Norway
 261,PL,Poland (Republic of)
+262,ME,Montenegro
 263,PT,Portugal
 264,RO,Romania
 265,SE,Sweden
@@ -68,10 +70,11 @@
 276,EE,Estonia (Republic of)
 277,LT,Lithuania (Republic of)
 278,SI,Slovenia (Republic of)
-279,CS,Ex. Serbia and Montenegro
+279,RS,Serbia (Republic of)
 301,AI,Anguilla
 303,,Alaska (State of)
 304,AG,Antigua and Barbuda
+305,AG,Antigua and Barbuda
 306,AN,Netherlands Antilles
 307,AW,Aruba
 308,BS,Bahamas (Commonwealth of the)
@@ -116,6 +119,7 @@
 367,US,United States of America
 368,US,United States of America
 369,US,United States of America
+370,PA,Panama (Republic of)
 371,PA,Panama (Republic of)
 372,PA,Panama (Republic of)
 375,VC,Saint Vincent and the Grenadines
@@ -162,6 +166,7 @@
 473,YE,Yemen (Republic of)
 475,YE,Yemen (Republic of)
 477,HK,Hong Kong (Special Administrative Region of China)
+478,BA,Bosnia and Herzegovina
 501,,Adelie Land (French Southern Territories)
 503,AU,Australia
 506,MM,Myanmar (Union of)
@@ -193,6 +198,7 @@
 561,WS,Samoa (Independent State of)
 563,SG,Singapore (Republic of)
 564,SG,Singapore (Republic of)
+565,SG,Singapore (Republic of)
 567,TH,Thailand
 570,TO,Tonga (Kingdom of)
 572,TV,Tuvalu
@@ -202,7 +208,7 @@
 601,ZA,South Africa (Republic of)
 603,AO,Angola (Republic of)
 605,DZ,Algeria (People's Democratic Republic of)
-607,Saint Paul and Amsterdam Islands
+607,,Saint Paul and Amsterdam Islands
 608,,Ascension Island
 609,BI,Burundi (Republic of)
 610,BJ,Benin (Republic of)
@@ -254,9 +260,9 @@
 671,TG,Togolese Republic
 672,TN,Tunisia
 674,TZ,Tanzania (United Republic of)
-677,TZ,Tanzania (United Republic of)
 675,UG,Uganda (Republic of)
 676,CD,Democratic Republic of the Congo
+677,TZ,Tanzania (United Republic of)
 678,ZM,Zambia (Republic of)
 679,ZW,Zimbabwe (Republic of)
 701,AR,Argentine Republic
