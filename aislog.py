@@ -604,7 +604,7 @@ class MainWindow(wx.Frame):
             self.map.Canvas.SetFocus()
 
     def OnAbout(self, event):
-        aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2008\n\naislog.py\ndecode.py\nutil.py'
+        aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2009\n\naislog.py\ndecode.py\nutil.py'
         dlg = wx.MessageDialog(self, aboutstring, _("About"), wx.OK|wx.ICON_INFORMATION)
         dlg.ShowModal()
         dlg.Destroy()
@@ -626,7 +626,7 @@ class MapFrame(wx.Frame):
 
         # Add the Canvas
         NC = NavCanvas.NavCanvas(self,
-                                 Debug = 0,
+                                 Debug = False,
                                  BackgroundColor = config['map']['background_color'])
 
         # Reference the contained FloatCanvas
@@ -758,7 +758,10 @@ class MapFrame(wx.Frame):
                 # degrees around the position
                 bbox = numpy.array([[x-0.5,y-0.5],[x+0.5,y+0.5]])
                 # Zoom to the bounding box
-                self.Canvas.ZoomToBB(bbox)
+                try:
+                    self.Canvas.ZoomToBB(bbox)
+                except:
+                    pass
 
     def SelectObject(self, map_object):
         # See if we have a previous selected object
