@@ -87,27 +87,103 @@ gettext.install('aislogger', ".", unicode=False)
 #locale.setlocale(locale.LC_ALL, 'EN')
 
 ### Load or create configuration
-# Create a dictionary containing all available columns (for display) as 'dbcolumn': ['description', size-in-pixels]
-columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 110], 'longitude': [_("Longitude"), 115], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
+# Create a dictionary containing all available columns (for display)
+# as 'dbcolumn': ['description', size-in-pixels]
+columnsetup = {'mmsi': [_("MMSI"), 80],
+               'mid': [_("Nation"), 55],
+               'imo': [_("IMO"), 80],
+               'name': [_("Name"), 150],
+               'type': [_("Type nbr"), 45],
+               'typename': [_("Type"), 80],
+               'callsign': [_("CS"), 65],
+               'latitude': [_("Latitude"), 110],
+               'longitude': [_("Longitude"), 115],
+               'georef': [_("GEOREF"), 85],
+               'creationtime': [_("Created"), 75],
+               'time': [_("Updated"), 75],
+               'sog': [_("Speed"), 60],
+               'cog': [_("Course"), 60],
+               'heading': [_("Heading"), 70],
+               'destination': [_("Destination"), 150],
+               'eta': [_("ETA"), 80],
+               'length': [_("Length"), 45],
+               'width': [_("Width"), 45],
+               'draught': [_("Draught"), 90],
+               'rateofturn': [_("ROT"), 60],
+               'navstatus': [_("NavStatus"), 150],
+               'posacc': [_("PosAcc"), 55],
+               'transponder_type': [_("Transponder type"), 90],
+               'bearing': [_("Bearing"), 65],
+               'distance': [_("Distance"), 70],
+               'remark': [_("Remark"), 150]}
+
 # Set default keys and values
-defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'showafterupdates': 3, 'updatetime': 2, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
-                 'logging': {'logging_on': False, 'logtime': '600', 'logfile': '', 'logbasestations': False, 'logexceptions': True},
-                 'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
-                 'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': '', 'maxdistance_on': False, 'maxdistance': '0'},
-                 'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
-                 'serial_a': {'serial_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False, 'send_to_serial_server': False, 'send_to_network_server': False},
-                 'serial_server': {'server_on': False, 'port': '0', 'baudrate': '38400', 'rtscts': False, 'xonxoff': False},
-                 'network': {'server_on': False, 'server_address': 'localhost', 'server_port': '23000', 'clients_on': "", 'client_addresses': "", 'clients_to_serial': "", 'clients_to_server': ""},
-                 'map': {'object_color': 'Yellow', 'old_object_color': 'Grey', 'selected_object_color': 'Pink', 'alerted_object_color': 'Indian Red', 'background_color': 'Cornflower blue', 'shoreline_color': 'White', 'mapfile': ''}}
+defaultconfig = {'common': {'listmakegreytime': 600,
+                            'deleteitemtime': 3600,
+                            'showbasestations': True,
+                            'showclassbstations': True,
+                            'showafterupdates': 3,
+                            'updatetime': 2,
+                            'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark',
+                            'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
+                 'logging': {'logging_on': False,
+                             'logtime': '600',
+                             'logfile': '',
+                             'logbasestations': False,
+                             'logexceptions': True},
+                 'iddb_logging': {'logging_on': False,
+                                  'logtime': '600',
+                                  'logfile': 'testiddb.db'},
+                 'alert': {'remarkfile_on': False,
+                           'remarkfile': '',
+                           'alertsound_on': False,
+                           'alertsoundfile': '',
+                           'maxdistance_on': False,
+                           'maxdistance': '0'},
+                 'position': {'override_on': False,
+                              'latitude': '0',
+                              'longitude': '0',
+                              'position_format': 'dms',
+                              'use_position_from': 'any'},
+                 'serial_a': {'serial_on': False,
+                              'port': '0',
+                              'baudrate': '38400',
+                              'rtscts': False,
+                              'xonxoff': False,
+                              'send_to_serial_server': False,
+                              'send_to_network_server': False},
+                 'serial_server': {'server_on': False,
+                                   'port': '0',
+                                   'baudrate': '38400',
+                                   'rtscts': False,
+                                   'xonxoff': False},
+                 'network': {'server_on': False,
+                             'server_address': 'localhost',
+                             'server_port': '23000',
+                             'clients_on': "",
+                             'client_addresses': "",
+                             'clients_to_serial': "",
+                             'clients_to_server': ""},
+                 'map': {'object_color': 'Yellow',
+                         'old_object_color': 'Grey',
+                         'selected_object_color': 'Pink',
+                         'alerted_object_color': 'Indian Red',
+                         'background_color': 'Cornflower blue',
+                         'shoreline_color': 'White',
+                         'mapfile': ''}}
+
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
 # Read or create the config file object
 userconfig = ConfigObj(configfile)
-# Merge the settings in the config file with the defaults
+# Merge the settings in the config file with the defaults. Even if
+# there are no config file, all config values have safe defaults.
 config.merge(userconfig)
+
 # Set the intial comment for the config file
 config.initial_comment = ['Autogenerated config file for AIS Logger', "You may edit if you're careful"]
-# Set comments for each section and key
+
+# Set comments for each section and key - only used in config file
 config.comments['common'] = ['', 'Common settings for the GUI']
 config.comments['logging'] = ['', 'Settings for logging to file']
 config.comments['iddb_logging'] = ['', 'Settings for logging the identification database to file']
@@ -160,12 +236,15 @@ config['map'].comments['shoreline_color'] = ['Color of map shorelines']
 config['map'].comments['mapfile'] = ['Filename of map in MapGen format']
 
 
-# Define global variables
+## Define global variables (somewhat ugly)
+# Map three digit MID code to ISO country
 mid = {}
+# Map three digit MID code to full country name
 midfull = {}
+# Map two digit type code to human-readable name
 typecode = {}
-data = {}
-# Set start time to start_time
+
+# Set start time to start_time - used for uptime measurement
 start_time = datetime.datetime.now()
 
 
