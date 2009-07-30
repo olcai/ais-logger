@@ -91,7 +91,7 @@ gettext.install('aislogger', ".", unicode=False)
 columnsetup = {'mmsi': [_("MMSI"), 80], 'mid': [_("Nation"), 55], 'imo': [_("IMO"), 80], 'name': [_("Name"), 150], 'type': [_("Type nbr"), 45], 'typename': [_("Type"), 80], 'callsign': [_("CS"), 65], 'latitude': [_("Latitude"), 110], 'longitude': [_("Longitude"), 115], 'georef': [_("GEOREF"), 85], 'creationtime': [_("Created"), 75], 'time': [_("Updated"), 75], 'sog': [_("Speed"), 60], 'cog': [_("Course"), 60], 'heading': [_("Heading"), 70], 'destination': [_("Destination"), 150], 'eta': [_("ETA"), 80], 'length': [_("Length"), 45], 'width': [_("Width"), 45], 'draught': [_("Draught"), 90], 'rateofturn': [_("ROT"), 60], 'navstatus': [_("NavStatus"), 150], 'posacc': [_("PosAcc"), 55], 'transponder_type': [_("Transponder type"), 90], 'bearing': [_("Bearing"), 65], 'distance': [_("Distance"), 70], 'remark': [_("Remark"), 150]}
 # Set default keys and values
 defaultconfig = {'common': {'listmakegreytime': 600, 'deleteitemtime': 3600, 'showbasestations': True, 'showclassbstations': True, 'showafterupdates': 3, 'updatetime': 2, 'listcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark', 'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
-                 'logging': {'logging_on': False, 'logtime': '600', 'logfile': '', 'logbasestations': False},
+                 'logging': {'logging_on': False, 'logtime': '600', 'logfile': '', 'logbasestations': False, 'logexceptions': True},
                  'iddb_logging': {'logging_on': False, 'logtime': '600', 'logfile': 'testiddb.db'},
                  'alert': {'remarkfile_on': False, 'remarkfile': '', 'alertsound_on': False, 'alertsoundfile': '', 'maxdistance_on': False, 'maxdistance': '0'},
                  'position': {'override_on': False, 'latitude': '0', 'longitude': '0', 'position_format': 'dms', 'use_position_from': 'any'},
@@ -129,6 +129,7 @@ config['logging'].comments['logging_on'] = ['Enable file logging']
 config['logging'].comments['logtime'] = ['Number of s between writes to log file']
 config['logging'].comments['logfile'] = ['Filename of log file']
 config['logging'].comments['logbasestations'] = ['Enable logging of base stations']
+config['logging'].comments['logexceptions'] = ['Enable exception logging to file (for debugging)']
 config['iddb_logging'].comments['logging_on'] = ['Enable IDDB file logging']
 config['iddb_logging'].comments['logtime'] = ['Number of s between writes to log file']
 config['iddb_logging'].comments['logfile'] = ['Filename of log file']
@@ -2482,10 +2483,15 @@ class SettingsWindow(wx.Dialog):
         self.iddblog_logfile = wx.TextCtrl(iddblog_panel, -1, pos=(75,99), size=(275,-1))
         self.iddblog_logfileselect = wx.Button(iddblog_panel, -1, _("&Browse..."), pos=(365,95))
         self.Bind(wx.EVT_BUTTON, self.OnIDDBFileDialog, self.iddblog_logfileselect)
+        # Exception logging
+        exceptionlog_panel = wx.Panel(logging_panel, -1)
+        wx.StaticBox(exceptionlog_panel, -1, _(" Exception logging (debugging) "), pos=(10,5), size=(450,70))
+        self.exceptionlog_logtoggle = wx.CheckBox(exceptionlog_panel, -1, _("Activate exception logging to file (for debugging)"), pos=(20,28))
         # Add panels to main sizer
         logging_panel_sizer = wx.BoxSizer(wx.VERTICAL)
         logging_panel_sizer.Add(filelog_panel, 0)
         logging_panel_sizer.Add(iddblog_panel, 0)
+        logging_panel_sizer.Add(exceptionlog_panel, 0)
         logging_panel.SetSizer(logging_panel_sizer)
 
         # Populate panel for alert config
@@ -2727,6 +2733,8 @@ class SettingsWindow(wx.Dialog):
         self.iddblog_logtoggle.SetValue(config['iddb_logging'].as_bool('logging_on'))
         self.iddblog_logtime.SetValue(config['iddb_logging'].as_int('logtime'))
         self.iddblog_logfile.SetValue(config['iddb_logging']['logfile'])
+        # Exception log settings
+        self.exceptionlog_logtoggle.SetValue(config['logging'].as_bool('logexceptions'))
         # Alert/remark settings
         self.alertfile_toggle.SetValue(config['alert'].as_bool('remarkfile_on'))
         self.alertfile_file.SetValue(config['alert']['remarkfile'])
@@ -3112,6 +3120,7 @@ class SettingsWindow(wx.Dialog):
         config['logging']['logbasestations'] = self.filelog_logbasestationstoggle.GetValue()
         config['logging']['logtime'] = self.filelog_logtime.GetValue()
         config['logging']['logfile'] = self.filelog_logfile.GetValue()
+        config['logging']['logexceptions'] = self.exceptionlog_logtoggle.GetValue()
         config['iddb_logging']['logging_on'] = self.iddblog_logtoggle.GetValue()
         config['iddb_logging']['logtime'] = self.iddblog_logtime.GetValue()
         config['iddb_logging']['logfile'] = self.iddblog_logfile.GetValue()
@@ -4473,13 +4482,16 @@ else:
     logger.addHandler(gui_handler)
 
 # Set a logging handler for everything and save to file
-file_handler = logging.FileHandler(filename='except.log')
-file_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-file_handler.setFormatter(file_formatter)
-logger.addHandler(file_handler)
-# Send everything to the exception file
-except_file = open('except.log', 'a')
-sys.stderr = except_file
+if config['logging'].as_bool('logexceptions'):
+    file_handler = logging.FileHandler(filename='except.log')
+    file_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    # Send everything to the exception file
+    except_file = open('except.log', 'a')
+    sys.stderr = except_file
+else:
+    sys.stderr = open(os.devnull)
 
 # Start threads
 main_thread.start()
@@ -4506,6 +4518,8 @@ else:
     main_window = app.GetFrame()
     app.MainLoop()
 
+# Turn off error logging to prevent spurious messages
+sys.stderr = open(os.devnull)
 # Stop threads
 comm_hub_thread.stop()
 serial_thread.stop()
