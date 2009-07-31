@@ -1399,8 +1399,11 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
 
     def OnGetItemText(self, item, col):
         # Return the text in item, col
-        mmsi = self.itemIndexMap[item]
-        string = unicode(self.itemDataMap[mmsi][col])
+        try:
+            mmsi = self.itemIndexMap[item]
+            string = unicode(self.itemDataMap[mmsi][col])
+        except IndexError:
+            string == None
         # If string is a Nonetype, replace with an empty string
         if string == None:
             string = u''
@@ -1409,7 +1412,10 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
     def OnGetItemAttr(self, item):
         # Return an attribute
         # Get the mmsi of the item
-        mmsi = self.itemIndexMap[item]
+        try:
+            mmsi = self.itemIndexMap[item]
+        except IndexError:
+            mmsi = 0
         # Create the attribute
         self.attr = wx.ListItemAttr()
 
