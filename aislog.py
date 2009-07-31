@@ -1431,17 +1431,18 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
     def SortItems(self,sorter=cmp):
         # Sort items
         items = list(self.itemDataMap.keys())
-        items.sort(sorter)
+        try:
+            items.sort(sorter)
+        except UnicodeEncodeError:
+            pass
         self.itemIndexMap = items
 
         # Workaround for updating listctrl on Windows
         if platform == 'nt':
             self.Refresh(False)
 
-        # See if the previous selected row exists after the sort
-        # If the MMSI number is found, set the new position as
-        # selected. If not found, deselect all objects
-        if self.selected:
+        # Check for a previous selected object and select it again
+        if self.selected != -1:
             self.SetSelected(self.selected)
 
     # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
