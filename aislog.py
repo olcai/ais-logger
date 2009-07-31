@@ -3716,6 +3716,8 @@ class NetworkClientThread:
                 del connections[c]
                 logging.error("The connection to the network server on address %(address)s and port %(port)s timed out." %{'address': params[0], 'port': params[1]}, exc_info=True)
                 continue
+            except socket.error:
+                logging.error("Cannot open a connection to the network server on address %(address)s and port %(port)s." %{'address': params[0], 'port': params[1]}, exc_info=True)
 
         while True:
             try:
