@@ -34,6 +34,11 @@ import pickle, codecs, csv, string
 import hashlib
 import decimal
 
+# Find the real full path to the program directory
+fullpath = os.path.abspath(os.path.dirname(sys.argv[0]))
+# Add path to find external modules
+sys.path.append(os.path.abspath('modules'))
+
 from pysqlite2 import dbapi2 as sqlite
 import pydblite
 import wx
@@ -47,19 +52,9 @@ import time, random
 import gettext
 from configobj import ConfigObj
 
-# Find the real full path to the program directory
-fullpath = os.path.abspath(os.path.dirname(sys.argv[0]))
-
 import decode
 from util import *
-if os.name == 'nt':
-    import serialwin32 as serial
-    platform = 'nt'
-elif os.name == 'posix':
-    import serialposix as serial
-    platform = 'posix'
-else:
-    platform = 'unknown'
+import serial
 
 ### Fetch command line arguments
 
@@ -1475,7 +1470,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         self.itemIndexMap = items
 
         # Workaround for updating listctrl on Windows
-        if platform == 'nt':
+        if os.name == 'nt':
             self.Refresh(False)
 
         # Check for a previous selected object and select it again
@@ -2428,7 +2423,7 @@ class SetAlertsWindow(wx.Dialog):
             self.itemIndexMap = items
 
             # Workaround for updating listctrl on Windows
-            if platform == 'nt':
+            if os.name == 'nt':
                 self.Refresh()
 
             # See if the previous selected row exists after the sort
@@ -4068,12 +4063,12 @@ class MainThread:
                          'navstatus', 'posacc', 'distance',
                          'bearing', 'source', 'transponder_type'
                          'old', 'soundalerted')
-        self.db_main.create(*self.dbfields)
+        self.db_main.create(*self.dbfields, mode="override")
         self.db_main.create_index('mmsi')
 
         # Create ID database
         self.db_iddb = pydblite.Base('dummy2')
-        self.db_iddb.create('mmsi', 'imo', 'name', 'callsign')
+        self.db_iddb.create('mmsi', 'imo', 'name', 'callsign', mode="override")
         self.db_iddb.create_index('mmsi')
 
         # Try to load ID database
