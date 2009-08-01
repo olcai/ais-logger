@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #
-# aislog.py (part of "AIS Logger")
+# main.py (part of "AIS Logger")
 # Simple AIS logging and display software
 #
 # Copyright (c) 2006-2009 Erik I.J. Olsson <olcai@users.sourceforge.net>
@@ -24,8 +24,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-version = ''
+version = 'VERSION_TAG'
 
+# Imports from the Python Standard Library
 import sys, os, glob, optparse, logging
 import time, datetime
 import threading, Queue, collections
@@ -33,28 +34,35 @@ import socket, SocketServer
 import pickle, codecs, csv, string
 import hashlib
 import decimal
+import time, random
+import gettext
+
+# Import add-on Python packages
+from pysqlite2 import dbapi2 as sqlite
+import numpy
+import serial
+import wx
+import wx.lib.mixins.listctrl as listmix
+from wx.lib.floatcanvas import NavCanvas, FloatCanvas, Resources
+import wx.lib.colourdb
+
+# Import external (bundled) packages
+import external.pydblite as pydblite
+from external.configobj import ConfigObj
+
+# Import own modules
+import decode
+from util import *
+
 
 # Find the real full path to the program directory
 fullpath = os.path.abspath(os.path.dirname(sys.argv[0]))
-# Add path to find external modules
-sys.path.append(os.path.abspath('modules'))
 
-from pysqlite2 import dbapi2 as sqlite
-import pydblite
-import wx
-import wx.lib.mixins.listctrl as listmix
+# Function for returning the package directory
+def package_home(gdict):
+    filename = gdict["__file__"]
+    return os.path.dirname(filename)
 
-import numpy
-from wx.lib.floatcanvas import NavCanvas, FloatCanvas, Resources
-import wx.lib.colourdb
-import time, random
-
-import gettext
-from configobj import ConfigObj
-
-import decode
-from util import *
-import serial
 
 ### Fetch command line arguments
 
@@ -127,12 +135,12 @@ defaultconfig = {'common': {'listmakegreytime': 600,
                             'alertlistcolumns': 'mmsi, mid, name, typename, callsign, georef, creationtime, time, sog, cog, destination, navstatus, bearing, distance, remark'},
                  'logging': {'logging_on': False,
                              'logtime': '600',
-                             'logfile': '',
+                             'logfile': 'aislogger.db',
                              'logbasestations': False,
-                             'logexceptions': True},
+                             'logexceptions': False},
                  'iddb_logging': {'logging_on': False,
                                   'logtime': '600',
-                                  'logfile': 'testiddb.db'},
+                                  'logfile': 'id.db'},
                  'alert': {'remarkfile_on': False,
                            'remarkfile': '',
                            'alertsound_on': False,
@@ -145,14 +153,14 @@ defaultconfig = {'common': {'listmakegreytime': 600,
                               'position_format': 'dms',
                               'use_position_from': 'any'},
                  'serial_a': {'serial_on': False,
-                              'port': '0',
+                              'port': '',
                               'baudrate': '38400',
                               'rtscts': False,
                               'xonxoff': False,
                               'send_to_serial_server': False,
                               'send_to_network_server': False},
                  'serial_server': {'server_on': False,
-                                   'port': '0',
+                                   'port': '',
                                    'baudrate': '38400',
                                    'rtscts': False,
                                    'xonxoff': False},
@@ -169,7 +177,7 @@ defaultconfig = {'common': {'listmakegreytime': 600,
                          'alerted_object_color': 'Indian Red',
                          'background_color': 'Cornflower blue',
                          'shoreline_color': 'White',
-                         'mapfile': ''}}
+                         'mapfile': os.path.join(package_home(globals()), 'data/world.dat')}}
 
 # Create a ConfigObj based on dict defaultconfig
 config = ConfigObj(defaultconfig, indent_type='')
@@ -511,7 +519,7 @@ class MainWindow(wx.Frame):
     def readmid(self):
         # Read a list from MID to nation from file mid.lst
         try:
-            f = open(os.path.join(fullpath, 'mid.lst'), 'r')
+            f = open(os.path.join(package_home(globals()), 'data/mid.lst'), 'r')
         except:
                 logging.error("Could not read data from MID file", exc_info=True)
                 return
@@ -529,7 +537,7 @@ class MainWindow(wx.Frame):
     def readtype(self):
         # Read a list with ship type codes from typecode.lst
         try:
-            f = open(os.path.join(fullpath, 'typecode.lst'), 'r')
+            f = open(os.path.join(package_home(globals()), 'data/typecode.lst'), 'r')
         except:
                 logging.error("Could not read data from type code file", exc_info=True)
                 return
@@ -859,7 +867,7 @@ class MapFrame(wx.Frame):
             wx.BusyCursor()
             # Load shorelines from file
             try:
-                Shorelines = self.Read_MapGen(os.path.join(fullpath, config['map']['mapfile']))
+                Shorelines = self.Read_MapGen(config['map']['mapfile'])
                 for segment in Shorelines:
                     i = self.Canvas.AddLine(segment, LineColor=config['map']['shoreline_color'])
             except:

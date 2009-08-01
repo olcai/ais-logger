@@ -1,0 +1,5 @@
+#!/usr/bin/env python
+
+import aislogger.main
+if __name__ == "__main__" : 
+    aislogger.main.Main()

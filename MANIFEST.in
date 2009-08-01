@@ -1,0 +1,3 @@
+include *.txt
+include external/*.txt
+include aislogger/data/*
