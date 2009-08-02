@@ -1,16 +1,22 @@
 #!/usr/bin/env python
 from distutils.core import setup
+import sys
 
 version = ['0013']
 
-# Set version tag in main.py
-f = open("aislogger/main.py", 'r+')
-d = f.read().replace("VERSION_TAG", ".".join(version))
-f.truncate(0)
-f.seek(0)
-f.write(d)
-f.close()
+# Set no data files
+data_files = []
 
+# See if we are running py2exe
+for entry in sys.argv:
+    if entry.find('py2exe') != -1:
+        import py2exe
+        # Set data files for py2exe
+        data_files = [('data',['aislogger/data/mid.lst',
+                               'aislogger/data/typecode.lst',
+                               'aislogger/data/typecode_sv.lst',
+                               'aislogger/data/world.dat'])]
+# Main setup
 setup (name='aislogger',
        version='.'.join(version),
        description='Simple AIS logging and display software',
@@ -20,6 +26,14 @@ setup (name='aislogger',
        license='MIT',
        scripts=['bin/aislogger'],
        packages=['aislogger', 'aislogger.external'],
-       package_dir = {'aislogger.external': 'external'},
-       package_data={'aislogger': ['data/*']}
+       package_dir={'aislogger.external': 'external'},
+       package_data={'aislogger': ['data/*']},
+
+       # Options for py2exe
+       windows=['bin/aislogger'],
+       zipfile=None,
+       data_files=data_files,
+       options={'py2exe': {
+                          'excludes': ['Tkconstants', 'Tkinter', 'tcl'],
+                          'dll_excludes': ['MSVCP90.DLL']}}
 )

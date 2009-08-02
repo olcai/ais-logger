@@ -61,6 +61,11 @@ fullpath = os.path.abspath(os.path.dirname(sys.argv[0]))
 # Function for returning the package directory
 def package_home(gdict):
     filename = gdict["__file__"]
+    # Hack for py2exe which returnes aislogger.exe in path
+    if filename.find(".exe"):
+        while filename.find(".exe") != -1:
+            filename = os.path.split(filename)[0]
+        return filename
     return os.path.dirname(filename)
 
 
