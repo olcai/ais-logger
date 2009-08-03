@@ -4454,7 +4454,8 @@ class MainThread:
                                   r['eta'], r['length'], r['width']))
                 # Add info in dict as {mmsi: MD5-hash}
                 hash = hashlib.md5()
-                newhashdict[r['mmsi']] = hash.update(infostring).digest()
+                hash.update(infostring)
+                newhashdict[r['mmsi']] = hash.digest()
         # Check what objects we should update in the metadata table
         update_mmsi = []
         for (key, value) in newhashdict.iteritems():
