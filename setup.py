@@ -15,7 +15,8 @@ for entry in sys.argv:
         data_files = [('data',['aislogger/data/mid.lst',
                                'aislogger/data/typecode.lst',
                                'aislogger/data/typecode_sv.lst',
-                               'aislogger/data/world.dat'])]
+                               'aislogger/data/world.dat',
+                               'aislogger/data/icon.ico'])]
 # Main setup
 setup (name='aislogger',
        version='.'.join(version),
@@ -30,7 +31,8 @@ setup (name='aislogger',
        package_data={'aislogger': ['data/*']},
 
        # Options for py2exe
-       windows=['bin/aislogger'],
+       windows=[{'script': 'bin/aislogger',
+                 'icon_resources': [(1, 'aislogger/data/icon.ico')]}],
        zipfile=None,
        data_files=data_files,
        options={'py2exe': {
