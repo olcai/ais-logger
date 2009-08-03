@@ -306,6 +306,11 @@ class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, size=(800,500))
 
+        # Set icon
+        ib=wx.IconBundle()
+        ib.AddIconFromFile(os.path.join(package_home(globals()), "data/icon.ico"), wx.BITMAP_TYPE_ANY)
+        self.SetIcons(ib)
+        
         # Create status row
         statusbar = wx.StatusBar(self, -1)
         statusbar.SetFieldsCount(2)
