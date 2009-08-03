@@ -590,16 +590,18 @@ class MainWindow(wx.Frame):
         open_dlg = wx.FileDialog(self, message=_("Choose a raw data file"), defaultDir=dir, defaultFile='', wildcard=wcd, style=wx.OPEN)
         if open_dlg.ShowModal() == wx.ID_OK:
             path = open_dlg.GetPath()
+        open_dlg.Destroy()
         if len(path) > 0:
             try:
                 self.rawfileloader(path)
             except IOError, error:
                 dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
+                dlg.Destroy()
             except UnicodeDecodeError, error:
                 dlg = wx.MessageDialog(self, _("Could not open file") + "\n" + str(error), style=wx.OK|wx.ICON_ERROR)
                 dlg.ShowModal()
-                open_dlg.Destroy()
+                dlg.Destroy()
 
     def rawfileloader(self, filename):
         # Load raw data from file and queue it to the CommHubThread
@@ -636,6 +638,13 @@ class MainWindow(wx.Frame):
         progress.Destroy()
 
     def Quit(self, event):
+        for window in self.detailwindow_dict.itervalues():
+            window.Destroy()
+        try:
+            self.set_alerts_dlg.Destroy()
+            self.stats_dlg.Destroy()
+            self.raw_data_dlg.Destroy()
+        except: pass
         self.map.Destroy()
         self.Destroy()
 
@@ -4686,7 +4695,9 @@ network_server_thread.stop()
 network_client_thread.stop()
 main_thread.stop()
 
-# Exit program when only one thread remains
+# Set exit time
+exittime = time.time()
+# Exit program when only one thread remains or when timeout occur
 while True:
     threads = threading.enumerate()
     nrofthreads = len(threads)
@@ -4694,7 +4705,10 @@ while True:
         networkserver_exist = threads.index('Thread(NetworkServer, started daemon)>')
     except ValueError:
         nrofthreads -=1
-    if nrofthreads > 1:
+    # Check for exit conditions, either that only one thread remains
+    # or that we have timed out. The timeout prevents the process from
+    # not terminating properly.
+    if nrofthreads > 1 and (exittime + 30) > time.time():
         pass
     else:
         break
