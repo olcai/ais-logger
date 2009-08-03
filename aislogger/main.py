@@ -308,8 +308,10 @@ class MainWindow(wx.Frame):
 
         # Set icon
         ib=wx.IconBundle()
-        ib.AddIconFromFile(os.path.join(package_home(globals()), "data/icon.ico"), wx.BITMAP_TYPE_ANY)
-        self.SetIcons(ib)
+        try:
+            ib.AddIconFromFile(os.path.join(package_home(globals()), "data/icon.ico"), wx.BITMAP_TYPE_ANY)
+            self.SetIcons(ib)
+        except: pass
         
         # Create status row
         statusbar = wx.StatusBar(self, -1)
@@ -3650,8 +3652,18 @@ class SerialThread:
             return False
 
     def stop(self):
-        for i in range(0,100):
-            self.put('stop')
+        # Get everything in queue and send stop string
+        try:
+            while True:
+                self.queue.get_nowait()
+        except Queue.Empty:
+            try:
+                while True:
+                    self.comqueue.get_nowait()
+            except Queue.Empty:
+                for i in range(0,100):
+                    self.put('stop')
+                    self.put_send('stop')
 
 
 class NetworkServerThread:
@@ -3743,8 +3755,13 @@ class NetworkServerThread:
             return False
 
     def stop(self):
-        for i in range(0,100):
-            self.comqueue.put('stop')
+        # Get everything in queue and send stop string
+        try:
+            while True:
+                self.comqueue.get_nowait()
+        except Queue.Empty:
+            for i in range(0,100):
+                self.put('stop')
 
     def put(self, item):
         try:
@@ -3844,7 +3861,12 @@ class NetworkClientThread:
             return False
 
     def stop(self):
-        self.put('stop')
+        # Get everything in queue and send stop string
+        try:
+            while True:
+                self.queue.get_nowait()
+        except Queue.Empty:
+            self.put('stop')
 
 
 class CommHubThread:
@@ -4053,7 +4075,12 @@ class CommHubThread:
             return False
 
     def stop(self):
-        self.put('stop')
+        # Get everything in queue and send stop string
+        try:
+            while True:
+                self.incoming_queue.get_nowait()
+        except Queue.Empty:
+            self.put('stop')
 
 
 class MainThread:
@@ -4613,7 +4640,12 @@ class MainThread:
             return False
 
     def stop(self):
-        self.put('stop')
+        # Get everything in queue and send stop string
+        try:
+            while True:
+                self.queue.get_nowait()
+        except Queue.Empty:
+            self.put('stop')
 
 
 # Initialize thread classes
@@ -4656,7 +4688,7 @@ if config['logging'].as_bool('logexceptions'):
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
     # Send everything to the exception file
-    except_file = open(os.path.join(package_home(globals()), 'except.log'), 'a')
+    except_file = open(os.path.join(package_home(globals()), 'except.log'), 'a', 0)
     sys.stderr = except_file
 else:
     sys.stderr = open(os.devnull)
