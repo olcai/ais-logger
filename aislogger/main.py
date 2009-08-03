@@ -1294,13 +1294,17 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
     def SetSelected(self, mmsi, ensurevisible=False):
         # If MMSI in list, select it
         if mmsi in self.itemDataMap:
-            # Find objects position in ctrl
-            new_position = self.FindItem(-1, unicode(mmsi))
+            try:
+                # Find position in list
+                pos = self.itemIndexMap.index(mmsi)
+            except:
+                self.DeselectAll()
+                return
             # Set selected state
-            self.SetItemState(new_position, wx.LIST_STATE_SELECTED, wx.LIST_STATE_SELECTED)
+            self.SetItemState(pos, wx.LIST_STATE_SELECTED|wx.LIST_STATE_FOCUSED, wx.LIST_STATE_SELECTED|wx.LIST_STATE_FOCUSED)
             # Make sure object is visible if flag is set
             if ensurevisible:
-                self.EnsureVisible(new_position)
+                self.EnsureVisible(pos)
         # If not, deselect all objects
         else:
             self.DeselectAll()
@@ -1308,7 +1312,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
     def DeselectAll(self):
         # Deselect all objects
         for i in range(self.GetItemCount()):
-            self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
+            self.SetItemState(i, 0, wx.LIST_STATE_SELECTED|wx.LIST_STATE_FOCUSED)
 
     def ZoomToObject(self, event):
         if self.selected != -1:
@@ -1324,7 +1328,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # Deselect all objects if escape is pressed
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             for i in range(self.GetItemCount()):
-                self.SetItemState(i, 0, wx.LIST_STATE_SELECTED)
+                self.SetItemState(i, 0, wx.LIST_STATE_SELECTED|wx.LIST_STATE_FOCUSED)
             self.selected = -1
         # Show Detail window if F2 is pressed
         elif event.GetKeyCode() == wx.WXK_F2:
@@ -1466,7 +1470,7 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             mmsi = 0
         # Create the attribute
         self.attr = wx.ListItemAttr()
-
+        
         # If item is in alertitems: make background red
         if mmsi in self.alertitems:
             self.attr.SetBackgroundColour("TAN")
@@ -1493,6 +1497,11 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         if self.selected != -1:
             self.SetSelected(self.selected)
 
+    def OnSortOrderChanged(self):
+        # When user has changed sort col, make a selected object
+        # visible if there is one
+        self.SetSelected(self.selected, True)
+                
     # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
     def GetListCtrl(self):
         return self
