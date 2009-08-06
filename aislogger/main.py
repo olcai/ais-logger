@@ -57,7 +57,8 @@ from util import *
 
 # Function for returning the package directory
 def package_home(gdict):
-    filename = gdict["__file__"]
+    fs_enc = sys.getfilesystemencoding()
+    filename = unicode(gdict["__file__"], fs_enc)
     # Hack for py2exe which returns aislogger.exe in path
     if filename.find(".exe") != -1:
         while filename.find(".exe") != -1:
@@ -182,7 +183,7 @@ defaultconfig = {'common': {'listmakegreytime': 600,
                          'mapfile': os.path.join(package_home(globals()), 'data/world.dat')}}
 
 # Create a ConfigObj based on dict defaultconfig
-config = ConfigObj(defaultconfig, indent_type='')
+config = ConfigObj(defaultconfig, indent_type='', encoding='utf-8')
 config.filename = 'default.ini'
 
 # Set the intial comment for the config file
@@ -269,7 +270,7 @@ class ChooseConfig(wx.App):
         dlg = wx.SingleChoiceDialog(None, message=_("There are multiple configuration files in the AIS Logger directory.\nPlease choose which one to use."), caption=_("Choose configuration file to use"), choices=files)
         # If user presses ok, load config file and return
         if dlg.ShowModal() == wx.ID_OK:
-            loadconfig(os.path.join(package_home(globals()), dlg.GetStringSelection()))
+            loadconfig(os.path.join(package_home(globals()), unicode(dlg.GetStringSelection())))
             dlg.Destroy()
             return
         # User pressed cancel, warn them about it
@@ -281,7 +282,7 @@ class ChooseConfig(wx.App):
 # If no command line config files, get dir listing
 if len(configfiles) == 0:
     # Get config files in directory
-    configfiles = glob.glob(os.path.join(package_home(globals()), '*.ini'))
+    configfiles = glob.glob(os.path.join(package_home(globals()), u'*.ini'))
     # Only use relative file names
     configfiles = map(os.path.basename, configfiles)
 # Check for more than one config file -> display dialog
@@ -291,7 +292,7 @@ if len(configfiles) > 1:
     test.MainLoop()
 # Only one config file, load it
 elif len(configfiles) == 1:
-    loadconfig(os.path.join(package_home(globals()), configfiles[0]))
+    loadconfig(os.path.join(package_home(globals()), unicode(configfiles[0])))
 
  
 class MainWindow(wx.Frame):
@@ -309,7 +310,7 @@ class MainWindow(wx.Frame):
         # Set icon
         ib=wx.IconBundle()
         try:
-            ib.AddIconFromFile(os.path.join(package_home(globals()), "data/icon.ico"), wx.BITMAP_TYPE_ANY)
+            ib.AddIconFromFile(os.path.join(package_home(globals()), u"data/icon.ico"), wx.BITMAP_TYPE_ANY)
             self.SetIcons(ib)
         except: pass
         
@@ -529,7 +530,7 @@ class MainWindow(wx.Frame):
     def readmid(self):
         # Read a list from MID to nation from file mid.lst
         try:
-            f = open(os.path.join(package_home(globals()), 'data/mid.lst'), 'r')
+            f = open(os.path.join(package_home(globals()), u'data/mid.lst'), 'r')
         except:
                 logging.error("Could not read data from MID file", exc_info=True)
                 return
@@ -547,7 +548,7 @@ class MainWindow(wx.Frame):
     def readtype(self):
         # Read a list with ship type codes from typecode.lst
         try:
-            f = open(os.path.join(package_home(globals()), 'data/typecode.lst'), 'r')
+            f = open(os.path.join(package_home(globals()), u'data/typecode.lst'), 'r')
         except:
                 logging.error("Could not read data from type code file", exc_info=True)
                 return
@@ -894,7 +895,7 @@ class MapFrame(wx.Frame):
             wx.BusyCursor()
             # Load shorelines from file
             try:
-                Shorelines = self.Read_MapGen(config['map']['mapfile'])
+                Shorelines = self.Read_MapGen(unicode(config['map']['mapfile'], 'utf-8'))
                 for segment in Shorelines:
                     i = self.Canvas.AddLine(segment, LineColor=config['map']['shoreline_color'])
             except:
@@ -2266,7 +2267,7 @@ class SetAlertsWindow(wx.Dialog):
         # First, apply changes
         self.OnApplyChanges(None)
         # Save file
-        remark_file = config['alert']['remarkfile']
+        remark_file = unicode(config['alert']['remarkfile'], 'utf-8')
         if config['alert'].as_bool('remarkfile_on'):
             # Saves remarks to a supplied file
             if len(remark_file) > 0:
@@ -2317,7 +2318,7 @@ class SetAlertsWindow(wx.Dialog):
         dir = os.getcwd()
         open_dlg = wx.FileDialog(self, message=_("Choose file to save current list"), defaultDir=dir, defaultFile='list.csv', wildcard=wcd, style=wx.SAVE)
         if open_dlg.ShowModal() == wx.ID_OK:
-            file = open_dlg.GetPath()
+            file = unicode(open_dlg.GetPath())
         if len(file) > 0:
             # Save the data
             try:
@@ -3234,7 +3235,7 @@ class SettingsWindow(wx.Dialog):
         open_dlg = wx.FileDialog(self, label, wildcard=wc, defaultFile=os.path.normpath(df))
         # If user pressed open, update text control
         if open_dlg.ShowModal() == wx.ID_OK:
-            return(str(open_dlg.GetPath()))
+            return(unicode(open_dlg.GetPath()))
 
     def UpdateConfig(self):
         # Update the config dictionary with data from the window
@@ -3330,7 +3331,7 @@ class SettingsWindow(wx.Dialog):
             self.UpdateConfig()
             try:
                 # Write config
-                config.filename = save_dlg.GetPath()
+                config.filename = unicode(save_dlg.GetPath())
                 config.write()
             except:
                 logging.error("Could not save configuration to file", exc_info=True)
@@ -4570,7 +4571,7 @@ class MainThread:
         # Open the file and log
         try:
             # Open file with filename in config['logging']['logfile']
-            connection = sqlite.connect(os.path.join(package_home(globals()), config['logging']['logfile']))
+            connection = sqlite.connect(os.path.join(package_home(globals()), unicode(config['logging']['logfile'], 'utf-8')))
             cursor = connection.cursor()
             # Create tables if they don't exist
             cursor.execute("CREATE TABLE IF NOT EXISTS position (time, mmsi, latitude, longitude, georef, sog, cog);")
@@ -4592,7 +4593,7 @@ class MainThread:
         # Open the file and log
         try:
             # Open file with filename in config['iddb_logging']['logfile']
-            connection = sqlite.connect(os.path.join(package_home(globals()), config['iddb_logging']['logfile']))
+            connection = sqlite.connect(os.path.join(package_home(globals()), unicode(config['iddb_logging']['logfile'], 'utf-8')))
             cursor = connection.cursor()
             # Create table if it doesn't exist
             cursor.execute("CREATE TABLE IF NOT EXISTS iddb (mmsi PRIMARY KEY, imo, name, callsign);")
@@ -4607,12 +4608,12 @@ class MainThread:
     def loadiddb(self):
         # See if an iddb logfile exists, if not, return
         try:
-            dbfile = open(os.path.join(package_home(globals()), config['iddb_logging']['logfile']))
+            dbfile = open(os.path.join(package_home(globals()), unicode(config['iddb_logging']['logfile'], 'utf-8')))
             dbfile.close()
         except: return
         try:
             # Open the db
-            connection = sqlite.connect(os.path.join(package_home(globals()), config['iddb_logging']['logfile']))
+            connection = sqlite.connect(os.path.join(package_home(globals()), unicode(config['iddb_logging']['logfile'], 'utf-8')))
             cursor = connection.cursor()
             # Select data from table iddb
             cursor.execute("SELECT * FROM iddb;",())
@@ -4627,7 +4628,7 @@ class MainThread:
 
     def loadremarkfile(self):
         # This function will try to read a remark/alert file, if defined in config
-        path = config['alert']['remarkfile']
+        path = unicode(config['alert']['remarkfile'], 'utf-8')
         if config['alert'].as_bool('remarkfile_on') and len(path) > 0:
             try:
                 temp = {}
