@@ -2,7 +2,7 @@
 from distutils.core import setup
 import sys
 
-version = ['0013']
+version = ['VERSION_TAG']
 
 # Set no data files
 data_files = []
