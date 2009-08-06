@@ -43,7 +43,7 @@ import numpy
 import serial
 import wx
 import wx.lib.mixins.listctrl as listmix
-from wx.lib.floatcanvas import NavCanvas, FloatCanvas, Resources
+from wx.lib.floatcanvas import NavCanvas, FloatCanvas, Resources, Utilities
 import wx.lib.colourdb
 
 # Import external (bundled) packages
@@ -661,6 +661,10 @@ class MainWindow(wx.Frame):
             self.map.DrawMap(zoomtobb)
             self.map.Show()
             self.map.Canvas.SetFocus()
+            # Workaround: for ZoomToBB() to work after loading the
+            # map, we need to do it after doing Show()
+            if not self.map.mapIsLoaded:
+                self.map.ZoomToBB()
 
     def OnAbout(self, event):
         aboutstring = 'AIS Logger ('+version+')\n(C) Erik I.J. Olsson 2006-2009\n\naislog.py\ndecode.py\nutil.py'
@@ -815,17 +819,17 @@ class MapFrame(wx.Frame):
                 y = pos[1]
                 # Create a bounding box that has it's corners 0.5
                 # degrees around the position
-                bbox = numpy.array([[x-0.5,y-0.5],[x+0.5,y+0.5]])
+                bbox = Utilities.BBox.asBBox([[x-0.5,y-0.5],[x+0.5,y+0.5]])
                 # Zoom to the bounding box
                 try:
                     self.Canvas.ZoomToBB(bbox)
                 except:
                     pass
 
-    def SelectObject(self, map_object):
+    def SelectObject(self, map_object, fromlist=False):
         # See if we have a previous selected object
         if self.selected:
-            self.DeselectObject()
+            self.DeselectObject(fromlist)
         # Set selected to object
         self.selected = getattr(map_object, 'mmsi')
         # Mark object as selected with a different color
@@ -839,11 +843,13 @@ class MapFrame(wx.Frame):
         self.detail_button.Enable(True)
         # Update window
         self.UpdateObjectWindow(map_object)
-        # Try to select object in list views
-        self.parent.splist.list.SetSelected(self.selected, True)
-        self.parent.spalert.list.SetSelected(self.selected, True)
+        # If the selection doesn't come from the list views
+        if not fromlist:
+            # Try to select object in list views
+            self.parent.splist.list.SetSelected(self.selected, True)
+            self.parent.spalert.list.SetSelected(self.selected, True)
 
-    def DeselectObject(self):
+    def DeselectObject(self, fromlist=False):
         # Deselect if we have a selected object
         if self.selected:
             # Clear window
@@ -859,14 +865,16 @@ class MapFrame(wx.Frame):
             self.detail_button.Enable(False)
             # Set selected to None
             self.selected = None
-            # Deselect all objects in list views
-            self.parent.splist.list.DeselectAll()
-            self.parent.spalert.list.DeselectAll()
+            # If the selection doesn't come from the list views
+            if not fromlist:
+                # Deselect all objects in list views
+                self.parent.splist.list.DeselectAll()
+                self.parent.spalert.list.DeselectAll()
 
-    def SetSelected(self, mmsi):
+    def SetSelected(self, mmsi, fromlist=False):
         # Select MMSI on map
         if mmsi in self.itemMap:
-            self.SelectObject(self.itemMap[mmsi][1])
+            self.SelectObject(self.itemMap[mmsi][1], fromlist)
 
     def OpenDetailWindow(self, map_object=None):
         # Try to get mmsi if a map object
@@ -1260,6 +1268,9 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         self.itemDataMap = {}
         self.itemIndexMap = []
         self.selected = -1
+        # A simple semafor to control when updating selection
+        # internally
+        self.selectedlock = False
         # Do initial sorting on column 0, ascending order (1)
         self.SortListItems(0, 1)
         # Define one set for alert items and one for grey items
@@ -1298,9 +1309,17 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
         # When an object is selected, extract the MMSI number and
         # put it in self.selected
         self.selected = self.itemIndexMap[event.m_itemIndex]
+        # If the user doesn't select a new one, don't send update
+        if not self.selectedlock:
+            # Set object as selected on map too
+            app.frame.map.SetSelected(self.selected, fromlist=True)
 
     def OnItemDeselected(self, event):
         self.selected = -1
+        # If the user doesn't select a new one, don't send update
+        if not self.selectedlock:
+            # Deselect object on map too
+            app.frame.map.DeselectObject(fromlist=True)
 
     def SetSelected(self, mmsi, ensurevisible=False):
         # If MMSI in list, select it
@@ -1312,7 +1331,9 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
                 self.DeselectAll()
                 return
             # Set selected state
+            self.selectedlock = True
             self.SetItemState(pos, wx.LIST_STATE_SELECTED|wx.LIST_STATE_FOCUSED, wx.LIST_STATE_SELECTED|wx.LIST_STATE_FOCUSED)
+            self.selectedlock = False
             # Make sure object is visible if flag is set
             if ensurevisible:
                 self.EnsureVisible(pos)
@@ -1330,10 +1351,10 @@ class VirtualList(wx.ListCtrl, listmix.ListCtrlAutoWidthMixin, listmix.ColumnSor
             # Show map if not shown
             if not app.frame.map.IsShown():
                 app.frame.OnShowMap(None, zoomtobb=False)
-            # Zoom to object on map
-            app.frame.map.ZoomToObject(self.selected)
             # Set object as selected
             app.frame.map.SetSelected(self.selected)
+            # Zoom to object on map
+            app.frame.map.ZoomToObject(self.selected)
 
     def OnKey(self, event):
         # Deselect all objects if escape is pressed
