@@ -11,7 +11,7 @@ In summary:
 * Can log data to a SQLite database
 * Platform independent, written in Python and WxPython
 * Free software under the [MIT license][mitlicense]
-* Homepage: [http://sourceforge.net/projects/aislogger/][homepage]
+* Homepage: [http://sourceforge.net/apps/trac/aislogger/][homepage]
 * Releases:
   [http://sourceforge.net/projects/aislogger/files/][releases]
 * Git repository: [http://github.com/olcai/ais-logger/][repo]
@@ -100,7 +100,7 @@ Uninstalling
 * A source release installed with setup.py
   
   Find the site-packages directory under your python installation
-  directory (typically /usr/lib/pythonX.X/site-packages/ on *nix).
+  directory (typically /usr/lib/pythonX.X/site-packages/ on \*nix).
   Delete the aislogger directory and the file
   aislogger-XXXX-pyX.X.egg-info. You also have to delete the script
   aislogger (typically in /usr/bin under *nix). Done.
@@ -181,7 +181,7 @@ externally developed:
 
 
 [mitlicense]: http://opensource.org/licenses/mit-license.php
-[homepage]:   http://sourceforge.net/apps/trac/aislogger
+[homepage]:   http://sourceforge.net/apps/trac/aislogger/
 [releases]:   http://sourceforge.net/projects/aislogger/files/
 [repo]:       http://github.com/olcai/ais-logger/
 [docs]:       http://github.com/olcai/ais-logger/tree/master/doc/
