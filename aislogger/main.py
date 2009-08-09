@@ -2505,6 +2505,26 @@ class SetAlertsWindow(wx.Dialog):
         def GetListCtrl(self):
             return self
 
+        # Overrides the normal __ColumnSorter due to unicode bug with
+        # locale.strcoll
+        def GetColumnSorter(self):
+            return self.myColumnSorter
+
+        def myColumnSorter(self, key1, key2):
+            col = self._col
+            ascending = self._colSortFlag[col]
+            item1 = self.itemDataMap[key1][col]
+            item2 = self.itemDataMap[key2][col]
+            cmpVal = cmp(item1, item2)
+            # If the items are equal then pick something else to make
+            # the sort value unique
+            if cmpVal == 0:
+                cmpVal = apply(cmp, self.GetSecondarySortValues(col, key1, key2))
+            if ascending:
+                return cmpVal
+            else:
+                return -cmpVal
+
         # Used by the ColumnSorterMixin, see wx/lib/mixins/listctrl.py
         def GetSortImages(self):
             return (self.sm_dn, self.sm_up)
