@@ -16,7 +16,8 @@ for entry in sys.argv:
                                'aislogger/data/typecode.lst',
                                'aislogger/data/typecode_sv.lst',
                                'aislogger/data/world.dat',
-                               'aislogger/data/icon.ico'])]
+                               'aislogger/data/icon.ico']),
+                      ('doc',['doc/manual.html'])]
 # Main setup
 setup (name='aislogger',
        version='.'.join(version),
@@ -28,7 +29,7 @@ setup (name='aislogger',
        scripts=['bin/aislogger'],
        packages=['aislogger', 'aislogger.external'],
        package_dir={'aislogger.external': 'external'},
-       package_data={'aislogger': ['data/*']},
+       package_data={'aislogger': ['data/*', 'doc/manual.html']},
 
        # Options for py2exe
        windows=[{'script': 'bin/aislogger',

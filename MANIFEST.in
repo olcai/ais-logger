@@ -1,4 +1,4 @@
-include *.txt
 include *.md
 include external/*.txt
 include aislogger/data/*
+include doc/manual.html
