@@ -1,10 +1,13 @@
 AIS Logger
 ==========
 
-* AIS Logger is a simple viewer and logger for data received by
-  AIS-transponders or -receivers
+AIS Logger is a simple viewer and logger for data received by
+AIS-transponders or -receivers.
+
+In summary:
+
 * Capture raw data from a serial port or through a network
-* Displays data in list views and maps
+* Display data in list views and maps
 * Can log data to a SQLite database
 * Platform independent, written in Python and WxPython
 * Free software under the [MIT license][mitlicense]
@@ -82,7 +85,7 @@ Installing
   To compile the documentation you will need markdown in your
   path. Then clone from [Github][repo], and do:
 
-        $ make all                  # Generates documentation
+        $ make doc                  # Generates manual (not necessary)
         $ python setup.py install   # As root
         $ aislogger                 # As normal user to start program
 
@@ -97,7 +100,7 @@ Uninstalling
 * A source release installed with setup.py
   
   Find the site-packages directory under your python installation
-  directory (typically /usr/lib/pythonX.X/site-packages/ on*nix).
+  directory (typically /usr/lib/pythonX.X/site-packages/ on *nix).
   Delete the aislogger directory and the file
   aislogger-XXXX-pyX.X.egg-info. You also have to delete the script
   aislogger (typically in /usr/bin under *nix). Done.
@@ -178,7 +181,7 @@ externally developed:
 
 
 [mitlicense]: http://opensource.org/licenses/mit-license.php
-[homepage]:   http://sourceforge.net/projects/aislogger/
+[homepage]:   http://sourceforge.net/apps/trac/aislogger
 [releases]:   http://sourceforge.net/projects/aislogger/files/
 [repo]:       http://github.com/olcai/ais-logger/
 [docs]:       http://github.com/olcai/ais-logger/tree/master/doc/
